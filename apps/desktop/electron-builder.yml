@@ -1,0 +1,13 @@
+appId: com.metasoft.posd4
+productName: POS D4
+directories:
+  buildResources: build
+files:
+  - out/**
+  - package.json
+mac:
+  target: dmg
+win:
+  target: nsis
+linux:
+  target: AppImage

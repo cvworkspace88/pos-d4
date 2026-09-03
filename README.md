@@ -1,159 +1,82 @@
-# Turborepo starter
+# pos-d4
 
-This Turborepo starter is maintained by the Turborepo core team.
+Turborepo + pnpm monorepo. End-to-end typesafe from Postgres to phone and desktop.
 
-## Using this example
+| Workspace | Stack |
+| --- | --- |
+| `apps/api` | NestJS 11, nestjs-trpc, Drizzle ORM + Postgres, Passport JWT (access + rotating refresh), argon2 |
+| `apps/mobile` | Expo SDK 57 + expo-router, tRPC + TanStack Query, Zustand, React Hook Form + Zod |
+| `apps/desktop` | electron-vite 5 + React 19, same tRPC/Query/Zustand/RHF client stack |
+| `packages/api-contract` | `AppRouter` type generated from the Nest routers — the single contract both clients import |
 
-Run the following command:
+NestJS is pinned to 11 because `nestjs-trpc@2.13` does not accept Nest 12 yet.
 
-```sh
-npx create-turbo@latest
-```
-
-## What's inside?
-
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `@next/eslint-plugin-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+## Setup
 
 ```sh
-cd my-turborepo
-turbo build
+pnpm install
+docker compose up -d              # Postgres on :5432
+cp apps/api/.env.example apps/api/.env
+pnpm db:migrate                   # apply drizzle/0000_*.sql
 ```
 
-Without global `turbo`, use your package manager:
+Set real values for `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` in `apps/api/.env` before deploying anywhere.
+
+## Develop
 
 ```sh
-cd my-turborepo
-npx turbo build
-pnpm exec turbo build
-pnpm exec turbo build
+pnpm --filter @repo/api dev       # Nest on :3333 + tRPC type generation in watch mode
+pnpm --filter @repo/mobile dev          # Expo
+pnpm --filter @repo/desktop dev   # Electron
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+`apps/api dev` regenerates `packages/api-contract/src/server.ts` on every router change, so both
+clients pick up new procedures without a manual step. One-off: `pnpm trpc:generate`.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Contract flow
+
+`@Router`/`@Query`/`@Mutation` + Zod schemas in `apps/api/src` → `nestjs-trpc generate` →
+`packages/api-contract/src/server.ts` → `useTRPC()` in mobile and desktop. Never edit the generated file.
+
+## Schema changes
+
+Edit `apps/api/src/db/schema.ts`, then:
 
 ```sh
-turbo build --filter=docs
+pnpm db:generate                  # write a migration
+pnpm db:migrate                   # apply it
 ```
 
-Without global `turbo`:
+## Auth
 
-```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
+`auth.register` / `auth.login` return a 15-minute access JWT plus an opaque refresh token stored
+SHA-256-hashed in `refresh_tokens`. `auth.refresh` rotates it (the presented token is revoked).
+`auth.me` is guarded by `ProtectedMiddleware`, which reuses the same verification path as the
+Passport `JwtStrategy` (kept for plain REST controllers via `JwtAuthGuard`).
 
-### Develop
+Clients hold the session in a persisted Zustand store — AsyncStorage on mobile, localStorage on
+desktop — and attach the access token in `httpBatchLink`'s `headers()`, which asks
+`createTokenProvider` (`packages/api-contract/src/refresh.ts`) for a live one first. It refreshes
+30s before `exp`, shares one in-flight refresh across concurrent callers (rotation revokes the
+presented token, so a race would log the user out), and ends the session only when the server
+actually rejects the credential — a transient failure keeps the session and rejects the request.
+`auth.refresh` accepts a token revoked less than 30s ago, so a refresh whose response was lost in
+transit becomes a retry rather than a forced logout.
 
-To develop all apps and packages, run the following command:
+Above the HTTP link sits `createRefreshLink`, which catches the 401s `exp` cannot predict — signing
+secret rotated, user deleted, device clock behind — forces one refresh and retries the operation
+once. Two layers: `headers()` renews before sending, the link recovers when the server disagrees.
+The refresh call goes through a separate client without this link, so it cannot recurse.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+### Error codes: `UNAUTHORIZED` vs `FORBIDDEN`
 
-```sh
-cd my-turborepo
-turbo dev
-```
+Load-bearing, not cosmetic. Both clients end the session on any `UNAUTHORIZED` — clearing the store
+and the query cache, which drops the user back to the login screen.
 
-Without global `turbo`, use your package manager:
+| Code | Means | Use for |
+| --- | --- | --- |
+| `UNAUTHORIZED` | we don't know who you are | expired or invalid access token, invalid or revoked refresh token, failed login |
+| `FORBIDDEN` | we know who you are, you may not do this | permission and access-control failures — role checks, manager-only actions, another store's data |
 
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+Returning `UNAUTHORIZED` from a permission check would sign the user out mid-action instead of
+showing them a refusal.
