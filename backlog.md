@@ -7,6 +7,8 @@
   process, renderers ask over IPC.
 * sync client and server time. fast client clock reads the access token as expired early and
   refreshes every request. server checks refresh token expiry itself, so it is unaffected.
-* grace window mints an independent chain per hit. a client retrying 5x in 30s ends with 5 live
-  30-day chains and 5 orphan rows. acceptable while there is no reuse detection.
 * set `NODE_ENV=production` in deploy. tRPC returns full stack traces to clients by default.
+
+# Consider 
+
+* Grace period refresh token rotation if refresh 5 times in 30 seconds with same refresh token it can cause user to have 5 refresh token. Low probability no security risk. [LOW]
