@@ -17,6 +17,6 @@ export class ProtectedMiddleware implements TRPCMiddleware {
 
     const user = await this.authService.userFromAccessToken(token);
 
-    return next({ ctx: { user: { id: user.id, name: user.name, email: user.email } } });
+    return next({ ctx: { user: { id: user.id, name: user.name, username: user.username } } });
   }
 }

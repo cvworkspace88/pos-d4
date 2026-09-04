@@ -9,9 +9,10 @@
     "trpc:generate": "nestjs-trpc generate -o ../../packages/api-contract/src",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:seed": "node --env-file=.env drizzle/seed/__seed.ts",
     "db:studio": "drizzle-kit studio",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test src/auth/refresh-window.test.ts",
+    "test": "node --test src/auth/refresh-window.test.ts drizzle/seed/seed-rbac.test.ts",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {

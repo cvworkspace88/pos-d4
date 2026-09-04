@@ -11,35 +11,35 @@ export class AuthRouter {
   @Mutation({
     input: z.object({
       name: z.string().min(2).max(80),
-      email: z.email(),
+      username: z.string().min(3).max(32),
       password: z.string().min(8).max(128),
     }),
     output: z.object({
-      user: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
       accessToken: z.string(),
       refreshToken: z.string(),
     }),
   })
-  register(@Input() input: { name: string; email: string; password: string }) {
+  register(@Input() input: { name: string; username: string; password: string }) {
     return this.authService.register(input);
   }
 
   @Mutation({
-    input: z.object({ email: z.email(), password: z.string().min(8).max(128) }),
+    input: z.object({ username: z.string().min(3).max(32), password: z.string().min(8).max(128) }),
     output: z.object({
-      user: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
       accessToken: z.string(),
       refreshToken: z.string(),
     }),
   })
-  login(@Input() input: { email: string; password: string }) {
+  login(@Input() input: { username: string; password: string }) {
     return this.authService.login(input);
   }
 
   @Mutation({
     input: z.object({ refreshToken: z.string().min(1) }),
     output: z.object({
-      user: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
       accessToken: z.string(),
       refreshToken: z.string(),
     }),
@@ -57,9 +57,9 @@ export class AuthRouter {
     return { success: true };
   }
 
-  @Query({ output: z.object({ id: z.string(), name: z.string(), email: z.string() }) })
+  @Query({ output: z.object({ id: z.string(), name: z.string(), username: z.string() }) })
   @UseMiddlewares(ProtectedMiddleware)
-  me(@Ctx() ctx: { user: { id: string; name: string; email: string } }) {
+  me(@Ctx() ctx: { user: { id: string; name: string; username: string } }) {
     return ctx.user;
   }
 }

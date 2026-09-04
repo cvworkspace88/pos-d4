@@ -6,7 +6,7 @@ import { useTRPC } from '../trpc';
 import { useAuthStore } from '../stores/auth';
 
 const schema = z.object({
-  email: z.email('Enter a valid email.'),
+  username: z.string().min(3, 'At least 3 characters.'),
   password: z.string().min(8, 'At least 8 characters.'),
 });
 
@@ -32,9 +32,9 @@ export function LoginForm() {
     <form onSubmit={handleSubmit((values) => login.mutateAsync(values).catch(() => undefined))}>
       <h1>Sign in</h1>
 
-      <label htmlFor="email">Email</label>
-      <input id="email" type="email" autoComplete="email" {...register('email')} />
-      {errors.email && <p role="alert">{errors.email.message}</p>}
+      <label htmlFor="username">Username</label>
+      <input id="username" type="text" autoComplete="username" {...register('username')} />
+      {errors.username && <p role="alert">{errors.username.message}</p>}
 
       <label htmlFor="password">Password</label>
       <input id="password" type="password" autoComplete="current-password" {...register('password')} />

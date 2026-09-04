@@ -10,7 +10,7 @@ import { refreshTokens, users, type User } from '../db/schema';
 import { rejectRefresh } from './refresh-window';
 
 export interface Session {
-  user: { id: string; name: string; email: string };
+  user: { id: string; name: string; username: string };
   accessToken: string;
   refreshToken: string;
 }
@@ -26,21 +26,26 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  async register(input: { name: string; email: string; password: string }): Promise<Session> {
-    const email = input.email.toLowerCase();
-    const [existing] = await this.db.select({ id: users.id }).from(users).where(eq(users.email, email));
-    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Email already registered.' });
+  async register(input: { name: string; username: string; password: string }): Promise<Session> {
+    const username = input.username.toLowerCase();
+    // Deliberately unfiltered by `deleted_at`: a soft-deleted row still holds the unique index, so
+    // filtering here would turn a clean CONFLICT into a raw constraint violation.
+    const [existing] = await this.db.select({ id: users.id }).from(users).where(eq(users.username, username));
+    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Username already taken.' });
 
     const [user] = await this.db
       .insert(users)
-      .values({ name: input.name, email, passwordHash: await argon2.hash(input.password) })
+      .values({ name: input.name, username, passwordHash: await argon2.hash(input.password) })
       .returning();
 
     return this.issueSession(user!);
   }
 
-  async login(input: { email: string; password: string }): Promise<Session> {
-    const [user] = await this.db.select().from(users).where(eq(users.email, input.email.toLowerCase()));
+  async login(input: { username: string; password: string }): Promise<Session> {
+    const [user] = await this.db
+      .select()
+      .from(users)
+      .where(and(eq(users.username, input.username.toLowerCase()), isNull(users.deletedAt)));
     // Always verify against something so a missing user and a wrong password cost the same.
     const valid = user ? await argon2.verify(user.passwordHash, input.password) : false;
     if (!user || !valid) throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials.' });
@@ -57,7 +62,10 @@ export class AuthService {
     if (!row || rejectRefresh(row))
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid refresh token.' });
 
-    const [user] = await this.db.select().from(users).where(eq(users.id, row.userId));
+    const [user] = await this.db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, row.userId), isNull(users.deletedAt)));
     if (!user) throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid refresh token.' });
 
     // Rotate: the presented token dies with the new one's birth. Only the first use stamps it, so a
@@ -80,7 +88,10 @@ export class AuthService {
   /** Single source of truth for "who is this bearer token", used by JwtStrategy and the tRPC middleware. */
   async userFromPayload(payload: { sub?: string }): Promise<User> {
     if (!payload.sub) throw new TRPCError({ code: 'UNAUTHORIZED' });
-    const [user] = await this.db.select().from(users).where(eq(users.id, payload.sub));
+    const [user] = await this.db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, payload.sub), isNull(users.deletedAt)));
     if (!user) throw new TRPCError({ code: 'UNAUTHORIZED' });
     return user;
   }
@@ -96,7 +107,7 @@ export class AuthService {
 
   private async issueSession(user: User): Promise<Session> {
     const accessToken = await this.jwt.signAsync(
-      { sub: user.id, email: user.email },
+      { sub: user.id, username: user.username },
       {
         secret: this.config.getOrThrow('JWT_ACCESS_SECRET'),
         expiresIn: this.config.get('JWT_ACCESS_TTL', '15m'),
@@ -111,6 +122,6 @@ export class AuthService {
       expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
     });
 
-    return { user: { id: user.id, name: user.name, email: user.email }, accessToken, refreshToken };
+    return { user: { id: user.id, name: user.name, username: user.username }, accessToken, refreshToken };
   }
 }

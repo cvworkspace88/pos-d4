@@ -19,19 +19,19 @@ const appRouter = t.router({
     register: publicProcedure
       .input(z.object({
       name: z.string().min(2).max(80),
-      email: z.email(),
+      username: z.string().min(3).max(32),
       password: z.string().min(8).max(128),
     }))
       .output(z.object({
-      user: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
       accessToken: z.string(),
       refreshToken: z.string(),
     }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     login: publicProcedure
-      .input(z.object({ email: z.email(), password: z.string().min(8).max(128) }))
+      .input(z.object({ username: z.string().min(3).max(32), password: z.string().min(8).max(128) }))
       .output(z.object({
-      user: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
       accessToken: z.string(),
       refreshToken: z.string(),
     }))
@@ -39,7 +39,7 @@ const appRouter = t.router({
     refresh: publicProcedure
       .input(z.object({ refreshToken: z.string().min(1) }))
       .output(z.object({
-      user: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
       accessToken: z.string(),
       refreshToken: z.string(),
     }))
@@ -49,7 +49,7 @@ const appRouter = t.router({
       .output(z.object({ success: z.boolean() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     me: publicProcedure
-      .output(z.object({ id: z.string(), name: z.string(), email: z.string() }))
+      .output(z.object({ id: z.string(), name: z.string(), username: z.string() }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     })
 });

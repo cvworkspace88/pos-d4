@@ -16,7 +16,7 @@ import { useAuthStore } from "@/lib/stores/auth";
 import { useTRPC } from "@/lib/trpc";
 
 const schema = z.object({
-  email: z.email("Enter a valid email."),
+  username: z.string().min(3, "At least 3 characters."),
   password: z.string().min(8, "At least 8 characters."),
 });
 
@@ -28,7 +28,7 @@ export default function LoginScreen() {
 
   const { control, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { username: "", password: "" },
   });
 
   const login = useMutation(
@@ -46,21 +46,21 @@ export default function LoginScreen() {
 
       <Controller
         control={control}
-        name="email"
+        name="username"
         render={({ field }) => (
           <TextInput
             style={styles.input}
-            placeholder="Email"
+            placeholder="Username"
             autoCapitalize="none"
-            keyboardType="email-address"
+            autoCorrect={false}
             value={field.value}
             onChangeText={field.onChange}
             onBlur={field.onBlur}
           />
         )}
       />
-      {formState.errors.email && (
-        <Text style={styles.error}>{formState.errors.email.message}</Text>
+      {formState.errors.username && (
+        <Text style={styles.error}>{formState.errors.username.message}</Text>
       )}
 
       <Controller

@@ -7,7 +7,7 @@ const jwt = (seconds: number) =>
   `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + seconds }))}.signature`;
 
 const session = (accessToken: string, refreshToken = 'r2'): Session => ({
-  user: { id: 'u1', name: 'Ada', email: 'ada@example.com' },
+  user: { id: 'u1', name: 'Ada', username: 'ada' },
   accessToken,
   refreshToken,
 });
@@ -187,7 +187,7 @@ test('expiresWithin reads a real JWT payload: base64url, unpadded', () => {
   const base64url = (value: object) =>
     btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const token = (seconds: number) =>
-    `header.${base64url({ sub: 'u1', email: 'ada@example.com', exp: Math.floor(Date.now() / 1000) + seconds })}.signature`;
+    `header.${base64url({ sub: 'u1', username: 'ada', exp: Math.floor(Date.now() / 1000) + seconds })}.signature`;
 
   assert.equal(expiresWithin(token(900), 30), false);
   assert.equal(expiresWithin(token(-60), 30), true);

@@ -1,11 +1,19 @@
-import { pgTable, text, timestamp, uuid, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, uuid, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull().unique(),
+  username: text('username').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
+  roleId: uuid('role_id').references(() => roles.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  // Soft delete: staff leave but their sales and audit rows must keep pointing at a real user.
+  // Every lookup that authenticates someone filters this out.
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
 });
 
 export const refreshTokens = pgTable(
@@ -33,3 +41,37 @@ export const refreshTokens = pgTable(
 );
 
 export type User = typeof users.$inferSelect;
+
+export const roles = pgTable('roles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull().unique(),
+  description: text('description'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const permissions = pgTable('permissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // Dotted `domain.action`, e.g. `sales.void_approve`. The code checks this string, not the id.
+  name: text('name').notNull().unique(),
+  description: text('description'),
+});
+
+export const rolePermissions = pgTable(
+  'role_permissions',
+  {
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => roles.id, { onDelete: 'cascade' }),
+    permissionId: uuid('permission_id')
+      .notNull()
+      .references(() => permissions.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roleId, table.permissionId] }),
+    // The PK covers role -> permissions lookups; this covers the reverse (who holds X).
+    index('role_permissions_permission_id_idx').on(table.permissionId),
+  ],
+);
+
+export type Role = typeof roles.$inferSelect;
+export type Permission = typeof permissions.$inferSelect;
