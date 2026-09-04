@@ -11,4 +11,4 @@
 
 # Consider 
 
-* Grace period refresh token rotation if refresh 5 times in 30 seconds with same refresh token it can cause user to have 5 refresh token. Low probability no security risk. [LOW]
+* Grace period refresh token rotation if refresh 5 times in 30 seconds with same refresh token it can cause user to have 5 refresh token. Low probability no security risk. can be fixed by building reuse detection. [LOW]
