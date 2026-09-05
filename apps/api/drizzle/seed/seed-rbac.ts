@@ -13,8 +13,9 @@ export const ROLES = [
 ] as const;
 
 /**
- * permission -> the roles that hold it *besides* owner and manager, who hold everything.
- * A permission with an empty list is therefore owner/manager only (every `_approve` gate).
+ * permission -> the roles that hold it *besides* owner and manager, who hold everything except
+ * `OWNER_ONLY`. A permission with an empty list is therefore owner/manager only (every `_approve`
+ * gate) — or owner only, if it is in `OWNER_ONLY`.
  */
 export const PERMISSIONS: Record<string, string[]> = {
   'sales.view': ['cashier', 'auditor'],
@@ -66,17 +67,22 @@ export const PERMISSIONS: Record<string, string[]> = {
   'order.item_remove_approve': [],
   'order.adjustment_request': ['waiter', 'cashier'],
   'order.adjustment_approve': [],
-  // Kitchen tickets are the floor's job; a cashier never sends one.
   'order.send_to_kitchen': ['waiter'],
   'order.hold': ['waiter', 'cashier'],
   'order.cancel_request': ['waiter', 'cashier'],
   'order.cancel_approve': [],
+
+  'settings.manage': [],
 };
 
-/** The full holder list for a permission — owner and manager hold everything. */
-export const holdersOf = (permission: string): string[] => [
-  ...new Set(['owner', 'manager', ...(PERMISSIONS[permission] ?? [])]),
-];
+/** Permissions the owner alone holds — the one exception to "manager holds everything". */
+export const OWNER_ONLY: ReadonlySet<string> = new Set(['settings.manage']);
+
+/** The full holder list for a permission — owner and manager hold everything but `OWNER_ONLY`. */
+export const holdersOf = (permission: string): string[] =>
+  OWNER_ONLY.has(permission)
+    ? ['owner']
+    : [...new Set(['owner', 'manager', ...(PERMISSIONS[permission] ?? [])])];
 
 /** Idempotent: re-running adds what is missing and touches nothing else. */
 export async function seedRbac(db: NodePgDatabase<typeof schema>): Promise<void> {

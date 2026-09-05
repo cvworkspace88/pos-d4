@@ -1,10 +1,24 @@
-import { pgTable, text, timestamp, uuid, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import {
+  check,
+  index,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   username: text('username').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
+  // argon2 hash of a 6-digit PIN. NULL = never set. Only staff enrolled on a shared tablet need
+  // one; desktop users sign in with the password alone.
+  pinHash: text('pin_hash'),
   roleId: uuid('role_id').references(() => roles.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -26,9 +40,11 @@ export const refreshTokens = pgTable(
     tokenHash: text('token_hash').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
-    // Why the row died. Only a rotation earns the refresh grace window — a sign-out must not, or the
-    // token stays usable for the length of that window after the user believed they were out.
-    revokedReason: text('revoked_reason').$type<'rotated' | 'logout'>(),
+    // Why the row died — or paused. Only a rotation earns the refresh grace window: a sign-out must
+    // not, or the token stays usable for the length of that window after the user believed they were
+    // out. `parked` is "signed out, profile kept on the tablet": `refresh` refuses it, `pinLogin`
+    // redeems it with the user's PIN.
+    revokedReason: text('revoked_reason').$type<'rotated' | 'logout' | 'parked'>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -75,3 +91,17 @@ export const rolePermissions = pgTable(
 
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
+
+export const settings = pgTable(
+  'settings',
+  {
+    // One row for the whole deployment. The CHECK keeps it that way; readers fall back to code
+    // defaults when the row does not exist yet, so nothing has to seed it.
+    id: integer('id').primaryKey().default(1),
+    idleTimeoutSeconds: integer('idle_timeout_seconds').notNull().default(120),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [check('settings_singleton', sql`${table.id} = 1`)],
+);
+
+export type Settings = typeof settings.$inferSelect;

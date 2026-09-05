@@ -48,3 +48,7 @@ test('a revoked row with no reason fails closed', () => {
   // `revoked_reason` is nullable and nothing backfills it.
   assert.equal(rejectRefresh(row({ revokedAt: ago(1), revokedReason: null }), NOW), 'revoked');
 });
+
+test('a parked token cannot be refreshed without its PIN', () => {
+  assert.equal(rejectRefresh(row({ revokedAt: ago(1), revokedReason: 'parked' }), NOW), 'revoked');
+});

@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1788333151155,
-      "tag": "0000_clear_darkstar",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1788506009564,
-      "tag": "0001_smiling_terror",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1788506949062,
-      "tag": "0002_wandering_dragon_man",
+      "when": 1788517290816,
+      "tag": "0000_plain_cloak",
       "breakpoints": true
     }
   ]
