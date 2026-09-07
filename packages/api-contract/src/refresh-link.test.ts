@@ -100,7 +100,11 @@ test('a refresh that fails on its own terms surfaces the refresh error, not the 
 
   const outcome = await settled;
   assert.equal((outcome.error as Error | undefined)?.message, 'Failed to fetch');
-  assert.equal((outcome.error as { data?: { code?: string } })?.data?.code, undefined, 'nothing downstream reads this as an auth failure');
+  assert.equal(
+    (outcome.error as { data?: { code?: string } })?.data?.code,
+    undefined,
+    'nothing downstream reads this as an auth failure',
+  );
   assert.equal(attempts.length, 1);
 });
 

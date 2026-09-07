@@ -12,8 +12,8 @@
     "db:seed": "node --env-file=.env drizzle/seed/__seed.ts",
     "db:studio": "drizzle-kit studio",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test src/auth/refresh-window.test.ts src/auth/pin-policy.test.ts drizzle/seed/seed-rbac.test.ts",
-    "check-types": "tsc --noEmit"
+    "test": "node --test src/auth/refresh-window.test.ts src/auth/pin-policy.test.ts src/trpc/error-formatter.test.ts drizzle/seed/seed-rbac.test.ts",
+    "check-types": "tsc --noEmit && tsc -p tsconfig.seed.json"
   },
   "dependencies": {
     "@nestjs/common": "11.2.3",

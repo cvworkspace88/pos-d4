@@ -52,3 +52,10 @@ test('a revoked row with no reason fails closed', () => {
 test('a parked token cannot be refreshed without its PIN', () => {
   assert.equal(rejectRefresh(row({ revokedAt: ago(1), revokedReason: 'parked' }), NOW), 'revoked');
 });
+
+test('a token a PIN login consumed gets no refresh grace — that is the point of the reason', () => {
+  // The bug this pins: stamping a redeemed profile `rotated` let the very token the PIN unlocked
+  // mint a PIN-free session for the length of the window, undoing the parking it just redeemed.
+  const justRedeemed = row({ revokedAt: ago(1), revokedReason: 'pin_rotated' });
+  assert.equal(rejectRefresh(justRedeemed, NOW), 'revoked');
+});

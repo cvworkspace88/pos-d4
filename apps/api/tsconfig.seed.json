@@ -1,0 +1,14 @@
+{
+  // Brings `drizzle/` under `check-types`, which the main project cannot do: its `rootDir` is
+  // `./src`, so including the seeds there breaks `nest build`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "composite": false,
+    "noEmit": true
+  },
+  "include": ["drizzle/**/*.ts", "src/**/*"],
+  // `__seed.ts` is the one exemption, and deliberately so: it is a top-level-await script, which
+  // NodeNext resolves as CommonJS here and rejects. It is 12 lines of wiring with no logic.
+  "exclude": ["node_modules", "dist", "drizzle/seed/__seed.ts"]
+}

@@ -12,12 +12,15 @@ export const ROLES = [
   ['auditor', 'Read-only across sales, products and inventory.'],
 ] as const;
 
+/** A role name, narrowed to what `ROLES` actually lists — catches a typo in `PERMISSIONS` at compile time. */
+export type RoleName = (typeof ROLES)[number][0];
+
 /**
  * permission -> the roles that hold it *besides* owner and manager, who hold everything except
  * `OWNER_ONLY`. A permission with an empty list is therefore owner/manager only (every `_approve`
  * gate) — or owner only, if it is in `OWNER_ONLY`.
  */
-export const PERMISSIONS: Record<string, string[]> = {
+export const PERMISSIONS: Record<string, RoleName[]> = {
   'sales.view': ['cashier', 'auditor'],
   'sales.create': ['cashier'],
   'sales.void_request': ['cashier'],
@@ -67,6 +70,7 @@ export const PERMISSIONS: Record<string, string[]> = {
   'order.item_remove_approve': [],
   'order.adjustment_request': ['waiter', 'cashier'],
   'order.adjustment_approve': [],
+  // Kitchen tickets are the floor's job; a cashier never sends one.
   'order.send_to_kitchen': ['waiter'],
   'order.hold': ['waiter', 'cashier'],
   'order.cancel_request': ['waiter', 'cashier'],
@@ -107,5 +111,7 @@ export async function seedRbac(db: NodePgDatabase<typeof schema>): Promise<void>
   );
 
   await db.insert(rolePermissions).values(grants).onConflictDoNothing();
-  console.log(`rbac: ${ROLES.length} roles, ${Object.keys(PERMISSIONS).length} permissions, ${grants.length} grants`);
+  console.log(
+    `rbac: ${ROLES.length} roles, ${Object.keys(PERMISSIONS).length} permissions, ${grants.length} grants`,
+  );
 }

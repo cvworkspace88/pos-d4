@@ -7,7 +7,7 @@ const jwt = (seconds: number) =>
   `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + seconds }))}.signature`;
 
 const session = (accessToken: string, refreshToken = 'r2'): Session => ({
-  user: { id: 'u1', name: 'Ada', username: 'ada' },
+  user: { id: 'u1', name: 'Ada', username: 'ada', hasPin: false },
   accessToken,
   refreshToken,
 });

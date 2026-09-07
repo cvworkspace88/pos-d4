@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { MiddlewareOptions, MiddlewareResponse, TRPCMiddleware } from 'nestjs-trpc';
-import { AuthService } from './auth.service';
+import { AuthService, publicUser } from './auth.service';
 
 @Injectable()
 export class ProtectedMiddleware implements TRPCMiddleware {
@@ -17,6 +17,6 @@ export class ProtectedMiddleware implements TRPCMiddleware {
 
     const user = await this.authService.userFromAccessToken(token);
 
-    return next({ ctx: { user: { id: user.id, name: user.name, username: user.username } } });
+    return next({ ctx: { user: publicUser(user) } });
   }
 }

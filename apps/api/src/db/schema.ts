@@ -43,8 +43,10 @@ export const refreshTokens = pgTable(
     // Why the row died — or paused. Only a rotation earns the refresh grace window: a sign-out must
     // not, or the token stays usable for the length of that window after the user believed they were
     // out. `parked` is "signed out, profile kept on the tablet": `refresh` refuses it, `pinLogin`
-    // redeems it with the user's PIN.
-    revokedReason: text('revoked_reason').$type<'rotated' | 'logout' | 'parked'>(),
+    // redeems it with the user's PIN. `pin_rotated` is what a PIN login leaves behind — its own
+    // grace window, honoured by `pinLogin` alone, so redeeming a profile never re-opens the
+    // PIN-free `refresh` path for the token it just consumed.
+    revokedReason: text('revoked_reason').$type<'rotated' | 'logout' | 'parked' | 'pin_rotated'>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

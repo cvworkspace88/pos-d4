@@ -35,6 +35,18 @@ test('a signed-out token cannot', () => {
   assert.equal(rejectPinLogin(row({ revokedAt: ago(1), revokedReason: 'logout' }), NOW), 'revoked');
 });
 
+test('a PIN login whose response was lost becomes a retry', () => {
+  const justRedeemed = row({ revokedAt: ago(5_000), revokedReason: 'pin_rotated' });
+  assert.equal(rejectPinLogin(justRedeemed, NOW), null);
+});
+
+test('that retry window closes with the grace period', () => {
+  const atEdge = row({ revokedAt: ago(REVOKE_GRACE_MS), revokedReason: 'pin_rotated' });
+  const pastEdge = row({ revokedAt: ago(REVOKE_GRACE_MS + 1), revokedReason: 'pin_rotated' });
+  assert.equal(rejectPinLogin(atEdge, NOW), null);
+  assert.equal(rejectPinLogin(pastEdge, NOW), 'revoked');
+});
+
 test('expiry outranks parking', () => {
   const parkedAndExpired = row({ expiresAt: ago(1), revokedAt: ago(1_000), revokedReason: 'parked' });
   assert.equal(rejectPinLogin(parkedAndExpired, NOW), 'expired');

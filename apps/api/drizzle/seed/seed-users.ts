@@ -27,5 +27,7 @@ export async function seedOwner(db: NodePgDatabase<typeof schema>): Promise<void
     .onConflictDoNothing()
     .returning({ id: users.id });
 
-  console.log(inserted.length ? `users: ${OWNER.username}/${OWNER.password} created` : 'users: owner already exists');
+  console.log(
+    inserted.length ? `users: ${OWNER.username}/${OWNER.password} created` : 'users: owner already exists',
+  );
 }

@@ -22,16 +22,42 @@ function apiUrl(): string {
 /** Unauthenticated client used only by the refresh call, so a refresh can never recurse into itself. */
 const refreshClient = createTRPCClient<AppRouter>({ links: [httpLink({ url: `${apiUrl()}/trpc` })] });
 
+// Which user the in-flight refresh belongs to. The provider shares one refresh across concurrent
+// callers, so one slot is enough. A refresh that fails because its owner parked must not sign out
+// whoever is using the tablet now — the reject-path twin of the identity check in setSession.
+let refreshingFor: string | null = null;
+
 const accessToken = createTokenProvider({
   getState: useAuthStore.getState,
-  setSession: (session) => useAuthStore.getState().setSession(session),
-  clear: () => useAuthStore.getState().clear(),
-  refresh: (refreshToken) => refreshClient.auth.refresh.mutate({ refreshToken }),
+  // The provider only refreshes the session that was active when the request started. By the time
+  // it resolves that session may be gone (Sign out, idle park, cold start) or replaced (another
+  // user PIN-logged-in meanwhile) — writing it back would undo the park, and on a shared tablet it
+  // would hand the till to whoever is standing there under the previous user's name. Identity, not
+  // presence: only the still-active user's own refresh may land. The rotated token still belongs in
+  // that user's profile either way, or their card points at a token the server has already retired.
+  setSession: (session) => {
+    const store = useAuthStore.getState();
+    if (store.accessToken !== null && store.user?.id === session.user.id) store.setSession(session);
+    else store.rememberRotation(session);
+  },
+  clear: () => {
+    const store = useAuthStore.getState();
+    if (store.user === null || store.user.id === refreshingFor) store.clear();
+  },
+  refresh: (refreshToken) => {
+    refreshingFor = useAuthStore.getState().user?.id ?? null;
+    return refreshClient.auth.refresh.mutate({ refreshToken });
+  },
 });
 
-/** A 401 the token's own `exp` could not predict (revoked user, rotated secret) still ends the session. */
+/**
+ * A 401 the token's own `exp` could not predict (revoked user, rotated secret) still ends the
+ * session. A wrong PIN is a 401 too but must never end one — it is a failed attempt to START a
+ * session, not proof the current one died.
+ */
 const onAuthError = (error: unknown) => {
-  if ((error as { data?: { code?: string } })?.data?.code === 'UNAUTHORIZED') useAuthStore.getState().clear();
+  const data = (error as { data?: { code?: string; reason?: string } })?.data;
+  if (data?.code === 'UNAUTHORIZED' && data.reason !== 'INVALID_PIN') useAuthStore.getState().clear();
 };
 
 export const queryClient = new QueryClient({

@@ -2,12 +2,12 @@
 
 Turborepo + pnpm monorepo. End-to-end typesafe from Postgres to phone and desktop.
 
-| Workspace | Stack |
-| --- | --- |
-| `apps/api` | NestJS 11, nestjs-trpc, Drizzle ORM + Postgres, Passport JWT (access + rotating refresh), argon2 |
-| `apps/mobile` | Expo SDK 57 + expo-router, tRPC + TanStack Query, Zustand, React Hook Form + Zod |
-| `apps/desktop` | electron-vite 5 + React 19, same tRPC/Query/Zustand/RHF client stack |
-| `packages/api-contract` | `AppRouter` type generated from the Nest routers — the single contract both clients import |
+| Workspace               | Stack                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `apps/api`              | NestJS 11, nestjs-trpc, Drizzle ORM + Postgres, Passport JWT (access + rotating refresh), argon2 |
+| `apps/mobile`           | Expo SDK 57 + expo-router, tRPC + TanStack Query, Zustand, React Hook Form + Zod                 |
+| `apps/desktop`          | electron-vite 5 + React 19, same tRPC/Query/Zustand/RHF client stack                             |
+| `packages/api-contract` | `AppRouter` type generated from the Nest routers — the single contract both clients import       |
 
 NestJS is pinned to 11 because `nestjs-trpc@2.13` does not accept Nest 12 yet.
 
@@ -18,7 +18,12 @@ pnpm install
 docker compose up -d              # Postgres on :5432
 cp apps/api/.env.example apps/api/.env
 pnpm db:migrate                   # apply drizzle/0000_*.sql
+pnpm db:seed                      # roles, permissions, and the first owner (owner/owner123)
 ```
+
+> The migrations were squashed into a single `0000_*.sql` while the project is pre-production. A
+> database created before the squash cannot migrate forward — drop it and start again:
+> `docker compose down -v && docker compose up -d && pnpm db:migrate && pnpm db:seed`.
 
 Set real values for `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` in `apps/api/.env` before deploying anywhere.
 
@@ -68,15 +73,48 @@ secret rotated, user deleted, device clock behind — forces one refresh and ret
 once. Two layers: `headers()` renews before sending, the link recovers when the server disagrees.
 The refresh call goes through a separate client without this link, so it cannot recurse.
 
+### Mobile profiles and PINs
+
+Tablets are shared. A staff member signs in once with username + password, is made to set a 6-digit
+PIN (`auth.setPin`, argon2-hashed in `users.pin_hash`), and from then on re-enters with the
+PIN alone. "Sign out" on mobile _parks_ the session: the client keeps the refresh token in its
+`profiles` map and calls `auth.park`, which stamps the row `revoked_reason = 'parked'`. A parked
+token is refused by `auth.refresh` (only `'rotated'` earns that grace window) and redeemed by
+`auth.pinLogin`, which checks the PIN and rotates it into a fresh session — stamping the consumed
+row `'pin_rotated'`, a reason only `pinLogin` grants a grace window, so redeeming a profile never
+re-opens the PIN-free `refresh` path for the token it just consumed. Removing a profile
+calls `auth.logout`, which kills live and parked rows alike. A profile lives `JWT_REFRESH_TTL_DAYS`
+from its last PIN login.
+
+Idle detection is client-side only (`apps/mobile/src/hooks/use-idle-timer.ts`): after
+`settings.idleTimeoutSeconds` without a touch the tablet parks the session and returns to the
+picker. Every cold start parks too. The owner sets the timeout from desktop (`settings.update`,
+guarded by the owner-only `settings.manage` permission via `RbacService.require`). There is no
+wrong-PIN lockout and no server-side idle guard — deliberate; see the spec's "Known ceilings".
+
+Desktop is unchanged: username + password, no PIN, no idle lock.
+
 ### Error codes: `UNAUTHORIZED` vs `FORBIDDEN`
 
 Load-bearing, not cosmetic. Both clients end the session on any `UNAUTHORIZED` — clearing the store
-and the query cache, which drops the user back to the login screen.
+and the query cache, which drops the user back to the login screen. The one exception is
+`reason: 'INVALID_PIN'`, below.
 
-| Code | Means | Use for |
-| --- | --- | --- |
-| `UNAUTHORIZED` | we don't know who you are | expired or invalid access token, invalid or revoked refresh token, failed login |
-| `FORBIDDEN` | we know who you are, you may not do this | permission and access-control failures — role checks, manager-only actions, another store's data |
+| Code                                                     | Means                                                       | Use for                                                                                          |
+| -------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `UNAUTHORIZED`                                           | we don't know who you are                                   | expired or invalid access token, invalid or revoked refresh token, failed login, wrong PIN       |
+| `FORBIDDEN`                                              | we know who you are, you may not do this                    | permission and access-control failures — role checks, manager-only actions, another store's data |
+| `UNAUTHORIZED` on `auth.pinLogin`                        | the profile is dead: expired, revoked, no PIN, user deleted | mobile removes the card and asks for the password                                                |
+| `UNAUTHORIZED` + `data.reason: 'INVALID_PIN'` on `auth.pinLogin` | the profile is fine, the digits were not             | mobile shows the message, keeps the card, and does not end any session                           |
 
 Returning `UNAUTHORIZED` from a permission check would sign the user out mid-action instead of
 showing them a refusal.
+
+### `data.reason`
+
+A wrong PIN is an invalid credential, so it answers `UNAUTHORIZED` (401) like every other failed
+credential — which leaves the code unable to say whether the card on screen is still good. That
+distinction moves to `data.reason`, set from a `TRPCError`'s string `cause` and put on the wire by
+`apps/api/src/trpc/error-formatter.ts` (tRPC does not serialize `cause` on its own). Clients cast to
+read it: the generated contract is built without the formatter, so `reason` is absent from the
+inferred error type.

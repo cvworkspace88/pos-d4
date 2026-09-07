@@ -8,6 +8,10 @@
 * sync client and server time. fast client clock reads the access token as expired early and
   refreshes every request. server checks refresh token expiry itself, so it is unaffected.
 * set `NODE_ENV=production` in deploy. tRPC returns full stack traces to clients by default.
+* [API] no automated regression test for the permission gate. `RbacService.require` and the
+  empty-permissions-for-no-role path are covered only by manual curl checks, which do not run in
+  CI. Needs a Postgres-backed integration harness — every existing test is `node:test` over pure
+  functions, so this is new infrastructure, not one more test file.
 
 # Consider 
 

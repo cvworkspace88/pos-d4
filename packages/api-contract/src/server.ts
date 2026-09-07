@@ -22,35 +22,74 @@ const appRouter = t.router({
       username: z.string().min(3).max(32),
       password: z.string().min(8).max(128),
     }))
-      .output(z.object({
-      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
-      accessToken: z.string(),
-      refreshToken: z.string(),
-    }))
+      .output(z.object({ user: z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  hasPin: z.boolean(),
+}), accessToken: z.string(), refreshToken: z.string() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     login: publicProcedure
       .input(z.object({ username: z.string().min(3).max(32), password: z.string().min(8).max(128) }))
-      .output(z.object({
-      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
-      accessToken: z.string(),
-      refreshToken: z.string(),
-    }))
+      .output(z.object({ user: z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  hasPin: z.boolean(),
+}), accessToken: z.string(), refreshToken: z.string() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     refresh: publicProcedure
       .input(z.object({ refreshToken: z.string().min(1) }))
-      .output(z.object({
-      user: z.object({ id: z.string(), name: z.string(), username: z.string() }),
-      accessToken: z.string(),
-      refreshToken: z.string(),
-    }))
+      .output(z.object({ user: z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  hasPin: z.boolean(),
+}), accessToken: z.string(), refreshToken: z.string() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     logout: publicProcedure
       .input(z.object({ refreshToken: z.string().min(1) }))
       .output(z.object({ success: z.boolean() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    park: publicProcedure
+      .input(z.object({ refreshToken: z.string().min(1) }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    pinLogin: publicProcedure
+      .input(z.object({ refreshToken: z.string().min(1), pin: z.string().regex(/^\d{6}$/, 'PIN must be 6 digits.') }))
+      .output(z.object({ user: z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  hasPin: z.boolean(),
+}), accessToken: z.string(), refreshToken: z.string() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    setPin: publicProcedure
+      .input(z.object({ pin: z.string().regex(/^\d{6}$/, 'PIN must be 6 digits.'), password: z.string().min(8).max(128).optional() }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  hasPin: z.boolean(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     me: publicProcedure
-      .output(z.object({ id: z.string(), name: z.string(), username: z.string() }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  hasPin: z.boolean(),
+}).extend({ permissions: z.array(z.string()) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
+  settings: t.router({
+    get: publicProcedure
+      .output(z.object({ idleTimeoutSeconds: z.number() }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    update: publicProcedure
+      .input(z.object({ idleTimeoutSeconds: z.number().int().min(30).max(3600) }))
+      .output(z.object({ idleTimeoutSeconds: z.number() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     })
 });
 

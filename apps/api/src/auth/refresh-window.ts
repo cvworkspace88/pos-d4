@@ -8,7 +8,7 @@ export const REVOKE_GRACE_MS = 30_000;
 interface RefreshRow {
   expiresAt: Date;
   revokedAt: Date | null;
-  revokedReason: 'rotated' | 'logout' | 'parked' | null;
+  revokedReason: 'rotated' | 'logout' | 'parked' | 'pin_rotated' | null;
 }
 
 /**
