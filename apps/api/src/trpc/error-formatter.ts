@@ -1,4 +1,8 @@
+import { randomUUID } from 'node:crypto';
+import { Logger } from '@nestjs/common';
 import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from '@trpc/server';
+
+const logger = new Logger('trpc');
 
 /**
  * A machine-readable discriminant for failures that deliberately share one tRPC code.
@@ -25,7 +29,12 @@ export class Reason extends Error {
 export const errorFormatter: TRPCErrorFormatter<Record<string, unknown>, TRPCDefaultErrorShape> = ({
   shape,
   error,
-}) => ({
-  ...shape,
-  data: { ...shape.data, reason: error.cause instanceof Reason ? error.cause.reason : undefined },
-});
+  path,
+}) => {
+  const traceId = randomUUID();
+  logger.error(`[${traceId}] ${path ?? 'unknown'} ${error.code}: ${error.message}`, error.stack);
+  return {
+    ...shape,
+    data: { ...shape.data, reason: error.cause instanceof Reason ? error.cause.reason : undefined, traceId },
+  };
+};
