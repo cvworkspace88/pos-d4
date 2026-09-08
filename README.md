@@ -106,6 +106,9 @@ and the query cache, which drops the user back to the login screen. The one exce
 | `FORBIDDEN`                                              | we know who you are, you may not do this                    | permission and access-control failures — role checks, manager-only actions, another store's data |
 | `UNAUTHORIZED` on `auth.pinLogin`                        | the profile is dead: expired, revoked, no PIN, user deleted | mobile removes the card and asks for the password                                                |
 | `UNAUTHORIZED` + `data.reason: 'INVALID_PIN'` on `auth.pinLogin` | the profile is fine, the digits were not             | mobile shows the message, keeps the card, and does not end any session                           |
+| `CONFLICT` on `table.create` / `table.update`             | a live table already has that name                          | keep the form open, show the message                                                             |
+| `PRECONDITION_FAILED` on `table.*` / `reservation.update`  | `Unmerge first.`, `Has a booked reservation.`, `Reservation is closed.` — state changed elsewhere | show the message, refetch `table.list` and `reservation.list`                                    |
+| `NOT_FOUND` on `table.*` / `reservation.*`                | the table or reservation was deleted on another client      | same as above                                                                                    |
 
 Returning `UNAUTHORIZED` from a permission check would sign the user out mid-action instead of
 showing them a refusal.

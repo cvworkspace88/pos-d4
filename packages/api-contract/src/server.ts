@@ -82,6 +82,163 @@ const appRouter = t.router({
 }).extend({ permissions: z.array(z.string()) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
+  reservation: t.router({
+    list: publicProcedure
+      .input(z.object({ from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }) }))
+      .output(z.array(z.object({
+  id: z.string(),
+  tableId: z.string(),
+  customerName: z.string(),
+  phone: z.string().nullable(),
+  partySize: z.number(),
+  startsAt: z.string(),
+  note: z.string().nullable(),
+  status: z.enum(['booked', 'seated', 'cancelled', 'no_show']),
+})))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    create: publicProcedure
+      .input(z.object({
+      tableId: z.string(),
+      customerName: z.string().trim().min(1).max(80),
+      phone: z.string().trim().max(32).optional(),
+      partySize: z.number().int().min(1).max(100),
+      startsAt: z.iso.datetime({ offset: true }),
+      note: z.string().trim().max(500).optional(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  tableId: z.string(),
+  customerName: z.string(),
+  phone: z.string().nullable(),
+  partySize: z.number(),
+  startsAt: z.string(),
+  note: z.string().nullable(),
+  status: z.enum(['booked', 'seated', 'cancelled', 'no_show']),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    update: publicProcedure
+      .input(z.object({
+      id: z.string(),
+      status: z.enum(['seated', 'cancelled', 'no_show']).optional(),
+      tableId: z.string().optional(),
+      customerName: z.string().trim().min(1).max(80).optional(),
+      phone: z.string().trim().max(32).optional(),
+      partySize: z.number().int().min(1).max(100).optional(),
+      startsAt: z.iso.datetime({ offset: true }).optional(),
+      note: z.string().trim().max(500).optional(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  tableId: z.string(),
+  customerName: z.string(),
+  phone: z.string().nullable(),
+  partySize: z.number(),
+  startsAt: z.string(),
+  note: z.string().nullable(),
+  status: z.enum(['booked', 'seated', 'cancelled', 'no_show']),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
+  table: t.router({
+    list: publicProcedure
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  seats: z.number(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  mergedIntoId: z.string().nullable(),
+})))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    create: publicProcedure
+      .input(z.object({
+      name: z.string().trim().min(1).max(20),
+      seats: z.number().int().min(1).max(50),
+      x: z.number().int().min(0).max(1000),
+      y: z.number().int().min(0).max(1000),
+      w: z.number().int().min(40).max(500),
+      h: z.number().int().min(40).max(500),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  seats: z.number(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  mergedIntoId: z.string().nullable(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    update: publicProcedure
+      .input(z.object({
+      id: z.string(),
+      name: z.string().trim().min(1).max(20),
+      seats: z.number().int().min(1).max(50),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  seats: z.number(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  mergedIntoId: z.string().nullable(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    updateLayout: publicProcedure
+      .input(z.object({ items: z.array(z.object({
+  id: z.string(),
+  x: z.number().int().min(0).max(1000),
+  y: z.number().int().min(0).max(1000),
+  w: z.number().int().min(40).max(500),
+  h: z.number().int().min(40).max(500),
+})).min(1).max(200) }))
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  seats: z.number(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  mergedIntoId: z.string().nullable(),
+})))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    delete: publicProcedure
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    merge: publicProcedure
+      .input(z.object({ headId: z.string(), memberIds: z.array(z.string()).min(1).max(50) }))
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  seats: z.number(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  mergedIntoId: z.string().nullable(),
+})))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    unmerge: publicProcedure
+      .input(z.object({ id: z.string() }))
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  seats: z.number(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  mergedIntoId: z.string().nullable(),
+})))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
   settings: t.router({
     get: publicProcedure
       .output(z.object({ idleTimeoutSeconds: z.number() }))

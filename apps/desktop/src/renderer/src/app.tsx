@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { FloorPlan } from './components/floor-plan';
 import { LoginForm } from './components/login-form';
 import { useAuthStore } from './stores/auth';
 import { trpcClient, useTRPC } from './trpc';
@@ -68,6 +69,7 @@ function Home() {
       <p>{me.isPending ? 'Loading…' : (me.data?.name ?? me.error?.message)}</p>
       <button onClick={signOut}>Sign out</button>
       {me.data?.permissions.includes('settings.manage') && <IdleTimeoutSetting />}
+      {me.data?.permissions.includes('table.view') && <FloorPlan permissions={me.data.permissions} />}
     </main>
   );
 }

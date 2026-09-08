@@ -10,7 +10,7 @@
   "scripts": {
     "check-types": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test src/refresh.test.ts src/refresh-link.test.ts"
+    "test": "node --test src/refresh.test.ts src/refresh-link.test.ts src/floor.test.ts"
   },
   "dependencies": {
     "@trpc/server": "11.18.0",

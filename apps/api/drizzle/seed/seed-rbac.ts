@@ -1,3 +1,4 @@
+import { notInArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../src/db/schema.ts';
 
@@ -51,17 +52,25 @@ export const PERMISSIONS: Record<string, RoleName[]> = {
   'inventory.supplier_manage': [],
 
   'table.view': ['waiter', 'cashier'],
+  'table.create': [],
+  'table.delete': [],
+  // Move, resize, rename, seats.
+  'table.layout_manage': [],
   'table.assign': ['waiter', 'cashier'],
   'table.transfer_request': ['waiter', 'cashier'],
   'table.transfer_approve': [],
-  'table.merge_request': ['waiter', 'cashier'],
-  'table.merge_approve': [],
+  // Direct: join tables into a group for a big party and split them again. No approval step.
+  'table.merge': ['waiter', 'cashier'],
   'table.close': ['waiter', 'cashier'],
   'table.force_close_request': ['waiter', 'cashier'],
   'table.force_close_approve': [],
   'table.reopen_request': ['waiter', 'cashier'],
   'table.reopen_approve': [],
-  'table.layout_manage': [],
+
+  'reservation.view': ['waiter', 'cashier'],
+  'reservation.create': ['waiter', 'cashier'],
+  // Seat, no-show, cancel, edit while still booked.
+  'reservation.update': ['waiter', 'cashier'],
 
   'order.view': ['waiter', 'cashier', 'auditor'],
   'order.create': ['waiter', 'cashier'],
@@ -99,6 +108,11 @@ export async function seedRbac(db: NodePgDatabase<typeof schema>): Promise<void>
     .insert(permissions)
     .values(Object.keys(PERMISSIONS).map((name) => ({ name })))
     .onConflictDoNothing();
+
+  // The seed is the source of truth: a permission dropped from PERMISSIONS leaves the database on
+  // the next run, and its role_permissions rows go with it through the FK cascade. Roles are never
+  // pruned — a user may still point at one.
+  await db.delete(permissions).where(notInArray(permissions.name, Object.keys(PERMISSIONS)));
 
   const roleId = new Map((await db.select().from(roles)).map((r) => [r.name, r.id]));
   const permissionId = new Map((await db.select().from(permissions)).map((p) => [p.name, p.id]));

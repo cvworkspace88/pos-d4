@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, Button, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { park } from '@/lib/session';
@@ -8,6 +8,7 @@ import { useTRPC } from '@/lib/trpc';
 
 export default function HomeScreen() {
   const trpc = useTRPC();
+  const router = useRouter();
   const { user, accessToken, hydrated } = useAuthStore();
   const me = useQuery({ ...trpc.auth.me.queryOptions(), enabled: Boolean(accessToken) });
 
@@ -20,6 +21,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>POS D4</Text>
       <Text>{me.isPending ? 'Loading…' : (me.data?.name ?? me.error?.message)}</Text>
+      {me.data?.permissions.includes('table.view') && <Button title="Floor" onPress={() => router.push('/floor')} />}
       <View style={styles.spacer} />
       {/* Keeps the profile on this tablet; remove it from the picker instead. */}
       <Button title="Sign out" onPress={park} />

@@ -17,3 +17,22 @@ test('settings.manage is owner only — manager does not hold everything after a
 test('every owner-only permission is a real permission', () => {
   for (const permission of OWNER_ONLY) assert.ok(permission in PERMISSIONS, permission);
 });
+
+test('table.merge is a direct floor action held by waiter and cashier', () => {
+  assert.deepEqual(holdersOf('table.merge'), ['owner', 'manager', 'waiter', 'cashier']);
+});
+
+test('the request/approve merge pair is gone', () => {
+  assert.equal('table.merge_request' in PERMISSIONS, false);
+  assert.equal('table.merge_approve' in PERMISSIONS, false);
+});
+
+test('table lifecycle and layout are manager and owner only', () => {
+  for (const permission of ['table.create', 'table.delete', 'table.layout_manage'])
+    assert.deepEqual(holdersOf(permission), ['owner', 'manager'], permission);
+});
+
+test('reservations are floor-staff work', () => {
+  for (const permission of ['reservation.view', 'reservation.create', 'reservation.update'])
+    assert.deepEqual(holdersOf(permission), ['owner', 'manager', 'waiter', 'cashier'], permission);
+});

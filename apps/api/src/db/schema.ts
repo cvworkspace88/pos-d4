@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   check,
   index,
   integer,
@@ -107,3 +108,66 @@ export const settings = pgTable(
 );
 
 export type Settings = typeof settings.$inferSelect;
+
+export const tables = pgTable(
+  'tables',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    seats: integer('seats').notNull().default(4),
+    // Virtual floor canvas 1000×1000 units; clients scale uniformly to their viewport.
+    x: integer('x').notNull().default(0),
+    y: integer('y').notNull().default(0),
+    w: integer('w').notNull().default(100),
+    h: integer('h').notNull().default(100),
+    // Set on members of a merge group, pointing at the head. Null = standalone or head. The head
+    // carries no marker: it is a head because rows point at it.
+    mergedIntoId: uuid('merged_into_id').references((): AnyPgColumn => tables.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    // Soft delete: future orders and today's reservations keep pointing at a real row.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    // A deleted "T3" can be recreated; only live names must be unique.
+    uniqueIndex('tables_name_active_idx').on(table.name).where(sql`${table.deletedAt} IS NULL`),
+    index('tables_merged_into_id_idx').on(table.mergedIntoId),
+  ],
+);
+
+export type Table = typeof tables.$inferSelect;
+
+export const reservations = pgTable(
+  'reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Restrict on delete: tables are soft-deleted, so this FK is never hit.
+    tableId: uuid('table_id')
+      .notNull()
+      .references(() => tables.id),
+    customerName: text('customer_name').notNull(),
+    phone: text('phone'),
+    partySize: integer('party_size').notNull(),
+    // The reservation time: date + clock time, timezone-aware. No end time.
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    note: text('note'),
+    status: text('status')
+      .$type<'booked' | 'seated' | 'cancelled' | 'no_show'>()
+      .notNull()
+      .default('booked'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [index('reservations_table_starts_idx').on(table.tableId, table.startsAt)],
+);
+
+export type Reservation = typeof reservations.$inferSelect;

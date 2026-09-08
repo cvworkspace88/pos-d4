@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TRPCModule } from 'nestjs-trpc';
 import { AuthModule } from './auth/auth.module';
 import { DbModule } from './db/db.module';
+import { FloorModule } from './floor/floor.module';
 import { SettingsModule } from './settings/settings.module';
 import { AppContext } from './trpc/app.context';
 import { errorFormatter } from './trpc/error-formatter';
@@ -14,6 +15,7 @@ import { errorFormatter } from './trpc/error-formatter';
     TRPCModule.forRoot({ basePath: '/trpc', context: AppContext, errorFormatter }),
     AuthModule,
     SettingsModule,
+    FloorModule,
   ],
   providers: [AppContext],
 })
