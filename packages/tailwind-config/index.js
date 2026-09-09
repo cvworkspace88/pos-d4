@@ -32,7 +32,8 @@ module.exports = {
 
         // Backgrounds. Named `surface` so utilities read `bg-surface-light`
         surface: {
-          DEFAULT: '#F5F6F8',
+          DEFAULT: '#FFFFFF',
+          canvas: '#F5F6F8',
           light: '#F9FAFB',
         },
 
@@ -89,6 +90,8 @@ module.exports = {
         pink: {
           light: '#FCD0F8',
         },
+
+        pebble: '#DDDFEB',
       },
     },
   },

@@ -6,7 +6,12 @@ export default defineConfig({
   main: {},
   preload: {},
   renderer: {
-    resolve: { alias: { '@': resolve(__dirname, 'src/renderer/src') } },
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src/renderer/src'),
+        '@ui': resolve(__dirname, 'src/renderer/src/components/ui'),
+      },
+    },
     plugins: [react()],
   },
 });

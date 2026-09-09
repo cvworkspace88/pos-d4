@@ -8,7 +8,6 @@ import { useAuthStore } from './stores/auth';
 
 export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 
-/** A physical device cannot reach "localhost" — fall back to the host running Metro. */
 function apiUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL;
   if (fromEnv) return fromEnv;

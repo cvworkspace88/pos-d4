@@ -30,8 +30,6 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit((values) => login.mutateAsync(values).catch(() => undefined))}>
-      <div className="bg-surface-light text-ink-secondary border border-border">hehe</div>
-
       <h1>Sign in</h1>
 
       <label htmlFor="username">Username</label>

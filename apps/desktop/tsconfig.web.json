@@ -5,7 +5,10 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "allowImportingTsExtensions": true,
-    "paths": { "@/*": ["./src/renderer/src/*"] }
+    "paths": {
+      "@/*": ["./src/renderer/src/*"],
+      "@ui/*": ["./src/renderer/src/components/ui/*"]
+    }
   },
   "include": ["src/renderer/src/**/*", "src/preload/index.d.ts"]
 }
