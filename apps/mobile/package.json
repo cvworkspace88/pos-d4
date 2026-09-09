@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo-google-fonts/poppins": "0.4.1",
     "@expo/ui": "~57.0.14",
     "@hookform/resolvers": "5.9.1",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -23,6 +24,7 @@
     "expo-symbols": "~57.0.2",
     "expo-system-ui": "~57.0.3",
     "expo-web-browser": "~57.0.2",
+    "nativewind": "4.2.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hook-form": "7.87.0",
@@ -38,8 +40,10 @@
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
+    "@repo/tailwind-config": "workspace:*",
     "@types/react": "~19.2.2",
     "eslint": "10.9.1",
+    "tailwindcss": "3.4.19",
     "typescript": "~6.0.3"
   },
   "scripts": {
