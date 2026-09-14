@@ -186,9 +186,9 @@ export class AuthService {
    */
   private async checkPin(user: User, pin: string): Promise<void> {
     if (!user.pinHash)
-      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'No PIN set. Sign in with your password.' });
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Belum ada PIN. Masuk dengan kata sandi.' });
     if (!(await argon2.verify(user.pinHash, pin)))
-      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Wrong PIN.', cause: new Reason('INVALID_PIN') });
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'PIN tidak cocok.', cause: new Reason('INVALID_PIN') });
   }
 
   /**
