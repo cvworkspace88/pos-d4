@@ -1,148 +1,78 @@
-import { useMutation } from '@tanstack/react-query';
 import { Redirect, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, Button, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert as RNAlert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Avatar } from '@ui/avatar';
+import { Button } from '@ui/button';
+import { Card } from '@ui/card';
 import { removeProfile } from '@/lib/session';
-import { useAuthStore, type Profile } from '@/lib/stores/auth';
-import { useTRPC } from '@/lib/trpc';
+import { useAuthStore } from '@/lib/stores/auth';
 
 export default function ProfilesScreen() {
-  const trpc = useTRPC();
   const router = useRouter();
-  const { accessToken, hydrated, profiles, setSession } = useAuthStore();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [pin, setPin] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
+  const { accessToken, hydrated, profiles } = useAuthStore();
 
-  const pinLogin = useMutation(trpc.auth.pinLogin.mutationOptions({ onSuccess: setSession }));
-
-  /**
-   * The failure handler has to know WHICH profile was submitted, and an observer-level `onError`
-   * cannot: react-query hands a still-pending mutation the newest render's options, so a handler
-   * closing over `selected` reads whichever card was tapped last rather than the one it is
-   * reporting on. On a shared tablet that is destructive — an UNAUTHORIZED for a dead profile
-   * would delete a colleague's live card and revoke their token. Per-call callbacks capture the
-   * target at submit time, so the two can never disagree.
-   */
-  const submit = (profile: Profile) =>
-    pinLogin.mutate(
-      { refreshToken: profile.refreshToken, pin },
-      {
-        onError: (error) => {
-          // Every PIN failure is UNAUTHORIZED, so the code alone cannot say whether the card is
-          // still good. `reason: 'INVALID_PIN'` means the profile is fine and the digits were not
-          // — keep it. Anything else means the profile is dead (expired, revoked, no PIN).
-          // Cast: the generated contract is built without the formatter, so `reason` is not in
-          // the inferred error type. Same reason `lib/trpc.ts` casts.
-          const data = error.data as { code?: string; reason?: string } | undefined;
-          if (data?.code === 'UNAUTHORIZED' && data.reason !== 'INVALID_PIN') {
-            removeProfile(profile.user.id);
-            setSelected((id) => (id === profile.user.id ? null : id));
-          }
-          setPin('');
-          setMessage(error.message);
-        },
-      },
-    );
-
-  if (!hydrated) return <ActivityIndicator style={styles.center} />;
+  if (!hydrated) return <ActivityIndicator className="flex-1" />;
   if (accessToken) return <Redirect href="/" />;
 
   const list = Object.values(profiles);
-  const current = selected ? profiles[selected] : undefined;
 
   const confirmRemove = (userId: string, name: string) =>
-    Alert.alert(`Remove ${name}?`, 'They will need their password to sign in here again.', [
-      { text: 'Cancel', style: 'cancel' },
+    RNAlert.alert(`Hapus ${name}?`, 'Mereka perlu kata sandi untuk masuk lagi di tablet ini.', [
+      { text: 'Batal', style: 'cancel' },
       {
-        text: 'Remove',
+        text: 'Hapus',
         style: 'destructive',
-        onPress: () => {
-          removeProfile(userId);
-          setSelected((id) => (id === userId ? null : id));
-        },
+        onPress: () => removeProfile(userId),
       },
     ]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Who is this?</Text>
-
-      {list.length === 0 && <Text style={styles.hint}>No one has signed in on this tablet yet.</Text>}
-
-      <View style={styles.grid}>
-        {list.map(({ user }) => (
-          <Pressable
-            key={user.id}
-            // Switching cards mid-check would leave a PIN typed for one user submitted against
-            // another, and a reply for the old card landing against the new selection.
-            disabled={pinLogin.isPending}
-            style={[styles.card, selected === user.id && styles.cardSelected]}
-            onPress={() => {
-              setSelected(user.id);
-              setPin('');
-              setMessage(null);
-            }}
-            onLongPress={() => confirmRemove(user.id, user.name)}
-          >
-            <Text style={styles.cardName}>{user.name}</Text>
-            {/* `name` has no unique constraint — two staff called "John Smith" would otherwise get
-                two identical cards. The username is what actually distinguishes them. */}
-            <Text style={styles.cardUser}>@{user.username}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {current && (
-        <View style={styles.pinBox}>
-          <Text>PIN for {current.user.name}</Text>
-          <TextInput
-            style={styles.input}
-            value={pin}
-            onChangeText={setPin}
-            keyboardType="number-pad"
-            secureTextEntry
-            maxLength={6}
-            autoFocus
-            placeholder="••••"
-          />
-          <Button
-            title={pinLogin.isPending ? 'Checking…' : 'Enter'}
-            disabled={pinLogin.isPending || !/^\d{6}$/.test(pin)}
-            onPress={() => submit(current)}
-          />
+    <SafeAreaView className="flex-1 bg-surface-canvas">
+      <ScrollView contentContainerClassName="flex-grow justify-center gap-8 p-6">
+        <View className="items-center gap-1">
+          <Text className="font-poppins-bold text-2xl text-ink-primary">Siapa yang bertugas?</Text>
+          <Text className="font-poppins text-sm text-ink-tertiary">Ketuk namamu, lalu masukkan PIN</Text>
         </View>
-      )}
 
-      {message && <Text style={styles.error}>{message}</Text>}
+        {list.length === 0 && (
+          <Text className="text-center font-poppins text-sm text-ink-tertiary">
+            Belum ada yang masuk di tablet ini.
+          </Text>
+        )}
 
-      <View style={styles.spacer} />
-      <Button title="Sign in with password" onPress={() => router.push('/login')} />
-      <Text style={styles.hint}>Long-press a name to remove it from this tablet.</Text>
+        <View className="flex-row flex-wrap justify-center gap-4">
+          {list.map(({ user }) => (
+            <Pressable
+              key={user.id}
+              testID={`profile-${user.username}`}
+              // Feedback lives on the wrapper, not the Card: an `active:` class on the Card would
+              // never fire — only the Pressable knows it is being pressed.
+              className="active:scale-[0.98] active:opacity-90"
+              onPress={() => router.push(`/pin/${user.id}`)}
+              onLongPress={() => confirmRemove(user.id, user.name)}
+            >
+              <Card className="w-44">
+                <Avatar name={user.name} seed={user.id} className="self-center" />
+                <View className="items-center gap-0.5">
+                  <Text className="font-poppins-semibold text-base text-ink-primary">{user.name}</Text>
+                  {/* `name` has no unique constraint — two staff called "John Smith" would otherwise
+                      get two identical cards. The username is what actually distinguishes them. */}
+                  <Text className="font-poppins text-xs text-ink-tertiary">@{user.username}</Text>
+                </View>
+              </Card>
+            </Pressable>
+          ))}
+        </View>
+
+        <View className="items-center gap-2">
+          <Button testID="profiles-password" variant="soft" size="lg" onPress={() => router.push('/login')}>
+            Masuk dengan username & sandi
+          </Button>
+          <Text className="font-poppins text-xs text-ink-muted">
+            Tekan lama sebuah nama untuk menghapusnya dari tablet ini.
+          </Text>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1 },
-  container: { flex: 1, padding: 24, gap: 12, justifyContent: 'center' },
-  title: { fontSize: 28, fontWeight: '600', marginBottom: 8 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  card: { padding: 20, minWidth: 140, borderWidth: 1, borderColor: '#ccc', borderRadius: 12 },
-  cardSelected: { borderColor: '#208AEF', borderWidth: 2 },
-  cardName: { fontSize: 18, fontWeight: '500' },
-  cardUser: { color: '#666', fontSize: 13 },
-  pinBox: { gap: 8, marginTop: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 24,
-    letterSpacing: 8,
-  },
-  error: { color: '#c00' },
-  hint: { color: '#666' },
-  spacer: { height: 8 },
-});
