@@ -68,7 +68,7 @@ export function TextField({
 export type PasswordFieldProps = Omit<TextFieldProps, 'adornment' | 'secureTextEntry'>;
 
 /** A `TextField` that can reveal what was typed. */
-export function PasswordField({ disabled, ...props }: PasswordFieldProps) {
+export function PasswordField({ disabled, testID, ...props }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
   const Icon = visible ? EyeOff : Eye;
 
@@ -76,12 +76,15 @@ export function PasswordField({ disabled, ...props }: PasswordFieldProps) {
     <TextField
       secureTextEntry={!visible}
       disabled={disabled}
+      testID={testID}
       autoCapitalize="none"
       autoCorrect={false}
       adornment={
         <Pressable
           hitSlop={8}
           disabled={disabled}
+          // Derived so a caller that names the field also names its toggle.
+          testID={testID && `${testID}-toggle`}
           accessibilityRole="button"
           accessibilityLabel={visible ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
           onPress={() => setVisible((v) => !v)}

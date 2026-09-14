@@ -77,6 +77,7 @@ export type PasswordFieldProps = Omit<TextFieldProps, 'type' | 'adornment'>;
 
 /** A `TextField` that can reveal what was typed. */
 export function PasswordField({ disabled, ...props }: PasswordFieldProps) {
+  const testId = (props as { 'data-testid'?: string })['data-testid'];
   const [visible, setVisible] = useState(false);
   const Icon = visible ? EyeOff : Eye;
 
@@ -92,6 +93,8 @@ export function PasswordField({ disabled, ...props }: PasswordFieldProps) {
           // not a step in filling the form.
           tabIndex={-1}
           aria-label={visible ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+          // Derived so a caller that names the field also names its toggle.
+          data-testid={testId && `${testId}-toggle`}
           className="shrink-0 text-ink-tertiary disabled:text-ink-muted"
           onClick={() => setVisible((v) => !v)}
         >
