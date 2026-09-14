@@ -7,7 +7,7 @@ import { useId, useState, type ComponentProps, type ReactNode } from 'react';
  * bare input and a fully annotated one. The border lives on the row rather than the input so an
  * adornment (the password toggle) sits inside the box and still lights up with it on focus.
  */
-const rowVariants = cva('flex items-center gap-2 rounded-[14px] border px-4 py-3', {
+const rowVariants = cva('flex items-center gap-2 rounded-xl border px-4 py-3', {
   variants: {
     invalid: {
       true: 'border-danger focus-within:border-danger',

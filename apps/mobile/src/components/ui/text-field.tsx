@@ -7,7 +7,7 @@ import { Pressable, Text, TextInput, View, type TextInputProps } from 'react-nat
  * Mirrors the desktop text field. The border lives on the row rather than the input so an
  * adornment (the password toggle) sits inside the box and still lights up with it on focus.
  */
-const rowVariants = cva('flex-row items-center gap-2 rounded-[14px] border px-4 py-3', {
+const rowVariants = cva('flex-row items-center gap-2 rounded-xl border px-4 py-3', {
   variants: {
     invalid: {
       true: 'border-danger',
