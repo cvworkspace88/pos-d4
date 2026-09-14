@@ -67,7 +67,9 @@ export class AuthService {
     // against ~100ms for a real one — a username-enumeration signal. Verifying against a dummy hash
     // would even the cost; see backlog.md before changing this.
     const valid = user ? await argon2.verify(user.passwordHash, input.password) : false;
-    if (!user || !valid) throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials.' });
+    // One message for both halves, so it never says which of the two was wrong.
+    if (!user || !valid)
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Username atau kata sandi salah.' });
 
     return this.issueSession(user);
   }
