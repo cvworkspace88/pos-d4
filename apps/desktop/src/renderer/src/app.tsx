@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert, type AlertVariant } from '@ui/alert';
 import { Button, type ButtonSize, type ButtonVariant } from '@ui/button';
+import { PasswordField, TextField } from '@ui/text-field';
 import { FloorPlan } from './components/floor-plan';
 import { LoginForm } from './components/login-form';
 import { useAuthStore } from './stores/auth';
@@ -115,12 +116,26 @@ function AlertShowcase() {
   );
 }
 
+/** Default, filled, disabled, plus the error and helper messages and the password toggle. */
+function TextFieldShowcase() {
+  return (
+    <section className="flex flex-col gap-3 p-6 pt-0 max-w-md">
+      <TextField label="Label" placeholder="Nilai" />
+      <TextField label="Label" defaultValue="Nilai" helperText="Kalimat penjelas." />
+      <TextField label="Label" placeholder="Nilai" disabled />
+      <TextField label="Label" defaultValue="Nilai" error="Kalimat kesalahan." />
+      <PasswordField label="Kata sandi" placeholder="••••••••" />
+    </section>
+  );
+}
+
 export function App() {
   const accessToken = useAuthStore((s) => s.accessToken);
   return (
     <>
       <ButtonShowcase />
       <AlertShowcase />
+      <TextFieldShowcase />
       {accessToken ? <Home /> : <LoginForm />}
     </>
   );

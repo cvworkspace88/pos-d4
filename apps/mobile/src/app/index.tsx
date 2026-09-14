@@ -4,6 +4,7 @@ import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Alert, type AlertVariant } from '@ui/alert';
 import { Button as UIButton, type ButtonSize, type ButtonVariant } from '@ui/button';
+import { PasswordField, TextField } from '@ui/text-field';
 import { park } from '@/lib/session';
 import { useAuthStore } from '@/lib/stores/auth';
 import { useTRPC } from '@/lib/trpc';
@@ -47,6 +48,19 @@ function AlertShowcase() {
   );
 }
 
+/** Default, filled, disabled, plus the error and helper messages and the password toggle. */
+function TextFieldShowcase() {
+  return (
+    <View className="gap-3 pb-4">
+      <TextField label="Label" placeholder="Nilai" />
+      <TextField label="Label" defaultValue="Nilai" helperText="Kalimat penjelas." />
+      <TextField label="Label" placeholder="Nilai" disabled />
+      <TextField label="Label" defaultValue="Nilai" error="Kalimat kesalahan." />
+      <PasswordField label="Kata sandi" placeholder="••••••••" />
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const trpc = useTRPC();
   const router = useRouter();
@@ -65,6 +79,7 @@ export default function HomeScreen() {
         <Text>{me.isPending ? 'Loading…' : (me.data?.name ?? me.error?.message)}</Text>
         <ButtonShowcase />
         <AlertShowcase />
+        <TextFieldShowcase />
         {me.data?.permissions.includes('table.view') && (
           <Button title="Floor" onPress={() => router.push('/floor')} />
         )}
