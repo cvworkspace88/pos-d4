@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Alert, type AlertVariant } from '@ui/alert';
 import { Button, type ButtonSize, type ButtonVariant } from '@ui/button';
 import { FloorPlan } from './components/floor-plan';
 import { LoginForm } from './components/login-form';
@@ -77,6 +78,7 @@ function Home() {
 
 const VARIANTS: ButtonVariant[] = ['default', 'ghost', 'outline', 'soft'];
 const SIZES: ButtonSize[] = ['lg', 'md', 'sm'];
+const ALERT_VARIANTS: AlertVariant[] = ['primary', 'warning', 'danger', 'success'];
 
 /** Every button variant at every size, plus the disabled state of each. */
 function ButtonShowcase() {
@@ -100,11 +102,25 @@ function ButtonShowcase() {
   );
 }
 
+/** Every alert variant. */
+function AlertShowcase() {
+  return (
+    <section className="flex flex-col gap-3 p-6 pt-0">
+      {ALERT_VARIANTS.map((variant) => (
+        <Alert key={variant} variant={variant}>
+          Kalimat penjelas.
+        </Alert>
+      ))}
+    </section>
+  );
+}
+
 export function App() {
   const accessToken = useAuthStore((s) => s.accessToken);
   return (
     <>
       <ButtonShowcase />
+      <AlertShowcase />
       {accessToken ? <Home /> : <LoginForm />}
     </>
   );

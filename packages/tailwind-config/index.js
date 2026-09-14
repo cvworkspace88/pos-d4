@@ -2,7 +2,7 @@
  * Shared brand palette for every client. Consumed as a Tailwind preset so the desktop renderer
  * and the Expo tablet resolve `bg-primary` to the same hex, and one edit here moves both.
  *
- * Colors only. Everything else is platform-specific and stays in the app's own config:
+ * Colors (plus the default border color) only. Everything else is platform-specific and stays in the app's own config:
  * `content` globs, `corePlugins`, NativeWind's preset, and `fontFamily` — the web uses one
  * Poppins family with font-weight utilities, while React Native needs a separate family per
  * weight because font-weight does not switch between them there.
@@ -12,6 +12,10 @@
 module.exports = {
   theme: {
     extend: {
+      borderColor: {
+        DEFAULT: '#D0D4E4',
+      },
+
       colors: {
         // Primary
         primary: {

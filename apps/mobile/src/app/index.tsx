@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, type AlertVariant } from '@ui/alert';
 import { Button as UIButton, type ButtonSize, type ButtonVariant } from '@ui/button';
 import { park } from '@/lib/session';
 import { useAuthStore } from '@/lib/stores/auth';
@@ -9,6 +10,7 @@ import { useTRPC } from '@/lib/trpc';
 
 const VARIANTS: ButtonVariant[] = ['default', 'ghost', 'outline', 'soft'];
 const SIZES: ButtonSize[] = ['lg', 'md', 'sm'];
+const ALERT_VARIANTS: AlertVariant[] = ['primary', 'warning', 'danger', 'success'];
 
 /** Every button variant at every size, plus the disabled state of each. */
 function ButtonShowcase() {
@@ -32,6 +34,19 @@ function ButtonShowcase() {
   );
 }
 
+/** Every alert variant. */
+function AlertShowcase() {
+  return (
+    <View className="gap-3 pb-4">
+      {ALERT_VARIANTS.map((variant) => (
+        <Alert key={variant} variant={variant}>
+          Kalimat penjelas.
+        </Alert>
+      ))}
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const trpc = useTRPC();
   const router = useRouter();
@@ -49,7 +64,10 @@ export default function HomeScreen() {
         <Text style={styles.title}>POS D4</Text>
         <Text>{me.isPending ? 'Loading…' : (me.data?.name ?? me.error?.message)}</Text>
         <ButtonShowcase />
-        {me.data?.permissions.includes('table.view') && <Button title="Floor" onPress={() => router.push('/floor')} />}
+        <AlertShowcase />
+        {me.data?.permissions.includes('table.view') && (
+          <Button title="Floor" onPress={() => router.push('/floor')} />
+        )}
         <View style={styles.spacer} />
         {/* Keeps the profile on this tablet; remove it from the picker instead. */}
         <Button title="Sign out" onPress={park} />

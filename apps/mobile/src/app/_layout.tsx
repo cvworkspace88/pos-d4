@@ -9,13 +9,18 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { cssInterop } from 'nativewind';
 import { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useIdleTimer } from '@/hooks/use-idle-timer';
 import { TRPCProvider, queryClient, trpcClient } from '@/lib/trpc';
 
 SplashScreen.preventAutoHideAsync();
+
+// NativeWind only wires `className` to `style` for React Native's own components (plus
+// SafeAreaView). Any other component silently receives `className` as an unknown prop and drops
+// it, so the root has to be registered before it can be styled with utilities.
+cssInterop(GestureHandlerRootView, { className: 'style' });
 
 /** Inside the providers so the idle hook can query settings. */
 function Shell() {
@@ -24,13 +29,15 @@ function Shell() {
     // Capture-phase responder sees every touch on every screen without stealing any of them —
     // including touches gesture-handler goes on to claim for a drag.
     <GestureHandlerRootView
-      style={styles.root}
+      className="flex-1 bg-surface-light"
       onStartShouldSetResponderCapture={() => {
         bump();
         return false;
       }}
     >
-      <Stack screenOptions={{ headerShown: false }} />
+      {/* Screens are transparent so the root background shows through; react-navigation
+          otherwise paints every card with its own theme background. */}
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }} />
     </GestureHandlerRootView>
   );
 }
@@ -62,5 +69,3 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
-
-const styles = StyleSheet.create({ root: { flex: 1 } });
