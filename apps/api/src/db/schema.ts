@@ -95,6 +95,34 @@ export const rolePermissions = pgTable(
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
 
+/**
+ * Per-user exceptions to what the role gives. One row per (user, permission): 'grant' adds what
+ * the role lacks, 'revoke' takes back what it gives, and no row at all means inherit the role.
+ * The primary key is what stops a grant and a revoke from ever fighting over the same permission.
+ */
+export const userPermissions = pgTable(
+  'user_permissions',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // Cascade matters here: `seedRbac` deletes permissions dropped from PERMISSIONS, and an
+    // override pointing at a permission that no longer exists must go with it.
+    permissionId: uuid('permission_id')
+      .notNull()
+      .references(() => permissions.id, { onDelete: 'cascade' }),
+    effect: text('effect').$type<'grant' | 'revoke'>().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.permissionId] }),
+    // This table decides who may do what: a misspelled effect has to fail at write time rather
+    // than read back as neither a grant nor a revoke.
+    check('user_permissions_effect', sql`${table.effect} IN ('grant', 'revoke')`),
+  ],
+);
+
+export type UserPermission = typeof userPermissions.$inferSelect;
+
 export const settings = pgTable(
   'settings',
   {

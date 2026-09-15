@@ -15,6 +15,13 @@
       "when": 1788841144754,
       "tag": "0001_thick_bromley",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789457302021,
+      "tag": "0002_shallow_blonde_phantom",
+      "breakpoints": true
     }
   ]
 }
