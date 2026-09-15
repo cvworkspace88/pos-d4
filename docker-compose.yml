@@ -1,6 +1,13 @@
+# Two clusters, because sync only proves itself with two. `cloud` is the server the backoffice
+# talks to; `local` stands in for the Postgres on the cashier station. Run the API twice against
+# them (DEPLOYMENT=cloud / DEPLOYMENT=local) and the outbox drain is exercised over real HTTP
+# between two real databases — including the offline case, by stopping `cloud`.
+#
+# Distinct database names on purpose: a mistyped port then fails to connect instead of quietly
+# writing outlet data into the server, which is the one bug that would be miserable to find.
 services:
-  postgres:
-    image: postgres:${POSTGRES_VERSION:-18}-alpine
+  cloud:
+    image: postgres:${POSTGRES_VERSION:-18.4}-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -19,5 +26,24 @@ services:
       timeout: 5s
       retries: 10
 
+  local:
+    image: postgres:${POSTGRES_VERSION:-18.4}-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_LOCAL_DB:-pos_d4_local}
+    ports:
+      - "${POSTGRES_LOCAL_PORT:-5434}:5432"
+    volumes:
+      - postgres-local-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_LOCAL_DB:-pos_d4_local}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
+  postgres-local-data:
