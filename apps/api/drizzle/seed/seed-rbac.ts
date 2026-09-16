@@ -85,11 +85,16 @@ export const PERMISSIONS: Record<string, RoleName[]> = {
   'order.cancel_request': ['waiter', 'cashier'],
   'order.cancel_approve': [],
 
+  // An outlet is a physical location: its own address, terminals, and later its own menu.
+  'outlet.view': ['cashier', 'waiter', 'inventory_staff', 'auditor'],
+  'outlet.staff_assign': [],
+  'outlet.manage': [],
+
   'settings.manage': [],
 };
 
 /** Permissions the owner alone holds — the one exception to "manager holds everything". */
-export const OWNER_ONLY: ReadonlySet<string> = new Set(['settings.manage']);
+export const OWNER_ONLY: ReadonlySet<string> = new Set(['settings.manage', 'outlet.manage']);
 
 /** The full holder list for a permission — owner and manager hold everything but `OWNER_ONLY`. */
 export const holdersOf = (permission: string): string[] =>

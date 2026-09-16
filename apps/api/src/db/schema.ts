@@ -199,3 +199,50 @@ export const reservations = pgTable(
 );
 
 export type Reservation = typeof reservations.$inferSelect;
+
+export const outlets = pgTable(
+  'outlets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    // Short human key shown on receipts and terminal setup, e.g. 'HQ', 'BR2'. Stored uppercase.
+    code: text('code').notNull(),
+    address: text('address'),
+    phone: text('phone'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    // Soft delete: a closed outlet still owns past sales and the staff rows that point at it.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    // A closed 'Downtown' can be reopened under the same name; only live rows must be unique.
+    uniqueIndex('outlets_name_active_idx').on(table.name).where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex('outlets_code_active_idx').on(table.code).where(sql`${table.deletedAt} IS NULL`),
+  ],
+);
+
+/** Which staff may work at an outlet. No row = not assigned; zero outlets is a valid state. */
+export const outletStaff = pgTable(
+  'outlet_staff',
+  {
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id, { onDelete: 'cascade' }),
+    // The column is `user_id`, not `staff_id`: it is an FK to `users`. "Staff" is the role word.
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.outletId, table.userId] }),
+    // The PK covers outlet -> staff, which `outlet.staff` reads; this covers the reverse, which
+    // login will read in the next spec to decide whether the user picks an outlet.
+    index('outlet_staff_user_id_idx').on(table.userId),
+  ],
+);
+
+export type Outlet = typeof outlets.$inferSelect;
+export type OutletStaff = typeof outletStaff.$inferSelect;

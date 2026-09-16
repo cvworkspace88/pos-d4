@@ -36,3 +36,22 @@ test('reservations are floor-staff work', () => {
   for (const permission of ['reservation.view', 'reservation.create', 'reservation.update'])
     assert.deepEqual(holdersOf(permission), ['owner', 'manager', 'waiter', 'cashier'], permission);
 });
+
+test('opening and closing an outlet is the owner alone', () => {
+  assert.deepEqual(holdersOf('outlet.manage'), ['owner']);
+});
+
+test('moving staff between outlets is the manager job too', () => {
+  assert.deepEqual(holdersOf('outlet.staff_assign'), ['owner', 'manager']);
+});
+
+test('every role can see the outlet list', () => {
+  assert.deepEqual(holdersOf('outlet.view'), [
+    'owner',
+    'manager',
+    'cashier',
+    'waiter',
+    'inventory_staff',
+    'auditor',
+  ]);
+});

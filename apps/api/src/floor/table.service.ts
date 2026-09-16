@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
+import { isUniqueViolation } from '../db/errors';
 import { reservations, tables, type Table } from '../db/schema';
 import { rejectDelete, rejectMerge } from './floor-rules';
 
@@ -53,13 +54,6 @@ function clampToCanvas<T extends { x: number; y: number; w: number; h: number }>
 }
 
 const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Table not found.' });
-
-/** Postgres unique violation. drizzle ≥ 0.44 wraps driver errors, so look at `cause` too. */
-const isUniqueViolation = (error: unknown): boolean => {
-  const direct = (error as { code?: string }).code;
-  const nested = (error as { cause?: { code?: string } }).cause?.code;
-  return direct === '23505' || nested === '23505';
-};
 
 @Injectable()
 export class TableService {

@@ -4,6 +4,7 @@ import { TRPCModule } from 'nestjs-trpc';
 import { AuthModule } from './auth/auth.module';
 import { DbModule } from './db/db.module';
 import { FloorModule } from './floor/floor.module';
+import { OutletModule } from './outlet/outlet.module';
 import { SettingsModule } from './settings/settings.module';
 import { AppContext } from './trpc/app.context';
 import { errorFormatter } from './trpc/error-formatter';
@@ -16,6 +17,7 @@ import { errorFormatter } from './trpc/error-formatter';
     AuthModule,
     SettingsModule,
     FloorModule,
+    OutletModule,
   ],
   providers: [AppContext],
 })
