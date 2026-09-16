@@ -1,8 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Alert, type AlertVariant } from '@ui/alert';
-import { Button, type ButtonSize, type ButtonVariant } from '@ui/button';
-import { PasswordField, TextField } from '@ui/text-field';
 import { FloorPlan } from './components/floor-plan';
 import { LoginForm } from './components/login-form';
 import { useAuthStore } from './stores/auth';
@@ -77,66 +74,7 @@ function Home() {
   );
 }
 
-const VARIANTS: ButtonVariant[] = ['default', 'ghost', 'outline', 'soft'];
-const SIZES: ButtonSize[] = ['lg', 'md', 'sm'];
-const ALERT_VARIANTS: AlertVariant[] = ['primary', 'warning', 'danger', 'success'];
-
-/** Every button variant at every size, plus the disabled state of each. */
-function ButtonShowcase() {
-  return (
-    <section className="flex flex-col gap-4 p-6">
-      {SIZES.map((size) => (
-        <div key={size} className="flex flex-wrap items-center gap-3">
-          {VARIANTS.map((variant) => (
-            <Button key={variant} variant={variant} size={size}>
-              {variant} / {size}
-            </Button>
-          ))}
-          {VARIANTS.map((variant) => (
-            <Button key={`${variant}-disabled`} variant={variant} size={size} disabled>
-              {variant} / {size} disabled
-            </Button>
-          ))}
-        </div>
-      ))}
-    </section>
-  );
-}
-
-/** Every alert variant. */
-function AlertShowcase() {
-  return (
-    <section className="flex flex-col gap-3 p-6 pt-0">
-      {ALERT_VARIANTS.map((variant) => (
-        <Alert key={variant} variant={variant}>
-          Kalimat penjelas.
-        </Alert>
-      ))}
-    </section>
-  );
-}
-
-/** Default, filled, disabled, plus the error and helper messages and the password toggle. */
-function TextFieldShowcase() {
-  return (
-    <section className="flex flex-col gap-3 p-6 pt-0 max-w-md">
-      <TextField label="Label" placeholder="Nilai" />
-      <TextField label="Label" defaultValue="Nilai" helperText="Kalimat penjelas." />
-      <TextField label="Label" placeholder="Nilai" disabled />
-      <TextField label="Label" defaultValue="Nilai" error="Kalimat kesalahan." />
-      <PasswordField label="Kata sandi" placeholder="••••••••" />
-    </section>
-  );
-}
-
 export function App() {
   const accessToken = useAuthStore((s) => s.accessToken);
-  return (
-    <>
-      <ButtonShowcase />
-      <AlertShowcase />
-      <TextFieldShowcase />
-      {accessToken ? <Home /> : <LoginForm />}
-    </>
-  );
+  return accessToken ? <Home /> : <LoginForm />;
 }
