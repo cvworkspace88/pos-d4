@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { conflictField, normalizeCode, staffDiff } from './outlet-rules.ts';
 
 test('a code is stored trimmed and uppercase, so br2 and BR2 collide', () => {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { REVOKE_GRACE_MS, rejectRefresh } from './refresh-window.ts';
 
 const NOW = Date.UTC(2026, 8, 2, 12, 0, 0);

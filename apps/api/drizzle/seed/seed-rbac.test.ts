@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { OWNER_ONLY, PERMISSIONS, holdersOf } from './seed-rbac.ts';
 
 test('an approve gate belongs to owner and manager', () => {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { TRPCError } from '@trpc/server';
 import { Reason, errorFormatter } from './error-formatter.ts';
 

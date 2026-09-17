@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { HAS_BOOKED, UNMERGE_FIRST, rejectDelete, rejectMerge } from './floor-rules.ts';
 
 const t = (id: string, mergedIntoId: string | null = null) => ({ id, mergedIntoId });

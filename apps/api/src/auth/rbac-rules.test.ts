@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { type PermissionRow, effectivePermissions } from './rbac-rules.ts';
 
 const role = (...names: string[]): PermissionRow[] =>

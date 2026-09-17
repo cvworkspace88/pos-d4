@@ -12,7 +12,8 @@
     "db:seed": "node --env-file=.env drizzle/seed/__seed.ts",
     "db:studio": "drizzle-kit studio",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test src/auth/refresh-window.test.ts src/auth/pin-policy.test.ts src/auth/rbac-rules.test.ts src/trpc/error-formatter.test.ts src/floor/floor-rules.test.ts drizzle/seed/seed-rbac.test.ts src/outlet/outlet-rules.test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "check-types": "tsc --noEmit && tsc -p tsconfig.seed.json"
   },
   "dependencies": {
@@ -36,8 +37,8 @@
   },
   "devDependencies": {
     "@nestjs/cli": "11.0.24",
-    "@repo/eslint-config": "workspace:*",
     "@nestjs/schematics": "11.1.0",
+    "@repo/eslint-config": "workspace:*",
     "@types/express": "5.0.6",
     "@types/node": "22.20.1",
     "@types/passport-jwt": "4.0.1",
@@ -45,6 +46,7 @@
     "concurrently": "10.0.5",
     "drizzle-kit": "0.31.10",
     "eslint": "10.9.1",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "5.0.1"
   }
 }

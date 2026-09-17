@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { rejectPinLogin } from './pin-policy.ts';
 import { REVOKE_GRACE_MS } from './refresh-window.ts';
 
