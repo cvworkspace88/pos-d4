@@ -16,6 +16,8 @@
     "desktop:build": "turbo run build --filter=@repo/desktop",
     "desktop:preview": "pnpm --filter @repo/desktop preview",
     "desktop:package": "pnpm --filter @repo/desktop package",
+    "backoffice:dev": "turbo run dev --filter=@repo/backoffice",
+    "backoffice:build": "turbo run build --filter=@repo/backoffice",
     "mobile:dev": "turbo run dev --filter=@repo/mobile",
     "mobile:ios": "pnpm --filter @repo/mobile ios",
     "mobile:android": "pnpm --filter @repo/mobile android",

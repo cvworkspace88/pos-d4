@@ -7,7 +7,9 @@ Turborepo + pnpm monorepo. End-to-end typesafe from Postgres to phone and deskto
 | `apps/api`              | NestJS 11, nestjs-trpc, Drizzle ORM + Postgres, Passport JWT (access + rotating refresh), argon2 |
 | `apps/mobile`           | Expo SDK 57 + expo-router, tRPC + TanStack Query, Zustand, React Hook Form + Zod                 |
 | `apps/desktop`          | electron-vite 5 + React 19, same tRPC/Query/Zustand/RHF client stack                             |
+| `apps/backoffice`       | Vite 8 + React 19 admin web app, shares `@repo/ui` and the brand palette with desktop           |
 | `packages/api-contract` | `AppRouter` type generated from the Nest routers — the single contract both clients import       |
+| `packages/ui`           | Web components (`Button`, `Card`, `Alert`, `TextField`) shared by desktop and backoffice; source `.tsx`, no build |
 
 NestJS is pinned to 11 because `nestjs-trpc@2.13` does not accept Nest 12 yet.
 
@@ -33,6 +35,7 @@ Set real values for `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` in `apps/api/.e
 pnpm --filter @repo/api dev       # Nest on :3333 + tRPC type generation in watch mode
 pnpm --filter @repo/mobile dev          # Expo
 pnpm --filter @repo/desktop dev   # Electron
+pnpm --filter @repo/backoffice dev   # Vite on :5173
 ```
 
 `apps/api dev` regenerates `packages/api-contract/src/server.ts` on every router change, so both

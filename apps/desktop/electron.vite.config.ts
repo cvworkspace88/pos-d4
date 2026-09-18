@@ -9,7 +9,6 @@ export default defineConfig({
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src/renderer/src'),
-        '@ui': resolve(__dirname, 'src/renderer/src/components/ui'),
       },
     },
     plugins: [react()],

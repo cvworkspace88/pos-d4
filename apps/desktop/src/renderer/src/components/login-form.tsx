@@ -2,10 +2,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { z } from 'zod';
-import { Alert } from '@ui/alert';
-import { Button } from '@ui/button';
-import { Card } from '@ui/card';
-import { PasswordField, TextField } from '@ui/text-field';
+import { Alert } from '@repo/ui/alert';
+import { Button } from '@repo/ui/button';
+import { Card } from '@repo/ui/card';
+import { PasswordField, TextField } from '@repo/ui/text-field';
 import { useTRPC } from '../trpc';
 import { useAuthStore } from '../stores/auth';
 

@@ -1,12 +1,13 @@
-const defaultTheme = require('tailwindcss/defaultTheme');
+import defaultTheme from 'tailwindcss/defaultTheme';
+import preset from '@repo/tailwind-config';
 
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   // Brand palette lives in @repo/tailwind-config so both clients share one source of truth.
-  presets: [require('@repo/tailwind-config')],
+  presets: [preset],
   content: [
-    './src/renderer/index.html',
-    './src/renderer/src/**/*.{js,ts,jsx,tsx}',
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
     // Shared components live outside this app; without this glob their classes get purged.
     '../../packages/ui/src/**/*.{js,ts,jsx,tsx}',
   ],
