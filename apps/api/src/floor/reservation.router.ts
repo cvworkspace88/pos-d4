@@ -4,13 +4,10 @@ import { z } from 'zod';
 import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
-import {
-  ReservationService,
-  type ReservationInput,
-  type ReservationPatch,
-} from './reservation.service';
+import type { Actor } from '../auth/rbac-rules';
+import { ReservationService, type ReservationInput, type ReservationPatch } from './reservation.service';
 
-type Ctx = { user: PublicUser };
+type Ctx = Actor & { user: PublicUser };
 
 const reservationOutput = z.object({
   id: z.string(),
@@ -36,7 +33,7 @@ export class ReservationRouter {
   })
   @UseMiddlewares(ProtectedMiddleware)
   async list(@Ctx() ctx: Ctx, @Input() input: { from: string; to: string }) {
-    await this.rbac.require(ctx.user.id, 'reservation.view');
+    await this.rbac.require(ctx, 'reservation.view');
     return this.service.list(input.from, input.to);
   }
 
@@ -53,7 +50,7 @@ export class ReservationRouter {
   })
   @UseMiddlewares(ProtectedMiddleware)
   async create(@Ctx() ctx: Ctx, @Input() input: ReservationInput) {
-    await this.rbac.require(ctx.user.id, 'reservation.create');
+    await this.rbac.require(ctx, 'reservation.create');
     return this.service.create(ctx.user.id, input);
   }
 
@@ -72,7 +69,7 @@ export class ReservationRouter {
   })
   @UseMiddlewares(ProtectedMiddleware)
   async update(@Ctx() ctx: Ctx, @Input() input: { id: string } & ReservationPatch) {
-    await this.rbac.require(ctx.user.id, 'reservation.update');
+    await this.rbac.require(ctx, 'reservation.update');
     const { id, ...patch } = input;
     return this.service.update(id, patch);
   }

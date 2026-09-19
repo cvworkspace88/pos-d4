@@ -27,8 +27,7 @@ const testDatabaseUrl = (): string => {
   if (process.env.TEST_DATABASE_URL) return process.env.TEST_DATABASE_URL;
 
   const base = process.env.DATABASE_URL;
-  if (!base)
-    throw new Error('DATABASE_URL is unset — add it to apps/api/.env or set TEST_DATABASE_URL.');
+  if (!base) throw new Error('DATABASE_URL is unset — add it to apps/api/.env or set TEST_DATABASE_URL.');
 
   const url = new URL(base);
   url.pathname = `${url.pathname}_test`;
@@ -46,10 +45,9 @@ const ensureDatabase = async (url: string): Promise<void> => {
     const existing = await pool.query('select 1 from pg_database where datname = $1', [name]);
     if (existing.rowCount === 0) await pool.query(`create database "${name}"`);
   } catch (error) {
-    throw new Error(
-      `Cannot reach Postgres at ${admin.host}. Start it with \`docker compose up -d cloud\`.`,
-      { cause: error },
-    );
+    throw new Error(`Cannot reach Postgres at ${admin.host}. Start it with \`docker compose up -d cloud\`.`, {
+      cause: error,
+    });
   } finally {
     await pool.end();
   }
@@ -70,7 +68,9 @@ export const connectTestDatabase = async (): Promise<{
   return { db, close: () => pool.end() };
 };
 
-/** Every table these tests touch, plus whatever cascades off `users`. */
+/** Every table these tests touch, plus whatever cascades off `users`. Roles and permissions stay: they are seed data. */
 export const truncateAll = async (db: TestDatabase): Promise<void> => {
-  await db.execute(sql`truncate table outlet_staff, outlets, users restart identity cascade`);
+  await db.execute(
+    sql`truncate table refresh_tokens, user_permissions, outlet_staff, outlets, users restart identity cascade`,
+  );
 };

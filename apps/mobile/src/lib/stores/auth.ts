@@ -17,6 +17,12 @@ interface AuthState {
   user: User | null;
   accessToken: string | null;
   refreshToken: string | null;
+  outlet: Session['outlet'];
+  outlets: Session['outlets'];
+  // "Show the picker although an outlet is set." Not persisted; see desktop's store for why it is
+  // a flag and not a cleared `outlet`.
+  switching: boolean;
+  startSwitch: () => void;
   // Everyone who has signed in on this tablet and not been removed, keyed by user id.
   profiles: Record<string, Profile>;
   hydrated: boolean;
@@ -35,16 +41,23 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       accessToken: null,
       refreshToken: null,
+      outlet: null,
+      outlets: [],
+      switching: false,
+      startSwitch: () => set({ switching: true }),
       profiles: {},
       hydrated: false,
       setHydrated: () => set({ hydrated: true }),
       // The profile follows every rotation, so it holds a redeemable token even if the app dies
       // before anyone parks it.
-      setSession: ({ user, accessToken, refreshToken }) =>
+      setSession: ({ user, accessToken, refreshToken, outlet, outlets }) =>
         set((state) => ({
           user,
           accessToken,
           refreshToken,
+          outlet,
+          outlets,
+          switching: false,
           profiles: { ...state.profiles, [user.id]: { user, refreshToken } },
         })),
       setUser: (user) =>
@@ -56,7 +69,7 @@ export const useAuthStore = create<AuthState>()(
           };
         }),
       // Handle racing condition, rare cases.
-      // refresh token received after user signed out/session ended. 
+      // refresh token received after user signed out/session ended.
       // without this the store will be cleared and the user will be logged out.
       rememberRotation: ({ user, refreshToken }) =>
         set((state) =>
@@ -65,14 +78,30 @@ export const useAuthStore = create<AuthState>()(
             : {},
         ),
       // Local half of "sign out, keep my profile". `lib/session.ts` tells the server.
-      park: () => set({ user: null, accessToken: null, refreshToken: null }),
+      park: () =>
+        set({
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+          outlet: null,
+          outlets: [],
+          switching: false,
+        }),
       removeProfile: (userId) =>
         set((state) => {
           const profiles = { ...state.profiles };
           delete profiles[userId];
           return { profiles };
         }),
-      clear: () => set({ user: null, accessToken: null, refreshToken: null }),
+      clear: () =>
+        set({
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+          outlet: null,
+          outlets: [],
+          switching: false,
+        }),
     }),
     {
       name: 'pos-d4-auth',
@@ -89,10 +118,12 @@ export const useAuthStore = create<AuthState>()(
         if (store.accessToken) store.park();
         store.setHydrated();
       },
-      partialize: ({ user, accessToken, refreshToken, profiles }) => ({
+      partialize: ({ user, accessToken, refreshToken, outlet, outlets, profiles }) => ({
         user,
         accessToken,
         refreshToken,
+        outlet,
+        outlets,
         profiles,
       }),
     },

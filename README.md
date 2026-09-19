@@ -112,6 +112,9 @@ and the query cache, which drops the user back to the login screen. The one exce
 | `CONFLICT` on `table.create` / `table.update`             | a live table already has that name                          | keep the form open, show the message                                                             |
 | `PRECONDITION_FAILED` on `table.*` / `reservation.update`  | `Unmerge first.`, `Has a booked reservation.`, `Reservation is closed.` — state changed elsewhere | show the message, refetch `table.list` and `reservation.list`                                    |
 | `NOT_FOUND` on `table.*` / `reservation.*`                | the table or reservation was deleted on another client      | same as above                                                                                    |
+| `FORBIDDEN` `Not assigned to this outlet.` on `auth.refresh` | the picked outlet is not one of the user's | picker shows the message; session stays |
+| `FORBIDDEN` `Wrong outlet.` on `outlet.staff` / `outlet.setStaff` | a non-owner targeted an outlet other than the active one | show the message; switch outlet first |
+| `BAD_REQUEST` `Owner is global.` on `outlet.setStaff` | the owner role was put on a roster | show the message |
 
 Returning `UNAUTHORIZED` from a permission check would sign the user out mid-action instead of
 showing them a refusal.

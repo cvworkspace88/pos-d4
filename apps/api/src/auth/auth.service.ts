@@ -4,10 +4,10 @@ import { JwtService } from '@nestjs/jwt';
 import { TRPCError } from '@trpc/server';
 import { Reason } from '../trpc/error-formatter';
 import * as argon2 from 'argon2';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { randomBytes, createHash } from 'node:crypto';
 import { DRIZZLE, type Database } from '../db/db.module';
-import { refreshTokens, users, type User } from '../db/schema';
+import { outletStaff, outlets, refreshTokens, users, type User } from '../db/schema';
 import { rejectPinLogin } from './pin-policy';
 import { rejectRefresh } from './refresh-window';
 
@@ -20,11 +20,21 @@ export const publicUser = (user: User) => ({
 });
 export type PublicUser = ReturnType<typeof publicUser>;
 
+/** An outlet as the session names it. The picker needs nothing more. */
+export type OutletRef = { id: string; name: string };
+
 export interface Session {
   user: PublicUser;
   accessToken: string;
   refreshToken: string;
+  /** The active outlet. Null until chosen (zero or many outlets), or when the chosen one is gone. */
+  outlet: OutletRef | null;
+  /** Every outlet this user may work at: all live outlets for a global role, else their memberships. */
+  outlets: OutletRef[];
 }
+
+/** What the access JWT carries. `outletId` is what `RbacService` scopes the role by. */
+export type AccessPayload = { sub: string; username: string; outletId: string | null };
 
 /** Opaque refresh tokens are stored hashed; SHA-256 is enough since the token is 32 random bytes. */
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -34,6 +44,9 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
  * may be rotated by a PIN login, so every write that "kills" or "consumes" a token uses this.
  */
 const alive = or(isNull(refreshTokens.revokedAt), eq(refreshTokens.revokedReason, 'parked'));
+
+/** FORBIDDEN: we know who this is; they just do not work there. A 401 would sign them out. */
+const notAssigned = () => new TRPCError({ code: 'FORBIDDEN', message: 'Not assigned to this outlet.' });
 
 @Injectable()
 export class AuthService {
@@ -74,7 +87,7 @@ export class AuthService {
     return this.issueSession(user);
   }
 
-  async refresh(token: string): Promise<Session> {
+  async refresh(token: string, outletId?: string): Promise<Session> {
     const [row] = await this.db
       .select()
       .from(refreshTokens)
@@ -88,6 +101,10 @@ export class AuthService {
       .from(users)
       .where(and(eq(users.id, row.userId), isNull(users.deletedAt)));
     if (!user) throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid refresh token.' });
+
+    // Checked before rotation so a refused pick leaves the presented token usable.
+    if (outletId !== undefined && !(await this.outletsOf(user)).some((o) => o.id === outletId))
+      throw notAssigned();
 
     // Rotate: the presented token dies with the new one's birth. Only the first use stamps it, so a
     // retry inside the grace window cannot slide the window forward indefinitely.
@@ -103,7 +120,7 @@ export class AuthService {
     // nothing, but its `revokedAt` was already set when we read it, so it is not the race.
     if (!rotated.length && row.revokedAt === null)
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid refresh token.' });
-    return this.issueSession(user);
+    return this.issueSession(user, outletId ?? row.outletId);
   }
 
   /**
@@ -174,7 +191,7 @@ export class AuthService {
     // Only a `pin_rotated` retry inside the grace window legitimately matches nothing.
     const wasClaimable = row.revokedAt === null || row.revokedReason === 'parked';
     if (!rotated.length && wasClaimable) throw dead;
-    return this.issueSession(user);
+    return this.issueSession(user, row.outletId);
   }
 
   /**
@@ -188,7 +205,11 @@ export class AuthService {
     if (!user.pinHash)
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Belum ada PIN. Masuk dengan kata sandi.' });
     if (!(await argon2.verify(user.pinHash, pin)))
-      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'PIN tidak cocok.', cause: new Reason('INVALID_PIN') });
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'PIN tidak cocok.',
+        cause: new Reason('INVALID_PIN'),
+      });
   }
 
   /**
@@ -227,23 +248,48 @@ export class AuthService {
     return user;
   }
 
-  async userFromAccessToken(token: string): Promise<User> {
+  async userFromAccessToken(token: string): Promise<{ user: User; outletId: string | null }> {
     const payload = await this.jwt
-      .verifyAsync<{ sub: string }>(token, { secret: this.config.getOrThrow('JWT_ACCESS_SECRET') })
+      .verifyAsync<AccessPayload>(token, { secret: this.config.getOrThrow('JWT_ACCESS_SECRET') })
       .catch(() => {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid access token.' });
       });
-    return this.userFromPayload(payload);
+    return { user: await this.userFromPayload(payload), outletId: payload.outletId ?? null };
   }
 
-  private async issueSession(user: User): Promise<Session> {
-    const accessToken = await this.jwt.signAsync(
-      { sub: user.id, username: user.username },
-      {
-        secret: this.config.getOrThrow('JWT_ACCESS_SECRET'),
-        expiresIn: this.config.get('JWT_ACCESS_TTL', '15m'),
-      },
-    );
+  /** The outlets a user may work at, live only, sorted by name. A global role works everywhere. */
+  private async outletsOf(user: User): Promise<OutletRef[]> {
+    if (user.roleId)
+      return this.db
+        .select({ id: outlets.id, name: outlets.name })
+        .from(outlets)
+        .where(isNull(outlets.deletedAt))
+        .orderBy(asc(outlets.name));
+
+    return this.db
+      .select({ id: outlets.id, name: outlets.name })
+      .from(outlets)
+      .innerJoin(outletStaff, eq(outletStaff.outletId, outlets.id))
+      .where(and(eq(outletStaff.userId, user.id), isNull(outlets.deletedAt)))
+      .orderBy(asc(outlets.name));
+  }
+
+  /**
+   * `wanted` is the caller's choice (a pick, or the outlet carried on the refresh row); undefined
+   * means "none yet". Either way it only sticks while the user may still work there, and a lone
+   * outlet is chosen for them — so a closed outlet or a lost membership silently falls back to
+   * null (re-pick) or to the one outlet left.
+   */
+  private async issueSession(user: User, wanted?: string | null): Promise<Session> {
+    const mine = await this.outletsOf(user);
+    const outlet = mine.find((o) => o.id === wanted) ?? (mine.length === 1 ? mine[0]! : null);
+    const outletId = outlet?.id ?? null;
+
+    const payload: AccessPayload = { sub: user.id, username: user.username, outletId };
+    const accessToken = await this.jwt.signAsync(payload, {
+      secret: this.config.getOrThrow('JWT_ACCESS_SECRET'),
+      expiresIn: this.config.get('JWT_ACCESS_TTL', '15m'),
+    });
 
     const refreshToken = randomBytes(32).toString('hex');
     const ttlDays = Number(this.config.get('JWT_REFRESH_TTL_DAYS', '30'));
@@ -251,8 +297,9 @@ export class AuthService {
       userId: user.id,
       tokenHash: hashToken(refreshToken),
       expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
+      outletId,
     });
 
-    return { user: publicUser(user), accessToken, refreshToken };
+    return { user: publicUser(user), accessToken, refreshToken, outlet, outlets: mine };
   }
 }

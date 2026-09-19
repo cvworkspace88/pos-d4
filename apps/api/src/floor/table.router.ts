@@ -4,9 +4,10 @@ import { z } from 'zod';
 import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
+import type { Actor } from '../auth/rbac-rules';
 import { TableService, type LayoutItem, type TableInput } from './table.service';
 
-type Ctx = { user: PublicUser };
+type Ctx = Actor & { user: PublicUser };
 
 // The generator hoists these into the shared contract. Bounds are literals on purpose: it cannot
 // hoist an identifier a schema references.
@@ -39,7 +40,7 @@ export class TableRouter {
   @Query({ output: z.array(tableOutput) })
   @UseMiddlewares(ProtectedMiddleware)
   async list(@Ctx() ctx: Ctx) {
-    await this.rbac.require(ctx.user.id, 'table.view');
+    await this.rbac.require(ctx, 'table.view');
     return this.service.list();
   }
 
@@ -56,7 +57,7 @@ export class TableRouter {
   })
   @UseMiddlewares(ProtectedMiddleware)
   async create(@Ctx() ctx: Ctx, @Input() input: TableInput) {
-    await this.rbac.require(ctx.user.id, 'table.create');
+    await this.rbac.require(ctx, 'table.create');
     return this.service.create(input);
   }
 
@@ -70,7 +71,7 @@ export class TableRouter {
   })
   @UseMiddlewares(ProtectedMiddleware)
   async update(@Ctx() ctx: Ctx, @Input() input: { id: string; name: string; seats: number }) {
-    await this.rbac.require(ctx.user.id, 'table.layout_manage');
+    await this.rbac.require(ctx, 'table.layout_manage');
     const { id, ...patch } = input;
     return this.service.update(id, patch);
   }
@@ -81,14 +82,14 @@ export class TableRouter {
   })
   @UseMiddlewares(ProtectedMiddleware)
   async updateLayout(@Ctx() ctx: Ctx, @Input('items') items: LayoutItem[]) {
-    await this.rbac.require(ctx.user.id, 'table.layout_manage');
+    await this.rbac.require(ctx, 'table.layout_manage');
     return this.service.updateLayout(items);
   }
 
   @Mutation({ input: z.object({ id: z.string() }), output: z.object({ success: z.boolean() }) })
   @UseMiddlewares(ProtectedMiddleware)
   async delete(@Ctx() ctx: Ctx, @Input('id') id: string) {
-    await this.rbac.require(ctx.user.id, 'table.delete');
+    await this.rbac.require(ctx, 'table.delete');
     return this.service.delete(id);
   }
 
@@ -98,14 +99,14 @@ export class TableRouter {
   })
   @UseMiddlewares(ProtectedMiddleware)
   async merge(@Ctx() ctx: Ctx, @Input() input: { headId: string; memberIds: string[] }) {
-    await this.rbac.require(ctx.user.id, 'table.merge');
+    await this.rbac.require(ctx, 'table.merge');
     return this.service.merge(input.headId, input.memberIds);
   }
 
   @Mutation({ input: z.object({ id: z.string() }), output: z.array(tableOutput) })
   @UseMiddlewares(ProtectedMiddleware)
   async unmerge(@Ctx() ctx: Ctx, @Input('id') id: string) {
-    await this.rbac.require(ctx.user.id, 'table.merge');
+    await this.rbac.require(ctx, 'table.merge');
     return this.service.unmerge(id);
   }
 }

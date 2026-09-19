@@ -3,8 +3,8 @@ import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation, violatedConstraint } from '../db/errors';
-import { outletStaff, outlets, users, type Outlet } from '../db/schema';
-import { conflictField, normalizeCode, staffDiff } from './outlet-rules';
+import { outletStaff, outlets, roles, users, type Outlet } from '../db/schema';
+import { OWNER_ROLE, conflictField, normalizeCode, staffDiff, type StaffEntry } from './outlet-rules';
 
 export interface OutletInput {
   name: string;
@@ -17,6 +17,7 @@ export interface StaffOutput {
   id: string;
   name: string;
   username: string;
+  roleId: string;
 }
 
 /** What clients see of an outlet. Timestamps and `deletedAt` stay server-side. */
@@ -42,10 +43,8 @@ const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Outlet not f
 const rethrowAsConflict = (error: unknown): never => {
   if (isUniqueViolation(error)) {
     const field = conflictField(violatedConstraint(error));
-    if (field === 'name')
-      throw new TRPCError({ code: 'CONFLICT', message: 'Outlet name already in use.' });
-    if (field === 'code')
-      throw new TRPCError({ code: 'CONFLICT', message: 'Outlet code already in use.' });
+    if (field === 'name') throw new TRPCError({ code: 'CONFLICT', message: 'Outlet name already in use.' });
+    if (field === 'code') throw new TRPCError({ code: 'CONFLICT', message: 'Outlet code already in use.' });
   }
   throw error;
 };
@@ -106,10 +105,10 @@ export class OutletService {
   }
 
   /**
-   * Replaces the whole roster. Set semantics, so calling it twice with the same ids is a no-op the
-   * second time and the caller never has to diff anything itself.
+   * Replaces the whole roster, roles included. Set semantics keyed on the user, so calling it twice
+   * with the same entries is a no-op the second time and the caller never has to diff anything.
    */
-  async setStaff(outletId: string, userIds: string[]): Promise<StaffOutput[]> {
+  async setStaff(outletId: string, staff: StaffEntry[]): Promise<StaffOutput[]> {
     return this.db.transaction(async (tx) => {
       const [outlet] = await tx
         .select({ id: outlets.id })
@@ -117,37 +116,43 @@ export class OutletService {
         .where(and(eq(outlets.id, outletId), live));
       if (!outlet) throw notFound();
 
-      const wanted = [...new Set(userIds)];
-      if (wanted.length) {
+      const userIds = [...new Set(staff.map((s) => s.userId))];
+      if (userIds.length) {
         const found = await tx
           .select({ id: users.id })
           .from(users)
-          .where(and(inArray(users.id, wanted), isNull(users.deletedAt)));
+          .where(and(inArray(users.id, userIds), isNull(users.deletedAt)));
         const alive = new Set(found.map((u) => u.id));
-        const missing = wanted.find((id) => !alive.has(id));
+        const missing = userIds.find((id) => !alive.has(id));
         // Reject the whole call rather than silently assigning the ids that happened to be real.
-        if (missing)
-          throw new TRPCError({ code: 'BAD_REQUEST', message: `Not a valid user: ${missing}.` });
+        if (missing) throw new TRPCError({ code: 'BAD_REQUEST', message: `Not a valid user: ${missing}.` });
+      }
+
+      const roleIds = [...new Set(staff.map((s) => s.roleId))];
+      if (roleIds.length) {
+        const found = await tx
+          .select({ id: roles.id, name: roles.name })
+          .from(roles)
+          .where(inArray(roles.id, roleIds));
+        const known = new Map(found.map((r) => [r.id, r.name]));
+        const missing = roleIds.find((id) => !known.has(id));
+        if (missing) throw new TRPCError({ code: 'BAD_REQUEST', message: `Not a valid role: ${missing}.` });
+        // Owner is `users.role_id`, never a membership: handing it out here would be an escalation.
+        if ([...known.values()].includes(OWNER_ROLE))
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Owner is global.' });
       }
 
       const current = await tx
-        .select({ userId: outletStaff.userId })
+        .select({ userId: outletStaff.userId, roleId: outletStaff.roleId })
         .from(outletStaff)
         .where(eq(outletStaff.outletId, outletId));
-      const { add, remove } = staffDiff(
-        current.map((row) => row.userId),
-        wanted,
-      );
+      const { add, remove } = staffDiff(current, staff);
 
       if (remove.length)
         await tx
           .delete(outletStaff)
           .where(and(eq(outletStaff.outletId, outletId), inArray(outletStaff.userId, remove)));
-      if (add.length)
-        await tx
-          .insert(outletStaff)
-          .values(add.map((userId) => ({ outletId, userId })))
-          .onConflictDoNothing();
+      if (add.length) await tx.insert(outletStaff).values(add.map((s) => ({ outletId, ...s })));
 
       return this.rosterOf(tx, outletId);
     });
@@ -155,7 +160,7 @@ export class OutletService {
 
   private async rosterOf(db: Database | Tx, outletId: string): Promise<StaffOutput[]> {
     return db
-      .select({ id: users.id, name: users.name, username: users.username })
+      .select({ id: users.id, name: users.name, username: users.username, roleId: outletStaff.roleId })
       .from(outletStaff)
       .innerJoin(users, eq(users.id, outletStaff.userId))
       .where(and(eq(outletStaff.outletId, outletId), isNull(users.deletedAt)))

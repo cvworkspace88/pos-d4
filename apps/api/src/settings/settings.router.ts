@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
 import type { PublicUser } from '../auth/auth.service';
+import type { Actor } from '../auth/rbac-rules';
 import { SettingsService } from './settings.service';
 
 @Router({ alias: 'settings' })
@@ -25,8 +26,8 @@ export class SettingsRouter {
     output: z.object({ idleTimeoutSeconds: z.number() }),
   })
   @UseMiddlewares(ProtectedMiddleware)
-  async update(@Ctx() ctx: { user: PublicUser }, @Input() input: { idleTimeoutSeconds: number }) {
-    await this.rbac.require(ctx.user.id, 'settings.manage');
+  async update(@Ctx() ctx: Actor & { user: PublicUser }, @Input() input: { idleTimeoutSeconds: number }) {
+    await this.rbac.require(ctx, 'settings.manage');
     return this.settings.update(input);
   }
 }

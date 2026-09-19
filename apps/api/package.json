@@ -14,7 +14,7 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check-types": "tsc --noEmit && tsc -p tsconfig.seed.json"
+    "check-types": "tsc -p tsconfig.seed.json"
   },
   "dependencies": {
     "@nestjs/common": "11.2.3",

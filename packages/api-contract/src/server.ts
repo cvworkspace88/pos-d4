@@ -22,30 +22,48 @@ const appRouter = t.router({
       username: z.string().min(3).max(32),
       password: z.string().min(8).max(128),
     }))
-      .output(z.object({ user: z.object({
+      .output(z.object({
+  user: z.object({
   id: z.string(),
   name: z.string(),
   username: z.string(),
   hasPin: z.boolean(),
-}), accessToken: z.string(), refreshToken: z.string() }))
+}),
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  outlet: z.object({ id: z.string(), name: z.string() }).nullable(),
+  outlets: z.array(z.object({ id: z.string(), name: z.string() })),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     login: publicProcedure
       .input(z.object({ username: z.string().min(3).max(32), password: z.string().min(8).max(128) }))
-      .output(z.object({ user: z.object({
+      .output(z.object({
+  user: z.object({
   id: z.string(),
   name: z.string(),
   username: z.string(),
   hasPin: z.boolean(),
-}), accessToken: z.string(), refreshToken: z.string() }))
+}),
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  outlet: z.object({ id: z.string(), name: z.string() }).nullable(),
+  outlets: z.array(z.object({ id: z.string(), name: z.string() })),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     refresh: publicProcedure
-      .input(z.object({ refreshToken: z.string().min(1) }))
-      .output(z.object({ user: z.object({
+      .input(z.object({ refreshToken: z.string().min(1), outletId: z.uuid().optional() }))
+      .output(z.object({
+  user: z.object({
   id: z.string(),
   name: z.string(),
   username: z.string(),
   hasPin: z.boolean(),
-}), accessToken: z.string(), refreshToken: z.string() }))
+}),
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  outlet: z.object({ id: z.string(), name: z.string() }).nullable(),
+  outlets: z.array(z.object({ id: z.string(), name: z.string() })),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     logout: publicProcedure
       .input(z.object({ refreshToken: z.string().min(1) }))
@@ -57,12 +75,18 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     pinLogin: publicProcedure
       .input(z.object({ refreshToken: z.string().min(1), pin: z.string().regex(/^\d{6}$/, 'PIN must be 6 digits.') }))
-      .output(z.object({ user: z.object({
+      .output(z.object({
+  user: z.object({
   id: z.string(),
   name: z.string(),
   username: z.string(),
   hasPin: z.boolean(),
-}), accessToken: z.string(), refreshToken: z.string() }))
+}),
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  outlet: z.object({ id: z.string(), name: z.string() }).nullable(),
+  outlets: z.array(z.object({ id: z.string(), name: z.string() })),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     setPin: publicProcedure
       .input(z.object({ pin: z.string().regex(/^\d{6}$/, 'PIN must be 6 digits.'), password: z.string().min(8).max(128).optional() }))
@@ -79,7 +103,7 @@ const appRouter = t.router({
   name: z.string(),
   username: z.string(),
   hasPin: z.boolean(),
-}).extend({ permissions: z.array(z.string()) }))
+}).extend({ outletId: z.string().nullable(), permissions: z.array(z.string()) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   reservation: t.router({
@@ -252,7 +276,12 @@ const appRouter = t.router({
     create: publicProcedure
       .input(z.object({
       name: z.string().trim().min(1).max(60),
-      code: z.string().trim().min(1).max(12).regex(/^[a-zA-Z0-9-]+$/),
+      code: z
+        .string()
+        .trim()
+        .min(1)
+        .max(12)
+        .regex(/^[a-zA-Z0-9-]+$/),
       address: z.string().trim().max(200).optional(),
       phone: z.string().trim().max(32).optional(),
     }))
@@ -268,7 +297,12 @@ const appRouter = t.router({
       .input(z.object({
       id: z.uuid(),
       name: z.string().trim().min(1).max(60),
-      code: z.string().trim().min(1).max(12).regex(/^[a-zA-Z0-9-]+$/),
+      code: z
+        .string()
+        .trim()
+        .min(1)
+        .max(12)
+        .regex(/^[a-zA-Z0-9-]+$/),
       address: z.string().trim().max(200).optional(),
       phone: z.string().trim().max(32).optional(),
     }))
@@ -286,11 +320,14 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     staff: publicProcedure
       .input(z.object({ outletId: z.uuid() }))
-      .output(z.array(z.object({ id: z.string(), name: z.string(), username: z.string() })))
+      .output(z.array(z.object({ id: z.string(), name: z.string(), username: z.string(), roleId: z.string() })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     setStaff: publicProcedure
-      .input(z.object({ outletId: z.uuid(), userIds: z.array(z.uuid()).max(200) }))
-      .output(z.array(z.object({ id: z.string(), name: z.string(), username: z.string() })))
+      .input(z.object({
+      outletId: z.uuid(),
+      staff: z.array(z.object({ userId: z.uuid(), roleId: z.uuid() })).max(200),
+    }))
+      .output(z.array(z.object({ id: z.string(), name: z.string(), username: z.string(), roleId: z.string() })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   settings: t.router({

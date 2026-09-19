@@ -10,24 +10,36 @@ test('an already-uppercase code survives untouched', () => {
   assert.equal(normalizeCode('HQ'), 'HQ');
 });
 
+const e = (userId: string, roleId = 'r1') => ({ userId, roleId });
+
 test('disjoint rosters swap wholesale', () => {
-  assert.deepEqual(staffDiff(['a', 'b'], ['c']), { add: ['c'], remove: ['a', 'b'] });
+  assert.deepEqual(staffDiff([e('a'), e('b')], [e('c')]), { add: [e('c')], remove: ['a', 'b'] });
 });
 
 test('an unchanged roster writes nothing', () => {
-  assert.deepEqual(staffDiff(['a', 'b'], ['b', 'a']), { add: [], remove: [] });
+  assert.deepEqual(staffDiff([e('a'), e('b')], [e('b'), e('a')]), { add: [], remove: [] });
+});
+
+test('a changed role is a remove plus an add for the same user', () => {
+  assert.deepEqual(staffDiff([e('a', 'cashier')], [e('a', 'manager')]), {
+    add: [e('a', 'manager')],
+    remove: ['a'],
+  });
 });
 
 test('an empty roster removes everyone', () => {
-  assert.deepEqual(staffDiff(['a', 'b'], []), { add: [], remove: ['a', 'b'] });
+  assert.deepEqual(staffDiff([e('a'), e('b')], []), { add: [], remove: ['a', 'b'] });
 });
 
-test('a duplicate in the desired list is added once', () => {
-  assert.deepEqual(staffDiff([], ['a', 'a']), { add: ['a'], remove: [] });
+test('a duplicate user in the desired list keeps the last role given', () => {
+  assert.deepEqual(staffDiff([], [e('a', 'cashier'), e('a', 'manager')]), {
+    add: [e('a', 'manager')],
+    remove: [],
+  });
 });
 
 test('an outlet with no staff yet just adds', () => {
-  assert.deepEqual(staffDiff([], ['a', 'b']), { add: ['a', 'b'], remove: [] });
+  assert.deepEqual(staffDiff([], [e('a'), e('b')]), { add: [e('a'), e('b')], remove: [] });
 });
 
 test('a unique violation is traced back to the field the user typed', () => {

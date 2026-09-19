@@ -20,6 +20,9 @@ export const users = pgTable('users', {
   // argon2 hash of a 6-digit PIN. NULL = never set. Only staff enrolled on a shared tablet need
   // one; desktop users sign in with the password alone.
   pinHash: text('pin_hash'),
+  // The GLOBAL role: applies at every outlet and needs no `outlet_staff` row. Only the owner is
+  // meant to have one; everyone else's role lives on `outlet_staff.role_id` per outlet. No API
+  // sets this yet — only the seed does.
   roleId: uuid('role_id').references(() => roles.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -48,6 +51,9 @@ export const refreshTokens = pgTable(
     // grace window, honoured by `pinLogin` alone, so redeeming a profile never re-opens the
     // PIN-free `refresh` path for the token it just consumed.
     revokedReason: text('revoked_reason').$type<'rotated' | 'logout' | 'parked' | 'pin_rotated'>(),
+    // The session's active outlet. Lives on the row, not the client, so rotation, PIN unlock and a
+    // parked profile all carry it. Null: not chosen yet (zero or many outlets), or the outlet went.
+    outletId: uuid('outlet_id').references(() => outlets.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -163,7 +169,9 @@ export const tables = pgTable(
   },
   (table) => [
     // A deleted "T3" can be recreated; only live names must be unique.
-    uniqueIndex('tables_name_active_idx').on(table.name).where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex('tables_name_active_idx')
+      .on(table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
     index('tables_merged_into_id_idx').on(table.mergedIntoId),
   ],
 );
@@ -184,10 +192,7 @@ export const reservations = pgTable(
     // The reservation time: date + clock time, timezone-aware. No end time.
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     note: text('note'),
-    status: text('status')
-      .$type<'booked' | 'seated' | 'cancelled' | 'no_show'>()
-      .notNull()
-      .default('booked'),
+    status: text('status').$type<'booked' | 'seated' | 'cancelled' | 'no_show'>().notNull().default('booked'),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -219,12 +224,16 @@ export const outlets = pgTable(
   },
   (table) => [
     // A closed 'Downtown' can be reopened under the same name; only live rows must be unique.
-    uniqueIndex('outlets_name_active_idx').on(table.name).where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex('outlets_code_active_idx').on(table.code).where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex('outlets_name_active_idx')
+      .on(table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex('outlets_code_active_idx')
+      .on(table.code)
+      .where(sql`${table.deletedAt} IS NULL`),
   ],
 );
 
-/** Which staff may work at an outlet. No row = not assigned; zero outlets is a valid state. */
+/** Which staff may work at an outlet, and as what. No row = not assigned; zero outlets is a valid state. */
 export const outletStaff = pgTable(
   'outlet_staff',
   {
@@ -235,6 +244,11 @@ export const outletStaff = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    // What this user IS at this outlet. Restrict, not cascade: roles are never pruned by the seed,
+    // and a hard delete of one must not silently strip staff of their role.
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => roles.id, { onDelete: 'restrict' }),
   },
   (table) => [
     primaryKey({ columns: [table.outletId, table.userId] }),

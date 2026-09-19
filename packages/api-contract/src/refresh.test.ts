@@ -10,6 +10,8 @@ const session = (accessToken: string, refreshToken = 'r2'): Session => ({
   user: { id: 'u1', name: 'Ada', username: 'ada', hasPin: false },
   accessToken,
   refreshToken,
+  outlet: null,
+  outlets: [],
 });
 
 function harness(state: { accessToken: string | null; refreshToken: string | null }) {

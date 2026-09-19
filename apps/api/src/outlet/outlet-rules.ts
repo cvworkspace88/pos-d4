@@ -1,19 +1,28 @@
 /** Codes are compared case-insensitively by storing them exactly one way. */
 export const normalizeCode = (raw: string): string => raw.trim().toUpperCase();
 
+/** One roster line: who, and as what. */
+export type StaffEntry = { userId: string; roleId: string };
+
+/** The one role that never goes on a roster: it is global (`users.role_id`), so a manager cannot hand it out. */
+export const OWNER_ROLE = 'owner';
+
 /**
- * What `setStaff` has to write to turn `current` into `desired`. Set semantics: a duplicate in
- * `desired` collapses, and order does not matter on either side.
+ * What `setStaff` has to write to turn `current` into `desired`. Set semantics keyed on the user:
+ * a duplicate user in `desired` collapses to the last entry, order does not matter, and a changed
+ * role is a remove followed by an add (the primary key is `(outlet, user)`, so the row is replaced).
  */
 export const staffDiff = (
-  current: string[],
-  desired: string[],
-): { add: string[]; remove: string[] } => {
-  const held = new Set(current);
-  const wanted = new Set(desired);
+  current: StaffEntry[],
+  desired: StaffEntry[],
+): { add: StaffEntry[]; remove: string[] } => {
+  const held = new Map(current.map((s) => [s.userId, s.roleId]));
+  const wanted = new Map(desired.map((s) => [s.userId, s.roleId]));
   return {
-    add: [...wanted].filter((id) => !held.has(id)),
-    remove: [...held].filter((id) => !wanted.has(id)),
+    add: [...wanted]
+      .filter(([userId, roleId]) => held.get(userId) !== roleId)
+      .map(([userId, roleId]) => ({ userId, roleId })),
+    remove: [...held].filter(([userId, roleId]) => wanted.get(userId) !== roleId).map(([userId]) => userId),
   };
 };
 

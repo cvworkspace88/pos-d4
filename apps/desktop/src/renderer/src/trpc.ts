@@ -9,7 +9,7 @@ export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3333';
 
 /** Unauthenticated client used only by the refresh call, so a refresh can never recurse into itself. */
-const refreshClient = createTRPCClient<AppRouter>({ links: [httpLink({ url: `${API_URL}/trpc` })] });
+export const refreshClient = createTRPCClient<AppRouter>({ links: [httpLink({ url: `${API_URL}/trpc` })] });
 
 const accessToken = createTokenProvider({
   getState: useAuthStore.getState,
@@ -31,10 +31,14 @@ export const queryClient = new QueryClient({
 
 // Every path that ends a session (Sign out, an UNAUTHORIZED response, a failed refresh) funnels
 // through the store, so this is the one chokepoint that drops the previous user's cached query
-// results — instead of patching every caller that can end a session. Only the access-token
-// set -> null transition counts; other writes (e.g. a token refresh) must not clear a live cache.
+// results — instead of patching every caller that can end a session. An outlet change drops the
+// cache too: every cached answer (auth.me's permissions included) was for the previous outlet. Only
+// the access-token set -> null transition and an actual outlet id change count; other writes (e.g. a
+// token refresh that carries the same outlet forward) must not clear a live cache.
 useAuthStore.subscribe((state, prevState) => {
-  if (prevState.accessToken !== null && state.accessToken === null) queryClient.clear();
+  const signedOut = prevState.accessToken !== null && state.accessToken === null;
+  const outletChanged = prevState.outlet?.id !== state.outlet?.id;
+  if (signedOut || outletChanged) queryClient.clear();
 });
 
 export const trpcClient = createTRPCClient<AppRouter>({

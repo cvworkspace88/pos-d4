@@ -60,6 +60,8 @@ Access JWT (15 min) + opaque refresh token stored SHA-256-hashed in `refresh_tok
 
 Mobile "sign out" **parks** the session (`revoked_reason = 'parked'`) and keeps the refresh token in the client's `profiles` map; `auth.pinLogin` redeems it. Only `'rotated'` and `'pin_rotated'` reasons earn the 30s grace window in `auth.refresh` — that asymmetry is what stops a parked profile from reopening the PIN-free refresh path.
 
+A session carries an **active outlet** (`outletId` in the JWT and on the `refresh_tokens` row). Roles are per outlet (`outlet_staff.role_id`); `users.role_id` is the *global* role, owner only, needing no membership. `auth.refresh` with an `outletId` is the outlet picker — there is no `selectOutlet`. `rbac.require(ctx, permission)` reads the role for `ctx.outletId`; `canActOn(ctx, outletId)` confines a non-global user to their active outlet. Refusals are `FORBIDDEN`: `Not assigned to this outlet.`, `Wrong outlet.`; `setStaff` with the owner role is `BAD_REQUEST` `Owner is global.`
+
 ### Error codes are load-bearing
 
 Both clients end the session on **any** `UNAUTHORIZED` — store cleared, query cache dropped, back to login. So:
@@ -77,6 +79,8 @@ Also load-bearing on the floor domain: `CONFLICT` (duplicate live name), `PRECON
 `apps/api` uses vitest with a **glob** (`src/**/*.test.ts`, `drizzle/**/*.test.ts`) and `sequence.concurrent: false`. Database-touching tests get their own database — `connectTestDatabase()` in `src/test/test-db.ts` derives it by suffixing `DATABASE_URL` with `_test`, creates and migrates it on first use, and `truncateAll()` clears between cases. They instantiate services directly (`new OutletService(db)`); Nest DI is not involved.
 
 `packages/api-contract` still runs `node --test` with an **explicit file list** in its `package.json` — a new `*.test.ts` there does not run until it is added to that script.
+
+Three files now truncate that one shared `_test` database, so `vitest.config.ts` sets `fileParallelism: false` — tests inside a file are serialized too (`sequence.concurrent: false`).
 
 ## Conventions
 

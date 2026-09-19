@@ -1,17 +1,21 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
-import { users } from '../db/schema';
+import { seedRbac } from '../../drizzle/seed/seed-rbac';
+import { roles, users } from '../db/schema';
 import { connectTestDatabase, truncateAll, type TestDatabase } from '../test/test-db';
 import { OutletService } from './outlet.service';
 
 let db: TestDatabase;
 let close: () => Promise<void>;
 let service: OutletService;
+let roleId: Record<string, string>;
 
 beforeAll(async () => {
   ({ db, close } = await connectTestDatabase());
   // The service only ever needs the database handle; Nest's DI is not in the picture.
   service = new OutletService(db);
+  await seedRbac(db);
+  roleId = Object.fromEntries((await db.select().from(roles)).map((r) => [r.name, r.id]));
 });
 
 afterAll(async () => {
@@ -32,6 +36,8 @@ const addUser = async (username: string, deletedAt: Date | null = null) => {
 };
 
 const anOutlet = (name = 'Downtown', code = 'dt') => service.create({ name, code });
+
+const as = (userId: string, role = 'cashier') => ({ userId, roleId: roleId[role]! });
 
 test('a code is stored uppercase, so the unique index catches br2 against BR2', async () => {
   const outlet = await anOutlet('Branch Two', ' br2 ');
@@ -102,7 +108,7 @@ test('setStaff writes the roster and reads it back sorted by name', async () => 
   const zoe = await addUser('zoe');
   const ann = await addUser('ann');
 
-  const roster = await service.setStaff(outlet.id, [zoe.id, ann.id]);
+  const roster = await service.setStaff(outlet.id, [as(zoe.id), as(ann.id)]);
   expect(roster.map((s) => s.username)).toEqual(['ann', 'zoe']);
 });
 
@@ -110,21 +116,21 @@ test('setStaff twice with the same ids changes nothing the second time', async (
   const outlet = await anOutlet();
   const ann = await addUser('ann');
 
-  const first = await service.setStaff(outlet.id, [ann.id]);
-  const second = await service.setStaff(outlet.id, [ann.id]);
+  const first = await service.setStaff(outlet.id, [as(ann.id)]);
+  const second = await service.setStaff(outlet.id, [as(ann.id)]);
   expect(second).toEqual(first);
 });
 
 test('a duplicate id in the input is assigned once', async () => {
   const outlet = await anOutlet();
   const ann = await addUser('ann');
-  expect(await service.setStaff(outlet.id, [ann.id, ann.id])).toHaveLength(1);
+  expect(await service.setStaff(outlet.id, [as(ann.id), as(ann.id)])).toHaveLength(1);
 });
 
 test('an empty list clears the roster and leaves the outlet alone', async () => {
   const outlet = await anOutlet();
   const ann = await addUser('ann');
-  await service.setStaff(outlet.id, [ann.id]);
+  await service.setStaff(outlet.id, [as(ann.id)]);
 
   expect(await service.setStaff(outlet.id, [])).toEqual([]);
   expect(await service.staff(outlet.id)).toEqual([]);
@@ -134,10 +140,10 @@ test('an unknown user rejects the whole call and rolls the roster back', async (
   const outlet = await anOutlet();
   const ann = await addUser('ann');
   const bob = await addUser('bob');
-  await service.setStaff(outlet.id, [ann.id]);
+  await service.setStaff(outlet.id, [as(ann.id)]);
 
   const ghost = '00000000-0000-0000-0000-000000000000';
-  await expect(service.setStaff(outlet.id, [bob.id, ghost])).rejects.toMatchObject({
+  await expect(service.setStaff(outlet.id, [as(bob.id), as(ghost)])).rejects.toMatchObject({
     code: 'BAD_REQUEST',
     message: `Not a valid user: ${ghost}.`,
   });
@@ -148,7 +154,7 @@ test('an unknown user rejects the whole call and rolls the roster back', async (
 test('a soft-deleted user cannot be assigned', async () => {
   const outlet = await anOutlet();
   const gone = await addUser('gone', new Date());
-  await expect(service.setStaff(outlet.id, [gone.id])).rejects.toMatchObject({
+  await expect(service.setStaff(outlet.id, [as(gone.id)])).rejects.toMatchObject({
     code: 'BAD_REQUEST',
   });
 });
@@ -157,7 +163,7 @@ test('a staff member who leaves drops out of the roster without being unassigned
   const outlet = await anOutlet();
   const ann = await addUser('ann');
   const bob = await addUser('bob');
-  await service.setStaff(outlet.id, [ann.id, bob.id]);
+  await service.setStaff(outlet.id, [as(ann.id), as(bob.id)]);
 
   await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, bob.id));
   expect((await service.staff(outlet.id)).map((s) => s.username)).toEqual(['ann']);
@@ -167,11 +173,46 @@ test('setStaff on a closed outlet is NOT_FOUND', async () => {
   const outlet = await anOutlet();
   const ann = await addUser('ann');
   await service.remove(outlet.id);
-  await expect(service.setStaff(outlet.id, [ann.id])).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  await expect(service.setStaff(outlet.id, [as(ann.id)])).rejects.toMatchObject({ code: 'NOT_FOUND' });
 });
 
 test('staff on an outlet that never existed is NOT_FOUND', async () => {
   await expect(service.staff('00000000-0000-0000-0000-000000000000')).rejects.toMatchObject({
     code: 'NOT_FOUND',
+  });
+});
+
+test('the roster reports each member role', async () => {
+  const outlet = await anOutlet();
+  const ann = await addUser('ann');
+  const roster = await service.setStaff(outlet.id, [as(ann.id, 'manager')]);
+  expect(roster[0]?.roleId).toBe(roleId.manager);
+});
+
+test('changing a member role replaces the row', async () => {
+  const outlet = await anOutlet();
+  const ann = await addUser('ann');
+  await service.setStaff(outlet.id, [as(ann.id, 'cashier')]);
+  const roster = await service.setStaff(outlet.id, [as(ann.id, 'manager')]);
+  expect(roster).toHaveLength(1);
+  expect(roster[0]?.roleId).toBe(roleId.manager);
+});
+
+test('the owner role never goes on a roster', async () => {
+  const outlet = await anOutlet();
+  const ann = await addUser('ann');
+  await expect(service.setStaff(outlet.id, [as(ann.id, 'owner')])).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+    message: 'Owner is global.',
+  });
+});
+
+test('an unknown role rejects the whole call', async () => {
+  const outlet = await anOutlet();
+  const ann = await addUser('ann');
+  const ghost = '00000000-0000-0000-0000-000000000000';
+  await expect(service.setStaff(outlet.id, [{ userId: ann.id, roleId: ghost }])).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+    message: `Not a valid role: ${ghost}.`,
   });
 });

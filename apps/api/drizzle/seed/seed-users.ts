@@ -7,7 +7,8 @@ const { roles, users } = schema;
 
 /**
  * The first owner, so a fresh database can be logged into. Dev credentials —
- * change the password before this ever faces a real till.
+ * change the password before this ever faces a real till. The role goes on `users.role_id`:
+ * that is the GLOBAL role, which is why the owner needs no `outlet_staff` row.
  */
 export const OWNER = { username: 'owner', password: 'owner123', name: 'Owner' };
 

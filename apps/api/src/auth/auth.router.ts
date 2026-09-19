@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AuthService, type PublicUser } from './auth.service';
 import { ProtectedMiddleware } from './protected.middleware';
 import { RbacService } from './rbac.service';
+import type { Actor } from './rbac-rules';
 
 // The generator hoists these into the shared contract, so every client sees one user shape.
 const userOutput = z.object({
@@ -12,7 +13,14 @@ const userOutput = z.object({
   username: z.string(),
   hasPin: z.boolean(),
 });
-const sessionOutput = z.object({ user: userOutput, accessToken: z.string(), refreshToken: z.string() });
+const outletRef = z.object({ id: z.string(), name: z.string() });
+const sessionOutput = z.object({
+  user: userOutput,
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  outlet: outletRef.nullable(),
+  outlets: z.array(outletRef),
+});
 // A literal, not an import: the generator cannot hoist identifiers a schema references.
 const pinInput = z.string().regex(/^\d{6}$/, 'PIN must be 6 digits.');
 
@@ -43,9 +51,14 @@ export class AuthRouter {
     return this.authService.login(input);
   }
 
-  @Mutation({ input: z.object({ refreshToken: z.string().min(1) }), output: sessionOutput })
-  refresh(@Input('refreshToken') refreshToken: string) {
-    return this.authService.refresh(refreshToken);
+  // `outletId` makes this the outlet picker too: choosing or switching an outlet is exactly
+  // "reissue my session", which refresh already is. Omitted, the row's outlet carries forward.
+  @Mutation({
+    input: z.object({ refreshToken: z.string().min(1), outletId: z.uuid().optional() }),
+    output: sessionOutput,
+  })
+  refresh(@Input() input: { refreshToken: string; outletId?: string }) {
+    return this.authService.refresh(input.refreshToken, input.outletId);
   }
 
   @Mutation({
@@ -85,9 +98,15 @@ export class AuthRouter {
   }
 
   // Extends rather than re-declares, so a field added to `userOutput` reaches `me` too.
-  @Query({ output: userOutput.extend({ permissions: z.array(z.string()) }) })
+  @Query({
+    output: userOutput.extend({ outletId: z.string().nullable(), permissions: z.array(z.string()) }),
+  })
   @UseMiddlewares(ProtectedMiddleware)
-  async me(@Ctx() ctx: { user: PublicUser }) {
-    return { ...ctx.user, permissions: await this.rbac.permissionsOf(ctx.user.id) };
+  async me(@Ctx() ctx: Actor & { user: PublicUser }) {
+    return {
+      ...ctx.user,
+      outletId: ctx.outletId,
+      permissions: await this.rbac.permissionsOf(ctx.user.id, ctx.outletId),
+    };
   }
 }

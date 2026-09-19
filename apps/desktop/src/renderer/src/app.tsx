@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { FloorPlan } from './components/floor-plan';
 import { LoginForm } from './components/login-form';
+import { OutletPicker } from './components/outlet-picker';
 import { useAuthStore } from './stores/auth';
 import { trpcClient, useTRPC } from './trpc';
 
@@ -62,11 +63,23 @@ function IdleTimeoutSetting() {
 function Home() {
   const trpc = useTRPC();
   const me = useQuery(trpc.auth.me.queryOptions());
+  const { outlet, startSwitch } = useAuthStore();
 
   return (
     <main>
       <h1>POS D4</h1>
-      <p>{me.isPending ? 'Loading…' : (me.data?.name ?? me.error?.message)}</p>
+      <p>
+        {me.isPending ? 'Loading…' : (me.data?.name ?? me.error?.message)}
+        {outlet && (
+          <>
+            {' · '}
+            {outlet.name}{' '}
+            <button type="button" onClick={startSwitch}>
+              Ganti outlet
+            </button>
+          </>
+        )}
+      </p>
       <button onClick={signOut}>Sign out</button>
       {me.data?.permissions.includes('settings.manage') && <IdleTimeoutSetting />}
       {me.data?.permissions.includes('table.view') && <FloorPlan permissions={me.data.permissions} />}
@@ -75,6 +88,8 @@ function Home() {
 }
 
 export function App() {
-  const accessToken = useAuthStore((s) => s.accessToken);
-  return accessToken ? <Home /> : <LoginForm />;
+  const { accessToken, outlet, outlets, switching } = useAuthStore();
+  if (!accessToken) return <LoginForm />;
+  if (outlets.length && (!outlet || switching)) return <OutletPicker onSignOut={signOut} />;
+  return <Home />;
 }
