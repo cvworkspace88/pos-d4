@@ -1,14 +1,27 @@
-import { ChevronsUpDown, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '../stores/auth';
 import { trpcClient } from '../trpc';
+import { OutletSwitcher } from './outlet-switcher';
 
+/**
+ * Local state goes first, so a slow or failed call can never trap the user in a signed-in shell.
+ * The server call is fire-and-forget: without it the refresh token stays valid for its full 30 days.
+ */
 function signOut() {
   const { refreshToken, clear } = useAuthStore.getState();
   clear();
   if (refreshToken) void trpcClient.auth.logout.mutate({ refreshToken }).catch(() => undefined);
 }
 
+/**
+ * Layout shell only, shaped after shadcn's sidebar: a flush 16rem rail with a sticky header
+ * (outlet switcher) and sticky footer (profile), a scrollable menu region between them, and the
+ * page content in its own scroll container.
+ *
+ * ponytail: static rail — no collapse/offcanvas, no SidebarProvider, no cmd+B. Add if the
+ * backoffice ever needs the icon-only state on small screens.
+ */
 export function Shell({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user);
 
@@ -16,19 +29,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="flex h-screen bg-surface">
       <aside className="flex w-64 shrink-0 flex-col border-r border-border-subtle bg-surface">
         <div className="flex flex-col gap-2 p-2">
-          <button
-            type="button"
-            className="flex h-12 w-full items-center gap-2 rounded-md border border-border-subtle p-2 text-left transition-colors hover:bg-primary-lighter"
-          >
-            <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-white">
-              P
-            </div>
-            <div className="min-w-0 flex-1 leading-tight">
-              <span className="block truncate text-sm font-semibold text-ink-primary">POS 2.0</span>
-              <span className="block truncate text-xs text-ink-tertiary">Lokasi aktif · —</span>
-            </div>
-            <ChevronsUpDown className="size-4 shrink-0 text-ink-tertiary" />
-          </button>
+          <OutletSwitcher />
         </div>
 
         {/* menu groups land here: <p class="h-8 px-2 text-xs font-medium text-ink-tertiary"> label

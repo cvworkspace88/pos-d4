@@ -6,25 +6,32 @@ interface AuthState {
   user: Session['user'] | null;
   accessToken: string | null;
   refreshToken: string | null;
+  outlet: Session['outlet'];
+  outlets: Session['outlets'];
   setSession: (session: Session) => void;
   clear: () => void;
 }
 
-const signedOut = { user: null, accessToken: null, refreshToken: null };
+const signedOut = { user: null, accessToken: null, refreshToken: null, outlet: null, outlets: [] };
 
-// ponytail: outlet/outlets from the session are dropped — backoffice is owner-scoped and has no
-// outlet picker yet. Add them back (see desktop's store) when a screen here is outlet-scoped.
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       ...signedOut,
-      setSession: ({ user, accessToken, refreshToken }) => set({ user, accessToken, refreshToken }),
+      setSession: ({ user, accessToken, refreshToken, outlet, outlets }) =>
+        set({ user, accessToken, refreshToken, outlet, outlets }),
       clear: () => set(signedOut),
     }),
     {
       name: 'pos-d4-backoffice-auth',
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ user, accessToken, refreshToken }) => ({ user, accessToken, refreshToken }),
+      partialize: ({ user, accessToken, refreshToken, outlet, outlets }) => ({
+        user,
+        accessToken,
+        refreshToken,
+        outlet,
+        outlets,
+      }),
     },
   ),
 );
