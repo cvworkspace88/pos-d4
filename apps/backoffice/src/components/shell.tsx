@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useAuthStore } from '../stores/auth';
 import { trpcClient } from '../trpc';
 import { OutletSwitcher } from './outlet-switcher';
+import { SidebarNav, type MenuKey } from './sidebar-nav';
 
 /**
  * Local state goes first, so a slow or failed call can never trap the user in a signed-in shell.
@@ -22,7 +23,15 @@ function signOut() {
  * ponytail: static rail — no collapse/offcanvas, no SidebarProvider, no cmd+B. Add if the
  * backoffice ever needs the icon-only state on small screens.
  */
-export function Shell({ children }: { children: ReactNode }) {
+export function Shell({
+  children,
+  active,
+  onSelect,
+}: {
+  children: ReactNode;
+  active: MenuKey;
+  onSelect: (key: MenuKey) => void;
+}) {
   const user = useAuthStore((s) => s.user);
 
   return (
@@ -32,9 +41,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <OutletSwitcher />
         </div>
 
-        {/* menu groups land here: <p class="h-8 px-2 text-xs font-medium text-ink-tertiary"> label
-            + <ul class="flex flex-col gap-1"> of h-8 rounded-md buttons */}
-        <nav className="min-h-0 flex-1 flex-col gap-2 overflow-auto p-2" />
+        <SidebarNav active={active} onSelect={onSelect} />
 
         <div className="flex flex-col gap-2 border-t border-border-subtle p-2">
           <div className="flex h-12 w-full items-center gap-2 rounded-md p-2">
