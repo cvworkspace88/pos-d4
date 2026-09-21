@@ -57,7 +57,10 @@ test('reserved from 30 minutes before the booking', () => {
 });
 
 test('a booking already past its time still shows until staff resolve it', () => {
-  assert.equal(isReserved('T', [{ tableId: 'T', status: 'booked', startsAt: at(-60 * 60 * 1000) }], NOW), true);
+  assert.equal(
+    isReserved('T', [{ tableId: 'T', status: 'booked', startsAt: at(-60 * 60 * 1000) }], NOW),
+    true,
+  );
 });
 
 test('seated, cancelled and no-show bookings and other tables do not count', () => {

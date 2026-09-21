@@ -65,7 +65,13 @@ export function ReservationForm({ table, onClose }: { table: FloorTable; onClose
         {errors.phone && <p role="alert">{errors.phone.message}</p>}
 
         <label htmlFor="res-party">Party size</label>
-        <input id="res-party" type="number" min={1} max={100} {...register('partySize', { valueAsNumber: true })} />
+        <input
+          id="res-party"
+          type="number"
+          min={1}
+          max={100}
+          {...register('partySize', { valueAsNumber: true })}
+        />
         {errors.partySize && <p role="alert">{errors.partySize.message}</p>}
 
         <label htmlFor="res-time">Time</label>

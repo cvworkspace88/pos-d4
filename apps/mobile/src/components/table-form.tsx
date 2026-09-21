@@ -117,7 +117,9 @@ export function TableForm({
         <View style={styles.spacer} />
         <Button title={pending ? 'Saving…' : 'Save'} disabled={pending} onPress={handleSubmit(submit)} />
         <Button title="Cancel" onPress={onClose} />
-        {table && canDelete && <Button title="Delete" color="#c00" disabled={pending} onPress={confirmDelete} />}
+        {table && canDelete && (
+          <Button title="Delete" color="#c00" disabled={pending} onPress={confirmDelete} />
+        )}
         {error && <Text style={styles.error}>{error.message}</Text>}
       </SafeAreaView>
     </Modal>

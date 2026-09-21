@@ -76,7 +76,13 @@ export function TableForm({
         {errors.name && <p role="alert">{errors.name.message}</p>}
 
         <label htmlFor="table-seats">Seats</label>
-        <input id="table-seats" type="number" min={1} max={50} {...register('seats', { valueAsNumber: true })} />
+        <input
+          id="table-seats"
+          type="number"
+          min={1}
+          max={50}
+          {...register('seats', { valueAsNumber: true })}
+        />
         {errors.seats && <p role="alert">{errors.seats.message}</p>}
 
         <label htmlFor="table-w">Width</label>

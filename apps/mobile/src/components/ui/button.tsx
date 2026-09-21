@@ -46,7 +46,10 @@ const buttonLabelVariants = cva('text-center font-poppins-medium', {
 });
 
 /** `disabled` drives its own variant, so it is not selectable through `variant`. */
-export type ButtonVariant = Exclude<VariantProps<typeof buttonVariants>['variant'], 'disabled' | null | undefined>;
+export type ButtonVariant = Exclude<
+  VariantProps<typeof buttonVariants>['variant'],
+  'disabled' | null | undefined
+>;
 export type ButtonSize = NonNullable<VariantProps<typeof buttonVariants>['size']>;
 
 export interface ButtonProps extends Omit<PressableProps, 'children' | 'className'> {
@@ -56,10 +59,21 @@ export interface ButtonProps extends Omit<PressableProps, 'children' | 'classNam
   children: string;
 }
 
-export function Button({ variant = 'default', size = 'md', disabled, className, children, ...props }: ButtonProps) {
+export function Button({
+  variant = 'default',
+  size = 'md',
+  disabled,
+  className,
+  children,
+  ...props
+}: ButtonProps) {
   const resolved = disabled ? 'disabled' : variant;
   return (
-    <Pressable disabled={disabled} className={buttonVariants({ variant: resolved, size, className })} {...props}>
+    <Pressable
+      disabled={disabled}
+      className={buttonVariants({ variant: resolved, size, className })}
+      {...props}
+    >
       <Text className={buttonLabelVariants({ variant: resolved, size })}>{children}</Text>
     </Pressable>
   );

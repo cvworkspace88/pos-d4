@@ -30,7 +30,8 @@ export function ReservationList({
   );
 
   const nameOf = (tableId: string) => tables.find((t) => t.id === tableId)?.name ?? '?';
-  const timeOf = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timeOf = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
     <section>

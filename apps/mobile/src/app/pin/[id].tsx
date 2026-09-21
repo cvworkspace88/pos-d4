@@ -96,9 +96,7 @@ export default function PinScreen() {
 
           <Keypad onPress={press} onBackspace={backspace} disabled={pinLogin.isPending} />
 
-          <Text className="font-poppins text-xs text-ink-muted">
-            Lupa PIN? Minta manajer mengatur ulang.
-          </Text>
+          <Text className="font-poppins text-xs text-ink-muted">Lupa PIN? Minta manajer mengatur ulang.</Text>
         </View>
       </View>
     </SafeAreaView>

@@ -100,7 +100,11 @@ export function ReservationForm({ table, onClose }: { table: TableRow; onClose: 
         ))}
 
         <View style={styles.spacer} />
-        <Button title={create.isPending ? 'Saving…' : 'Reserve'} disabled={create.isPending} onPress={handleSubmit(submit)} />
+        <Button
+          title={create.isPending ? 'Saving…' : 'Reserve'}
+          disabled={create.isPending}
+          onPress={handleSubmit(submit)}
+        />
         <Button title="Cancel" onPress={onClose} />
         {create.error && <Text style={styles.error}>{create.error.message}</Text>}
       </SafeAreaView>

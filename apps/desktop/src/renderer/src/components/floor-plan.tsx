@@ -1,11 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  useEffect,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-  type RefObject,
-} from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import {
   clampPosition,
   dayRange,
@@ -51,8 +45,7 @@ function useNow(intervalMs = 60_000) {
   return now;
 }
 
-const toggle = (ids: string[], id: string) =>
-  ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+const toggle = (ids: string[], id: string) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
 
 export function FloorPlan({ permissions }: { permissions: string[] }) {
   const trpc = useTRPC();
@@ -172,7 +165,11 @@ export function FloorPlan({ permissions }: { permissions: string[] }) {
     if (Math.abs(event.clientX - drag.start.x) > 3 || Math.abs(event.clientY - drag.start.y) > 3) {
       drag.moved = true;
     }
-    const next = clampPosition(t, event.clientX / scale - drag.offset.x, event.clientY / scale - drag.offset.y);
+    const next = clampPosition(
+      t,
+      event.clientX / scale - drag.offset.x,
+      event.clientY / scale - drag.offset.y,
+    );
     setOverride((current) => ({ ...current, [t.id]: next }));
   };
 
@@ -257,7 +254,11 @@ export function FloorPlan({ permissions }: { permissions: string[] }) {
             </button>
           )}
           {can('table.merge') && !isStandalone(current) && (
-            <button type="button" disabled={unmerge.isPending} onClick={() => unmerge.mutate({ id: current.id })}>
+            <button
+              type="button"
+              disabled={unmerge.isPending}
+              onClick={() => unmerge.mutate({ id: current.id })}
+            >
               Unmerge
             </button>
           )}

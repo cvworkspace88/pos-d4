@@ -13,12 +13,19 @@ const reasonOf = (error: TRPCError) =>
   ).data.reason;
 
 test('a wrong PIN is distinguishable from a dead profile despite sharing UNAUTHORIZED', () => {
-  const wrongPin = new TRPCError({ code: 'UNAUTHORIZED', message: 'Wrong PIN.', cause: new Reason('INVALID_PIN') });
+  const wrongPin = new TRPCError({
+    code: 'UNAUTHORIZED',
+    message: 'Wrong PIN.',
+    cause: new Reason('INVALID_PIN'),
+  });
   const deadProfile = new TRPCError({ code: 'UNAUTHORIZED', message: 'Profile expired.' });
   assert.equal(reasonOf(wrongPin), 'INVALID_PIN');
   assert.equal(reasonOf(deadProfile), undefined);
 });
 
 test('a thrown Error as cause never leaks its message through reason', () => {
-  assert.equal(reasonOf(new TRPCError({ code: 'UNAUTHORIZED', cause: new Error('pg: no relation') })), undefined);
+  assert.equal(
+    reasonOf(new TRPCError({ code: 'UNAUTHORIZED', cause: new Error('pg: no relation') })),
+    undefined,
+  );
 });

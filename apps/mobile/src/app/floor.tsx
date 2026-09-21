@@ -18,8 +18,7 @@ const ACTIONS = [
   ['cancelled', 'Cancel'],
 ] as const;
 
-const toggle = (ids: string[], id: string) =>
-  ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+const toggle = (ids: string[], id: string) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
 
 /** Re-renders once a minute so the "Reserved" badge appears on time without a refetch. */
 function useNow(intervalMs = 60_000) {
@@ -124,7 +123,8 @@ export default function FloorScreen() {
   const isStandalone = (t: TableRow) => !t.mergedIntoId && !groups.has(t.id);
   const nameOf = (id: string) => tables.find((t) => t.id === id)?.name ?? '?';
   const current = selected ? tables.find((t) => t.id === selected) : undefined;
-  const timeOf = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timeOf = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const onTap = (t: TableRow) => {
     if (editing) {
@@ -198,7 +198,11 @@ export default function FloorScreen() {
             <Button title="Merge" onPress={() => setPicking({ headId: current.id, memberIds: [] })} />
           )}
           {can('table.merge') && !isStandalone(current) && (
-            <Button title="Unmerge" disabled={unmerge.isPending} onPress={() => unmerge.mutate({ id: current.id })} />
+            <Button
+              title="Unmerge"
+              disabled={unmerge.isPending}
+              onPress={() => unmerge.mutate({ id: current.id })}
+            />
           )}
           {can('reservation.create') && <Button title="Reserve" onPress={() => setReserving(current)} />}
         </View>
@@ -255,7 +259,11 @@ export default function FloorScreen() {
       )}
 
       {form && (
-        <TableForm table={form === 'new' ? null : form} canDelete={can('table.delete')} onClose={() => setForm(null)} />
+        <TableForm
+          table={form === 'new' ? null : form}
+          canDelete={can('table.delete')}
+          onClose={() => setForm(null)}
+        />
       )}
       {reserving && <ReservationForm table={reserving} onClose={() => setReserving(null)} />}
     </SafeAreaView>

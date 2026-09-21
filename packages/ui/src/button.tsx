@@ -7,8 +7,10 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary border-transparent text-white hover:bg-primary-dark active:bg-primary-dark',
-        ghost: 'bg-transparent border-transparent text-ink-primary hover:bg-primary-lighter active:bg-primary-light',
-        outline: 'bg-transparent text-ink-primary border-primary hover:bg-primary-lighter active:bg-primary-light',
+        ghost:
+          'bg-transparent border-transparent text-ink-primary hover:bg-primary-lighter active:bg-primary-light',
+        outline:
+          'bg-transparent text-ink-primary border-primary hover:bg-primary-lighter active:bg-primary-light',
         soft: 'bg-primary-light border-transparent text-primary-dark hover:bg-primary-lighter active:bg-primary-light',
         disabled: 'bg-pebble text-ink-muted border-pebble cursor-not-allowed',
       },

@@ -29,7 +29,11 @@ export function scaleFor(viewportW: number, viewportH: number): number {
   return Math.max(0, Math.min(viewportW, viewportH)) / FLOOR.size;
 }
 
-export function clampPosition(table: { w: number; h: number }, x: number, y: number): { x: number; y: number } {
+export function clampPosition(
+  table: { w: number; h: number },
+  x: number,
+  y: number,
+): { x: number; y: number } {
   const clamp = (value: number, max: number) => Math.min(Math.max(Math.round(value), 0), max);
   return { x: clamp(x, FLOOR.size - table.w), y: clamp(y, FLOOR.size - table.h) };
 }
