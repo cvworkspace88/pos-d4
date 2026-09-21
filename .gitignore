@@ -40,3 +40,7 @@ yarn-error.log*
 
 # env
 .env
+
+# React Router
+.react-router/
+build/

@@ -6,8 +6,7 @@ export default {
   // Brand palette lives in @repo/tailwind-config so both clients share one source of truth.
   presets: [preset],
   content: [
-    './index.html',
-    './src/**/*.{js,ts,jsx,tsx}',
+    './app/**/*.{js,ts,jsx,tsx}',
     // Shared components live outside this app; without this glob their classes get purged.
     '../../packages/ui/src/**/*.{js,ts,jsx,tsx}',
   ],

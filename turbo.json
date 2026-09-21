@@ -3,18 +3,34 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": ["^build", "@repo/api#trpc:generate"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["dist/**", "out/**"]
+      "dependsOn": [
+        "^build",
+        "@repo/api#trpc:generate"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*"
+      ],
+      "outputs": [
+        "dist/**",
+        "out/**",
+        "build/**"
+      ]
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": [
+        "^lint"
+      ]
     },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": [
+        "^check-types"
+      ]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "dev": {
       "cache": false,
@@ -23,5 +39,8 @@
     "trpc:generate": {
       "cache": false
     }
-  }
+  },
+  "globalEnv": [
+    "DEV"
+  ]
 }

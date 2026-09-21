@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { NavLink } from 'react-router';
 import { useTRPC } from '../trpc';
 
 /**
@@ -11,17 +12,17 @@ export const MENU = [
     label: 'Manajemen',
     items: [
       // Scoped to the session's active outlet, not the whole deployment.
-      { key: 'settings', label: 'Pengaturan', permission: 'settings.manage' },
+      { to: '/pengaturan', label: 'Pengaturan', permission: 'settings.manage' },
       // Every outlet: the list, and each one's own fields.
-      { key: 'outlets', label: 'Outlet', permission: 'outlet.manage' },
+      { to: '/outlet', label: 'Outlet', permission: 'outlet.manage' },
     ],
   },
 ] as const;
 
-export type MenuKey = (typeof MENU)[number]['items'][number]['key'];
+const ROW = 'flex h-10 w-full items-center border-b border-border-muted px-4 text-left text-sm';
 
 /** Full-bleed rows: the group band and the item highlight both run edge to edge, so no padding here. */
-export function SidebarNav({ active, onSelect }: { active: MenuKey; onSelect: (key: MenuKey) => void }) {
+export function SidebarNav() {
   const trpc = useTRPC();
   const me = useQuery(trpc.auth.me.queryOptions());
   const granted = (permission: string) => me.data?.permissions.includes(permission) ?? false;
@@ -34,18 +35,24 @@ export function SidebarNav({ active, onSelect }: { active: MenuKey; onSelect: (k
             {group.label}
           </p>
           <ul>
-            {group.items.map(({ key, label, permission }) => (
-              <li key={key}>
-                <button
-                  type="button"
-                  disabled={!granted(permission)}
-                  onClick={() => onSelect(key)}
-                  className={`flex h-10 w-full items-center border-b border-border-muted px-4 text-left text-sm transition-colors enabled:hover:bg-primary-lighter disabled:cursor-not-allowed disabled:text-ink-tertiary/50 ${
-                    active === key ? 'bg-primary-lighter font-medium text-primary' : 'text-ink-secondary'
-                  }`}
-                >
-                  <span className="truncate">{label}</span>
-                </button>
+            {group.items.map(({ to, label, permission }) => (
+              <li key={to}>
+                {granted(permission) ? (
+                  <NavLink
+                    to={to}
+                    className={({ isActive }) =>
+                      `${ROW} transition-colors hover:bg-primary-lighter ${
+                        isActive ? 'bg-primary-lighter font-medium text-primary' : 'text-ink-secondary'
+                      }`
+                    }
+                  >
+                    <span className="truncate">{label}</span>
+                  </NavLink>
+                ) : (
+                  <span className={`${ROW} cursor-not-allowed text-ink-tertiary/50`}>
+                    <span className="truncate">{label}</span>
+                  </span>
+                )}
               </li>
             ))}
           </ul>
