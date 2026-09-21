@@ -126,6 +126,9 @@ importers:
       '@trpc/tanstack-react-query':
         specifier: 11.18.0
         version: 11.18.0(@tanstack/react-query@5.102.8(react@19.3.0))(@trpc/client@11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.18.0(typescript@6.0.3))(react@19.3.0)(typescript@6.0.3)
+      lucide-react:
+        specifier: ^1.45.0
+        version: 1.45.0(react@19.3.0)
       react:
         specifier: 19.3.0
         version: 19.3.0

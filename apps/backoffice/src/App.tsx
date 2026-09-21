@@ -1,39 +1,21 @@
-import { useQuery } from '@tanstack/react-query';
-import { Button } from '@repo/ui/button';
-import { Card } from '@repo/ui/card';
 import { LoginForm } from './components/login-form';
+import { Shell } from './components/shell';
 import { useAuthStore } from './stores/auth';
-import { trpcClient, useTRPC } from './trpc';
-
-/**
- * Local state goes first, so a slow or failed call can never trap the user in a signed-in shell.
- * The server call is fire-and-forget: without it the refresh token stays valid for its full 30 days.
- */
-function signOut() {
-  const { refreshToken, clear } = useAuthStore.getState();
-  clear();
-  if (refreshToken) void trpcClient.auth.logout.mutate({ refreshToken }).catch(() => undefined);
-}
 
 function Home() {
-  const trpc = useTRPC();
-  const me = useQuery(trpc.auth.me.queryOptions());
-
   return (
-    <main className="flex min-h-screen items-center justify-center p-8">
-      <Card className="flex w-full max-w-sm flex-col gap-4">
-        <h1 className="text-lg font-semibold text-ink-primary">Backoffice</h1>
-        <p className="text-sm text-ink-secondary">
-          {me.isPending ? 'Loading…' : (me.data?.name ?? me.error?.message)}
-        </p>
-        <Button onClick={signOut}>Keluar</Button>
-      </Card>
-    </main>
+    <Shell>
+      <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-6">
+        <h1 className="text-base font-semibold text-ink-primary">Dashboard</h1>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto p-6">
+        <div className="h-full min-h-[60vh] rounded-xl border border-border-subtle bg-surface" />
+      </div>
+    </Shell>
   );
 }
 
 export default function App() {
   const accessToken = useAuthStore((s) => s.accessToken);
-  console.log('accessToken', accessToken);
   return accessToken ? <Home /> : <LoginForm />;
 }
