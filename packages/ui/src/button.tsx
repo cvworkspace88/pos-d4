@@ -12,6 +12,7 @@ const buttonVariants = cva(
         outline:
           'bg-transparent text-ink-primary border-primary hover:bg-primary-lighter active:bg-primary-light',
         soft: 'bg-primary-light border-transparent text-primary-dark hover:bg-primary-lighter active:bg-primary-light',
+        danger: 'bg-danger border-transparent text-white hover:bg-danger-dark active:bg-danger-dark',
         disabled: 'bg-pebble text-ink-muted border-pebble cursor-not-allowed',
       },
       size: {

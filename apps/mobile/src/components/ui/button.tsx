@@ -15,6 +15,7 @@ const buttonVariants = cva('items-center justify-center rounded-full border', {
       ghost: 'bg-transparent border-transparent active:bg-primary-lighter',
       outline: 'bg-transparent border-primary active:bg-primary-lighter',
       soft: 'bg-primary-light border-transparent active:bg-primary-lighter',
+      danger: 'bg-danger border-transparent active:bg-danger-dark',
       disabled: 'bg-pebble border-pebble',
     },
     size: {
@@ -34,6 +35,7 @@ const buttonLabelVariants = cva('text-center font-poppins-medium', {
       ghost: 'text-ink-primary',
       outline: 'text-ink-primary',
       soft: 'text-primary-dark',
+      danger: 'text-white',
       disabled: 'text-ink-muted',
     },
     size: {

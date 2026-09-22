@@ -9,7 +9,7 @@ import { park } from '@/lib/session';
 import { useAuthStore } from '@/lib/stores/auth';
 import { useTRPC } from '@/lib/trpc';
 
-const VARIANTS: ButtonVariant[] = ['default', 'ghost', 'outline', 'soft'];
+const VARIANTS: ButtonVariant[] = ['default', 'ghost', 'outline', 'soft', 'danger'];
 const SIZES: ButtonSize[] = ['lg', 'md', 'sm'];
 const ALERT_VARIANTS: AlertVariant[] = ['primary', 'warning', 'danger', 'success'];
 
