@@ -34,7 +34,6 @@ export default function OutletPage() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
-  console.log('trpc', adding);
   const outlets = useQuery(trpc.outlet.list.queryOptions());
 
   const {
