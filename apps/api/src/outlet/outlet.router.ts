@@ -6,7 +6,7 @@ import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
 import { canActOn, type Actor } from '../auth/rbac-rules';
-import { OutletService, type OutletInput } from './outlet.service';
+import { OutletService, type OutletDetails, type OutletInput } from './outlet.service';
 import type { StaffEntry } from './outlet-rules';
 
 type Ctx = Actor & { user: PublicUser };
@@ -36,8 +36,20 @@ export class OutletRouter {
   @Query({ output: z.array(outletOutput) })
   @UseMiddlewares(ProtectedMiddleware)
   async list(@Ctx() ctx: Ctx) {
-    await this.rbac.require(ctx, 'outlet.view');
+    await this.rbac.require(ctx, 'outlet.view_all');
     return this.service.list();
+  }
+
+  /**
+   * One outlet, the caller's own. No permission: the session already carries which outlets you
+   * work at, so its address and phone are not a privilege on top — same call shape as
+   * `settings.get`. `canActOn` is what keeps it to your own.
+   */
+  @Query({ input: z.object({ id: z.uuid() }), output: outletOutput })
+  @UseMiddlewares(ProtectedMiddleware)
+  async get(@Ctx() ctx: Ctx, @Input('id') id: string) {
+    if (!canActOn(ctx, id)) throw wrongOutlet();
+    return this.service.get(id);
   }
 
   @Mutation({
@@ -56,37 +68,56 @@ export class OutletRouter {
   })
   @UseMiddlewares(ProtectedMiddleware)
   async create(@Ctx() ctx: Ctx, @Input() input: OutletInput) {
-    await this.rbac.require(ctx, 'outlet.manage');
+    await this.rbac.require(ctx, 'outlet.create');
     return this.service.create(input);
   }
 
-  // The full field set, not a patch: this is a form save, so an omitted address clears it.
+  // The full field set, not a patch: this is a form save, so an omitted address clears it. The
+  // code is not part of it — see `setCode`.
   @Mutation({
     input: z.object({
       id: z.uuid(),
       name: z.string().trim().min(1).max(60),
-      code: z
-        .string()
-        .trim()
-        .min(1)
-        .max(12)
-        .regex(/^[a-zA-Z0-9-]+$/),
       address: z.string().trim().max(200).optional(),
       phone: z.string().trim().max(32).optional(),
     }),
     output: outletOutput,
   })
   @UseMiddlewares(ProtectedMiddleware)
-  async update(@Ctx() ctx: Ctx, @Input() input: OutletInput & { id: string }) {
+  async update(@Ctx() ctx: Ctx, @Input() input: OutletDetails & { id: string }) {
     await this.rbac.require(ctx, 'outlet.manage');
+    if (!canActOn(ctx, input.id)) throw wrongOutlet();
     const { id, ...patch } = input;
     return this.service.update(id, patch);
+  }
+
+  /**
+   * The code on its own, not part of the detail form: it is printed on receipts and keys terminal
+   * setup, so changing it is a deliberate act. Same permission and same confinement as `update`.
+   */
+  @Mutation({
+    input: z.object({
+      id: z.uuid(),
+      code: z
+        .string()
+        .trim()
+        .min(1)
+        .max(12)
+        .regex(/^[a-zA-Z0-9-]+$/),
+    }),
+    output: outletOutput,
+  })
+  @UseMiddlewares(ProtectedMiddleware)
+  async setCode(@Ctx() ctx: Ctx, @Input() input: { id: string; code: string }) {
+    await this.rbac.require(ctx, 'outlet.manage');
+    if (!canActOn(ctx, input.id)) throw wrongOutlet();
+    return this.service.setCode(input.id, input.code);
   }
 
   @Mutation({ input: z.object({ id: z.uuid() }), output: z.object({ success: z.boolean() }) })
   @UseMiddlewares(ProtectedMiddleware)
   async remove(@Ctx() ctx: Ctx, @Input('id') id: string) {
-    await this.rbac.require(ctx, 'outlet.manage');
+    await this.rbac.require(ctx, 'outlet.delete');
     return this.service.remove(id);
   }
 

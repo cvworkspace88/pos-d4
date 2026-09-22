@@ -13,6 +13,9 @@ export interface OutletInput {
   phone?: string;
 }
 
+/** What `update` saves. The code is not in here: only `create` and `setCode` write it. */
+export type OutletDetails = Omit<OutletInput, 'code'>;
+
 export interface StaffOutput {
   id: string;
   name: string;
@@ -50,12 +53,13 @@ const rethrowAsConflict = (error: unknown): never => {
 };
 
 /** Omitted address and phone clear the column: `update` is a full form save, not a patch. */
-const toRow = (input: OutletInput) => ({
+const detailsRow = (input: OutletDetails) => ({
   name: input.name,
-  code: normalizeCode(input.code),
   address: input.address ?? null,
   phone: input.phone ?? null,
 });
+
+const createRow = (input: OutletInput) => ({ ...detailsRow(input), code: normalizeCode(input.code) });
 
 @Injectable()
 export class OutletService {
@@ -66,21 +70,43 @@ export class OutletService {
     return rows.map(outletOutput);
   }
 
+  async get(id: string): Promise<OutletOutput> {
+    return outletOutput(await this.find(id));
+  }
+
   async create(input: OutletInput): Promise<OutletOutput> {
     try {
-      const [row] = await this.db.insert(outlets).values(toRow(input)).returning();
+      const [row] = await this.db.insert(outlets).values(createRow(input)).returning();
       return outletOutput(row!);
     } catch (error) {
       return rethrowAsConflict(error);
     }
   }
 
-  async update(id: string, input: OutletInput): Promise<OutletOutput> {
+  async update(id: string, input: OutletDetails): Promise<OutletOutput> {
     await this.find(id);
     try {
       const [row] = await this.db
         .update(outlets)
-        .set(toRow(input))
+        .set(detailsRow(input))
+        .where(and(eq(outlets.id, id), live))
+        .returning();
+      return outletOutput(row!);
+    } catch (error) {
+      return rethrowAsConflict(error);
+    }
+  }
+
+  /**
+   * The code alone. Separate from `update` because it is printed on receipts and keys terminal
+   * setup, so changing it stays a deliberate act rather than a field saved with the address.
+   */
+  async setCode(id: string, code: string): Promise<OutletOutput> {
+    await this.find(id);
+    try {
+      const [row] = await this.db
+        .update(outlets)
+        .set({ code: normalizeCode(code) })
         .where(and(eq(outlets.id, id), live))
         .returning();
       return outletOutput(row!);

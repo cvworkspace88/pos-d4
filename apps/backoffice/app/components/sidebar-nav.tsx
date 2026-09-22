@@ -14,7 +14,7 @@ export const MENU = [
       // Scoped to the session's active outlet, not the whole deployment.
       { to: '/pengaturan', label: 'Pengaturan', permission: 'settings.manage' },
       // Every outlet: the list, and each one's own fields.
-      { to: '/outlet', label: 'Outlet', permission: 'outlet.manage' },
+      { to: '/outlet', label: 'Outlet', permission: 'outlet.view_all' },
     ],
   },
 ] as const;

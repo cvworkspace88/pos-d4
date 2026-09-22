@@ -82,16 +82,52 @@ test('list hides closed outlets and sorts by name', async () => {
   expect((await service.list()).map((o) => o.name)).toEqual(['Airport', 'Downtown']);
 });
 
+test('get returns one outlet, and a closed one is NOT_FOUND', async () => {
+  const outlet = await service.create({ name: 'Downtown', code: 'dt', phone: '555' });
+  expect(await service.get(outlet.id)).toMatchObject({ name: 'Downtown', code: 'DT', phone: '555' });
+  await service.remove(outlet.id);
+  await expect(service.get(outlet.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+});
+
 test('update is a form save: an omitted address clears the column', async () => {
   const outlet = await service.create({ name: 'Downtown', code: 'dt', address: '1 Main St' });
-  const saved = await service.update(outlet.id, { name: 'Downtown', code: 'dt' });
+  const saved = await service.update(outlet.id, { name: 'Downtown' });
   expect(saved.address).toBeNull();
+});
+
+test('update leaves the code alone — only setCode writes it', async () => {
+  const outlet = await anOutlet();
+  const saved = await service.update(outlet.id, { name: 'Uptown' });
+  expect(saved).toMatchObject({ name: 'Uptown', code: 'DT' });
+});
+
+test('setCode stores uppercase, same as create', async () => {
+  const outlet = await anOutlet();
+  expect((await service.setCode(outlet.id, 'br2')).code).toBe('BR2');
+});
+
+test('setCode onto a live code is a CONFLICT naming the code', async () => {
+  const outlet = await anOutlet();
+  await service.create({ name: 'Airport', code: 'ap' });
+  await expect(service.setCode(outlet.id, 'AP')).rejects.toMatchObject({
+    code: 'CONFLICT',
+    message: 'Outlet code already in use.',
+  });
+});
+
+test('setCode on a closed outlet is NOT_FOUND', async () => {
+  const outlet = await anOutlet();
+  await service.remove(outlet.id);
+  await expect(service.setCode(outlet.id, 'br2')).rejects.toMatchObject({
+    code: 'NOT_FOUND',
+    message: 'Outlet not found.',
+  });
 });
 
 test('update of a closed outlet is NOT_FOUND, not a silent no-op', async () => {
   const outlet = await anOutlet();
   await service.remove(outlet.id);
-  await expect(service.update(outlet.id, { name: 'Downtown', code: 'dt' })).rejects.toMatchObject({
+  await expect(service.update(outlet.id, { name: 'Downtown' })).rejects.toMatchObject({
     code: 'NOT_FOUND',
     message: 'Outlet not found.',
   });

@@ -273,6 +273,16 @@ const appRouter = t.router({
   phone: z.string().nullable(),
 })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    get: publicProcedure
+      .input(z.object({ id: z.uuid() }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     create: publicProcedure
       .input(z.object({
       name: z.string().trim().min(1).max(60),
@@ -297,14 +307,26 @@ const appRouter = t.router({
       .input(z.object({
       id: z.uuid(),
       name: z.string().trim().min(1).max(60),
+      address: z.string().trim().max(200).optional(),
+      phone: z.string().trim().max(32).optional(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    setCode: publicProcedure
+      .input(z.object({
+      id: z.uuid(),
       code: z
         .string()
         .trim()
         .min(1)
         .max(12)
         .regex(/^[a-zA-Z0-9-]+$/),
-      address: z.string().trim().max(200).optional(),
-      phone: z.string().trim().max(32).optional(),
     }))
       .output(z.object({
   id: z.string(),
