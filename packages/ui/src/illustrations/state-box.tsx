@@ -13,22 +13,22 @@ const FILLS = {
   lavender: '#EDDFF7', // lavender-light
 } as const;
 
-export type EmptyBoxVariant = keyof typeof FILLS;
+export type StateBoxVariant = keyof typeof FILLS;
 
-export interface EmptyBoxProps extends ComponentProps<'svg'> {
-  variant?: EmptyBoxVariant;
+export interface StateBoxProps extends ComponentProps<'svg'> {
+  variant?: StateBoxVariant;
 }
 
 /**
- * Placeholder art for a list with nothing in it — empty, filtered down to nothing, or failed to
- * load. Named for what it draws, not for which of those three it serves.
+ * Placeholder art for a state with no list to show — empty, filtered down to nothing, failed to
+ * load, offline, or not permitted. One drawing, five tints — the title below it says which.
  *
  * Inlined rather than shipped as a file: this package exports source with no build step and no
  * asset pipeline, so a `.svg` here would need a copy in every app's `public/`. Decorative by
  * default — the surrounding copy carries the meaning — so it is hidden from screen readers
  * unless a caller passes its own `aria-label` and `aria-hidden={false}`.
  */
-export function EmptyBox({ variant = 'primary', 'aria-hidden': ariaHidden = true, ...props }: EmptyBoxProps) {
+export function StateBox({ variant = 'primary', 'aria-hidden': ariaHidden = true, ...props }: StateBoxProps) {
   const fill = FILLS[variant];
   return (
     <svg
