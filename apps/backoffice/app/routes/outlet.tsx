@@ -8,6 +8,7 @@ import { Alert } from '@repo/ui/alert';
 import { Button } from '@repo/ui/button';
 import { Card } from '@repo/ui/card';
 import { Dialog } from '@repo/ui/dialog';
+import { Skeleton } from '@repo/ui/skeleton';
 import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { TextField } from '@repo/ui/text-field';
 import { PageHeader } from '../components/page-header';
@@ -155,7 +156,7 @@ export default function OutletPage() {
               </Alert>
             )}
 
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-busy={outlets.isPending}>
               <thead className="border-b border-border-subtle text-left text-xs uppercase tracking-wider text-ink-tertiary">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Nama</th>
@@ -165,6 +166,17 @@ export default function OutletPage() {
                 </tr>
               </thead>
               <tbody>
+                {outlets.isPending &&
+                  Array.from({ length: 5 }, (_, i) => (
+                    <tr key={i} className="border-b border-border-muted last:border-0">
+                      {[40, 24, 56, 32].map((w) => (
+                        <td key={w} className="px-4 py-3">
+                          <Skeleton className="h-4" style={{ width: `${w}%` }} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+
                 {outlets.data?.map((o) => (
                   <tr key={o.id} className="border-b border-border-muted last:border-0">
                     <td className="px-4 py-3 font-medium text-ink-primary">{o.name}</td>
