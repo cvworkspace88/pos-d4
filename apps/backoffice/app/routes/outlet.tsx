@@ -8,6 +8,7 @@ import { Alert } from '@repo/ui/alert';
 import { Button } from '@repo/ui/button';
 import { Card } from '@repo/ui/card';
 import { Dialog } from '@repo/ui/dialog';
+import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { TextField } from '@repo/ui/text-field';
 import { PageHeader } from '../components/page-header';
 import { useTRPC } from '../trpc';
@@ -53,6 +54,10 @@ export default function OutletPage() {
     }),
   );
 
+  // Nothing loaded behind the error, so the page is the failure: no list, and no point offering to
+  // add to a list that could not be read.
+  const failed = outlets.error && !outlets.data;
+
   const close = () => {
     reset(EMPTY);
     create.reset();
@@ -63,15 +68,14 @@ export default function OutletPage() {
     <>
       <PageHeader title="Outlet" />
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-6">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-ink-tertiary">
-            {outlets.data ? `${outlets.data.length} outlet` : 'Memuat…'}
-          </span>
-          <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus className="mr-1 size-4" aria-hidden />
-            Tambah outlet
-          </Button>
-        </div>
+        {!failed && (
+          <div className="flex items-center justify-end">
+            <Button size="sm" onClick={() => setAdding(true)}>
+              <Plus className="mr-1 size-4" aria-hidden />
+              Tambah outlet
+            </Button>
+          </div>
+        )}
 
         <Dialog
           open={adding}
@@ -129,41 +133,57 @@ export default function OutletPage() {
           </form>
         </Dialog>
 
-        <Card className="min-h-0 flex-1 overflow-auto !gap-0 !p-0">
-          {outlets.error && (
-            <Alert variant="danger" role="alert" className="m-4">
-              {outlets.error.message}
-            </Alert>
-          )}
+        {failed ? (
+          // A failed *refetch* is the other branch: it keeps the rows it already has and gets the
+          // alert above the table instead.
+          <Card className="min-h-0 flex-1 items-center justify-center">
+            <StateMessageLayout
+              tone="danger"
+              title="Gagal memuat daftar outlet"
+              description={outlets.error.message}
+            >
+              <Button size="sm" onClick={() => void outlets.refetch()} disabled={outlets.isFetching}>
+                {outlets.isFetching ? 'Memuat…' : 'Coba lagi'}
+              </Button>
+            </StateMessageLayout>
+          </Card>
+        ) : (
+          <Card className="min-h-0 flex-1 overflow-auto !gap-0 !p-0">
+            {outlets.error && (
+              <Alert variant="danger" role="alert" className="m-4">
+                {outlets.error.message}
+              </Alert>
+            )}
 
-          <table className="w-full text-sm">
-            <thead className="border-b border-border-subtle text-left text-xs uppercase tracking-wider text-ink-tertiary">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Nama</th>
-                <th className="px-4 py-3 font-semibold">Kode</th>
-                <th className="px-4 py-3 font-semibold">Alamat</th>
-                <th className="px-4 py-3 font-semibold">Telepon</th>
-              </tr>
-            </thead>
-            <tbody>
-              {outlets.data?.map((o) => (
-                <tr key={o.id} className="border-b border-border-muted last:border-0">
-                  <td className="px-4 py-3 font-medium text-ink-primary">{o.name}</td>
-                  <td className="px-4 py-3 text-ink-secondary">{o.code}</td>
-                  <td className="px-4 py-3 text-ink-secondary">{o.address ?? '—'}</td>
-                  <td className="px-4 py-3 text-ink-secondary">{o.phone ?? '—'}</td>
-                </tr>
-              ))}
-              {outlets.data?.length === 0 && (
+            <table className="w-full text-sm">
+              <thead className="border-b border-border-subtle text-left text-xs uppercase tracking-wider text-ink-tertiary">
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-ink-tertiary">
-                    Belum ada outlet.
-                  </td>
+                  <th className="px-4 py-3 font-semibold">Nama</th>
+                  <th className="px-4 py-3 font-semibold">Kode</th>
+                  <th className="px-4 py-3 font-semibold">Alamat</th>
+                  <th className="px-4 py-3 font-semibold">Telepon</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </Card>
+              </thead>
+              <tbody>
+                {outlets.data?.map((o) => (
+                  <tr key={o.id} className="border-b border-border-muted last:border-0">
+                    <td className="px-4 py-3 font-medium text-ink-primary">{o.name}</td>
+                    <td className="px-4 py-3 text-ink-secondary">{o.code}</td>
+                    <td className="px-4 py-3 text-ink-secondary">{o.address ?? '—'}</td>
+                    <td className="px-4 py-3 text-ink-secondary">{o.phone ?? '—'}</td>
+                  </tr>
+                ))}
+                {outlets.data?.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-ink-tertiary">
+                      Belum ada outlet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </Card>
+        )}
       </div>
     </>
   );
