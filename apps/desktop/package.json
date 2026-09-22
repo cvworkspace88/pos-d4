@@ -16,6 +16,7 @@
     "@electron-toolkit/utils": "4.0.0"
   },
   "devDependencies": {
+    "@base-ui/react": "1.8.0",
     "@fontsource/poppins": "5.3.0",
     "@hookform/resolvers": "5.9.1",
     "@repo/api-contract": "workspace:*",

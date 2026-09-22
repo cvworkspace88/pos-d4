@@ -10,6 +10,9 @@
 
 @layer base {
   body {
-    @apply bg-surface-light;
+    /* `relative` and `isolate` are Base UI's documented root-element setup: it portals popups to
+       the body, `isolate` stops app content painting over them, and `relative` is its iOS 26+
+       Safari fix. */
+    @apply relative isolate bg-surface-light;
   }
 }
