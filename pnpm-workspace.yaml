@@ -2,6 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  '@sentry/cli': false # postinstall only downloads sentry-cli as a fallback; the binary already comes from the platform optionalDependency
   argon2: true
   electron: true
   electron-winstaller: false

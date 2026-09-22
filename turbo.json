@@ -11,6 +11,10 @@
         "$TURBO_DEFAULT$",
         ".env*"
       ],
+      "env": [
+        "SENTRY_*",
+        "VITE_*"
+      ],
       "outputs": [
         "dist/**",
         "out/**",
@@ -41,6 +45,8 @@
     }
   },
   "globalEnv": [
-    "DEV"
+    "DEV",
+    "MODE",
+    "PROD"
   ]
 }
