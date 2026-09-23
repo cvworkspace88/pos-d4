@@ -20,6 +20,10 @@ const buttonVariants = cva(
         lg: 'px-8 py-4 text-base',
         md: 'px-6 py-3 text-sm',
         sm: 'px-5 py-2 text-xs',
+        // Square, so the base `rounded-full` makes a circle. Icon-only: give it an `aria-label`.
+        'icon-lg': 'size-12',
+        icon: 'size-10',
+        'icon-sm': 'size-8',
       },
     },
     defaultVariants: { variant: 'default', size: 'md' },
