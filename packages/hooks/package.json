@@ -1,20 +1,14 @@
 {
-  "name": "@repo/ui",
+  "name": "@repo/hooks",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    "./*": "./src/*.tsx"
+    "./*": "./src/*.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@base-ui/react": "1.8.0",
-    "@repo/hooks": "workspace:*",
-    "class-variance-authority": "^0.7.1",
-    "lucide-react": "^1.45.0"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
@@ -25,6 +19,6 @@
     "typescript": "5.9.3"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "react": ">=19.0.0"
   }
 }

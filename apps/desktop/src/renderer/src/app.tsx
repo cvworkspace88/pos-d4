@@ -88,8 +88,8 @@ function Home() {
 }
 
 export function App() {
-  const { accessToken, outlet, outlets, switching } = useAuthStore();
+  const { accessToken, outlet, switching } = useAuthStore();
   if (!accessToken) return <LoginForm />;
-  if (outlets.length && (!outlet || switching)) return <OutletPicker onSignOut={signOut} />;
+  if (!outlet || switching) return <OutletPicker onSignOut={signOut} />;
   return <Home />;
 }

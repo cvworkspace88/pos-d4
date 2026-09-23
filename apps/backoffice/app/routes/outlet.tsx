@@ -1,14 +1,16 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import type { RouterOutputs } from '@repo/api-contract';
 import { Alert } from '@repo/ui/alert';
 import { Button } from '@repo/ui/button';
 import { Card } from '@repo/ui/card';
 import { Dialog } from '@repo/ui/dialog';
 import { Skeleton } from '@repo/ui/skeleton';
+import { Switch } from '@repo/ui/switch';
+import { useDialog } from '@repo/hooks/use-dialog';
 import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { TextField } from '@repo/ui/text-field';
 import { PageHeader } from '../components/page-header';
@@ -35,7 +37,6 @@ const EMPTY: FormValues = { name: '', code: '', address: '', phone: '' };
 export default function OutletPage() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const [adding, setAdding] = useState(false);
   const outlets = useQuery(trpc.outlet.list.queryOptions());
 
   const {
@@ -49,8 +50,7 @@ export default function OutletPage() {
     trpc.outlet.create.mutationOptions({
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: trpc.outlet.list.queryKey() });
-        reset(EMPTY);
-        setAdding(false);
+        dialog.close();
       },
     }),
   );
@@ -59,11 +59,12 @@ export default function OutletPage() {
   // add to a list that could not be read.
   const failed = outlets.error && !outlets.data;
 
-  const close = () => {
+  // Declared after `create` on purpose: the two reference each other, and both only run on an
+  // event, long after this render finished.
+  const dialog = useDialog(() => {
     reset(EMPTY);
     create.reset();
-    setAdding(false);
-  };
+  });
 
   return (
     <>
@@ -71,7 +72,7 @@ export default function OutletPage() {
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-6">
         {!failed && (
           <div className="flex items-center justify-end">
-            <Button size="sm" onClick={() => setAdding(true)}>
+            <Button size="sm" onClick={dialog.open}>
               <Plus className="mr-1 size-4" aria-hidden />
               Tambah outlet
             </Button>
@@ -79,12 +80,12 @@ export default function OutletPage() {
         )}
 
         <Dialog
-          open={adding}
-          onClose={close}
+          open={dialog.isOpen}
+          onClose={dialog.close}
           title="Tambah outlet"
           footer={
             <>
-              <Button variant="ghost" onClick={close} disabled={create.isPending}>
+              <Button variant="ghost" onClick={dialog.close} disabled={create.isPending}>
                 Batal
               </Button>
               <Button type="submit" form="outlet-form" disabled={create.isPending}>
@@ -163,13 +164,17 @@ export default function OutletPage() {
                   <th className="px-4 py-3 font-semibold">Kode</th>
                   <th className="px-4 py-3 font-semibold">Alamat</th>
                   <th className="px-4 py-3 font-semibold">Telepon</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">
+                    <span className="sr-only">Aksi</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {outlets.isPending &&
                   Array.from({ length: 5 }, (_, i) => (
                     <tr key={i} className="border-b border-border-muted last:border-0">
-                      {[40, 24, 56, 32].map((w) => (
+                      {[40, 24, 56, 32, 20, 16].map((w) => (
                         <td key={w} className="px-4 py-3">
                           <Skeleton className="h-4" style={{ width: `${w}%` }} />
                         </td>
@@ -178,16 +183,12 @@ export default function OutletPage() {
                   ))}
 
                 {outlets.data?.map((o) => (
-                  <tr key={o.id} className="border-b border-border-muted last:border-0">
-                    <td className="px-4 py-3 font-medium text-ink-primary">{o.name}</td>
-                    <td className="px-4 py-3 text-ink-secondary">{o.code}</td>
-                    <td className="px-4 py-3 text-ink-secondary">{o.address ?? '—'}</td>
-                    <td className="px-4 py-3 text-ink-secondary">{o.phone ?? '—'}</td>
-                  </tr>
+                  <OutletRow key={o.id} outlet={o} />
                 ))}
+
                 {outlets.data?.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-ink-tertiary">
+                    <td colSpan={6} className="px-4 py-8 text-center text-ink-tertiary">
                       Belum ada outlet.
                     </td>
                   </tr>
@@ -197,6 +198,64 @@ export default function OutletPage() {
           </Card>
         )}
       </div>
+    </>
+  );
+}
+
+type Outlet = RouterOutputs['outlet']['list'][number];
+
+function OutletRow({ outlet }: { outlet: Outlet }) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+
+  const setActive = useMutation(
+    trpc.outlet.setActive.mutationOptions({
+      onSettled: () => queryClient.invalidateQueries({ queryKey: trpc.outlet.list.queryKey() }),
+    }),
+  );
+
+  return (
+    <>
+      <tr className={`border-b border-border-muted last:border-0 ${outlet.active ? '' : 'opacity-60'}`}>
+        <td className="px-4 py-3 font-medium text-ink-primary">{outlet.name}</td>
+        <td className="px-4 py-3 text-ink-secondary">{outlet.code}</td>
+        <td className="px-4 py-3 text-ink-secondary">{outlet.address ?? '—'}</td>
+        <td className="px-4 py-3 text-ink-secondary">{outlet.phone ?? '—'}</td>
+        <td className="px-4 py-3">
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+              outlet.active ? 'bg-success-light text-success-dark' : 'bg-surface-canvas text-ink-tertiary'
+            }`}
+          >
+            {outlet.active ? 'Aktif' : 'Nonaktif'}
+          </span>
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex justify-end flex-col items-center gap-2">
+            <Switch
+              checked={outlet.active}
+              disabled={setActive.isPending}
+              aria-label={`${outlet.active ? 'Nonaktifkan' : 'Aktifkan'} ${outlet.name}`}
+              // tambah onclick show alert dialog.
+
+              
+              // A refused toggle leaves `checked` on the server's answer, so the switch springs back
+              // on its own once the list refetches; the rejection stays in the row below.
+              onCheckedChange={(active) => setActive.mutate({ id: outlet.id, active })}
+            />
+          </div>
+        </td>
+      </tr>
+
+      {setActive.error && (
+        <tr className="border-b border-border-muted last:border-0">
+          <td colSpan={6} className="px-4 pb-3">
+            <Alert variant="danger" role="alert">
+              {setActive.error.message}
+            </Alert>
+          </td>
+        </tr>
+      )}
     </>
   );
 }

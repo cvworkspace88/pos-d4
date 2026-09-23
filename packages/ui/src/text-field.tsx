@@ -1,6 +1,7 @@
 import { cva } from 'class-variance-authority';
 import { Eye, EyeOff } from 'lucide-react';
-import { useId, useState, type ComponentProps, type ReactNode } from 'react';
+import { useId, type ComponentProps, type ReactNode } from 'react';
+import { useToggle } from '@repo/hooks/use-toggle';
 
 /**
  * Labelled text input. Label, error and helper text are all optional, so one component covers a
@@ -78,7 +79,7 @@ export type PasswordFieldProps = Omit<TextFieldProps, 'type' | 'adornment'>;
 /** A `TextField` that can reveal what was typed. */
 export function PasswordField({ disabled, ...props }: PasswordFieldProps) {
   const testId = (props as { 'data-testid'?: string })['data-testid'];
-  const [visible, setVisible] = useState(false);
+  const [visible, toggleVisible] = useToggle();
   const Icon = visible ? EyeOff : Eye;
 
   return (
@@ -96,7 +97,7 @@ export function PasswordField({ disabled, ...props }: PasswordFieldProps) {
           // Derived so a caller that names the field also names its toggle.
           data-testid={testId && `${testId}-toggle`}
           className="shrink-0 text-ink-tertiary disabled:text-ink-muted"
-          onClick={() => setVisible((v) => !v)}
+          onClick={toggleVisible}
         >
           <Icon size={20} aria-hidden />
         </button>

@@ -54,7 +54,7 @@ test('a duplicate live name is a CONFLICT naming the name', async () => {
   await anOutlet('Downtown', 'dt');
   await expect(service.create({ name: 'Downtown', code: 'xx' })).rejects.toMatchObject({
     code: 'CONFLICT',
-    message: 'Outlet name already in use.',
+    message: 'Nama outlet sudah dipakai.',
   });
 });
 
@@ -62,30 +62,34 @@ test('a duplicate live code is a CONFLICT naming the code, whatever the casing',
   await anOutlet('Downtown', 'dt');
   await expect(service.create({ name: 'Elsewhere', code: 'DT' })).rejects.toMatchObject({
     code: 'CONFLICT',
-    message: 'Outlet code already in use.',
+    message: 'Kode outlet sudah dipakai.',
   });
 });
 
 test('closing an outlet frees its name and its code', async () => {
   const outlet = await anOutlet('Airport', 'ap');
-  await service.remove(outlet.id);
+  await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
+  await service.setActive(outlet.id, false);
   const reopened = await service.create({ name: 'Airport', code: 'ap' });
   expect(reopened.id).not.toBe(outlet.id);
 });
 
-test('list hides closed outlets and sorts by name', async () => {
+test('list shows every outlet, active first, then by name', async () => {
   await anOutlet('Downtown', 'dt');
   await anOutlet('Airport', 'ap');
   const closed = await anOutlet('Warehouse', 'wh');
-  await service.remove(closed.id);
+  await service.setActive(closed.id, false);
 
-  expect((await service.list()).map((o) => o.name)).toEqual(['Airport', 'Downtown']);
+  const listed = await service.list();
+  expect(listed.map((o) => o.name)).toEqual(['Airport', 'Downtown', 'Warehouse']);
+  expect(listed.map((o) => o.active)).toEqual([true, true, false]);
 });
 
 test('get returns one outlet, and a closed one is NOT_FOUND', async () => {
   const outlet = await service.create({ name: 'Downtown', code: 'dt', phone: '555' });
   expect(await service.get(outlet.id)).toMatchObject({ name: 'Downtown', code: 'DT', phone: '555' });
-  await service.remove(outlet.id);
+  await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
+  await service.setActive(outlet.id, false);
   await expect(service.get(outlet.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
 });
 
@@ -111,32 +115,35 @@ test('setCode onto a live code is a CONFLICT naming the code', async () => {
   await service.create({ name: 'Airport', code: 'ap' });
   await expect(service.setCode(outlet.id, 'AP')).rejects.toMatchObject({
     code: 'CONFLICT',
-    message: 'Outlet code already in use.',
+    message: 'Kode outlet sudah dipakai.',
   });
 });
 
 test('setCode on a closed outlet is NOT_FOUND', async () => {
   const outlet = await anOutlet();
-  await service.remove(outlet.id);
+  await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
+  await service.setActive(outlet.id, false);
   await expect(service.setCode(outlet.id, 'br2')).rejects.toMatchObject({
     code: 'NOT_FOUND',
-    message: 'Outlet not found.',
+    message: 'Outlet tidak ditemukan.',
   });
 });
 
 test('update of a closed outlet is NOT_FOUND, not a silent no-op', async () => {
   const outlet = await anOutlet();
-  await service.remove(outlet.id);
+  await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
+  await service.setActive(outlet.id, false);
   await expect(service.update(outlet.id, { name: 'Downtown' })).rejects.toMatchObject({
     code: 'NOT_FOUND',
-    message: 'Outlet not found.',
+    message: 'Outlet tidak ditemukan.',
   });
 });
 
-test('closing an outlet twice is NOT_FOUND the second time', async () => {
+test('deactivating an outlet twice is a no-op the second time', async () => {
   const outlet = await anOutlet();
-  expect(await service.remove(outlet.id)).toEqual({ success: true });
-  await expect(service.remove(outlet.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  await anOutlet('Airport', 'ap'); // the guard needs a second live outlet to allow the first close
+  expect((await service.setActive(outlet.id, false)).active).toBe(false);
+  expect((await service.setActive(outlet.id, false)).active).toBe(false);
 });
 
 test('setStaff writes the roster and reads it back sorted by name', async () => {
@@ -208,7 +215,8 @@ test('a staff member who leaves drops out of the roster without being unassigned
 test('setStaff on a closed outlet is NOT_FOUND', async () => {
   const outlet = await anOutlet();
   const ann = await addUser('ann');
-  await service.remove(outlet.id);
+  await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
+  await service.setActive(outlet.id, false);
   await expect(service.setStaff(outlet.id, [as(ann.id)])).rejects.toMatchObject({ code: 'NOT_FOUND' });
 });
 
@@ -251,4 +259,70 @@ test('an unknown role rejects the whole call', async () => {
     code: 'BAD_REQUEST',
     message: `Not a valid role: ${ghost}.`,
   });
+});
+
+test('a fresh outlet is active', async () => {
+  expect((await anOutlet()).active).toBe(true);
+});
+
+test('reactivating a closed outlet brings back the same row', async () => {
+  const outlet = await anOutlet();
+  await anOutlet('Airport', 'ap');
+  await service.setActive(outlet.id, false);
+
+  const reopened = await service.setActive(outlet.id, true);
+  expect(reopened).toMatchObject({ id: outlet.id, name: 'Downtown', code: 'DT', active: true });
+  expect((await service.get(outlet.id)).active).toBe(true);
+});
+
+test('reactivating into a name another outlet took is a CONFLICT', async () => {
+  const outlet = await anOutlet('Downtown', 'dt');
+  await anOutlet('Airport', 'ap');
+  await service.setActive(outlet.id, false);
+  await service.create({ name: 'Downtown', code: 'dt2' });
+
+  await expect(service.setActive(outlet.id, true)).rejects.toMatchObject({
+    code: 'CONFLICT',
+    message: 'Nama outlet sudah dipakai.',
+  });
+});
+
+test('reactivating into a code another outlet took is a CONFLICT', async () => {
+  const outlet = await anOutlet('Downtown', 'dt');
+  await anOutlet('Airport', 'ap');
+  await service.setActive(outlet.id, false);
+  await service.create({ name: 'Elsewhere', code: 'dt' });
+
+  await expect(service.setActive(outlet.id, true)).rejects.toMatchObject({
+    code: 'CONFLICT',
+    message: 'Kode outlet sudah dipakai.',
+  });
+});
+
+test('the last live outlet cannot be deactivated', async () => {
+  const outlet = await anOutlet();
+  await expect(service.setActive(outlet.id, false)).rejects.toMatchObject({
+    code: 'PRECONDITION_FAILED',
+    message: 'Harus ada minimal satu outlet aktif.',
+  });
+  expect((await service.get(outlet.id)).active).toBe(true);
+});
+
+test('the guard counts only live outlets, so a closed one does not license closing the last', async () => {
+  const first = await anOutlet('Downtown', 'dt');
+  const second = await anOutlet('Airport', 'ap');
+  await service.setActive(second.id, false);
+
+  await expect(service.setActive(first.id, false)).rejects.toMatchObject({
+    code: 'PRECONDITION_FAILED',
+  });
+});
+
+test('setActive on an outlet that never existed is NOT_FOUND in both directions', async () => {
+  const ghost = '00000000-0000-0000-0000-000000000000';
+  await expect(service.setActive(ghost, false)).rejects.toMatchObject({
+    code: 'NOT_FOUND',
+    message: 'Outlet tidak ditemukan.',
+  });
+  await expect(service.setActive(ghost, true)).rejects.toMatchObject({ code: 'NOT_FOUND' });
 });

@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { ChevronsUpDown } from 'lucide-react';
-import { useState } from 'react';
+import { Alert } from '@repo/ui/alert';
+import { useToggle } from '@repo/hooks/use-toggle';
 import { useAuthStore } from '../stores/auth';
 import { refreshClient } from '../trpc';
 
@@ -14,7 +15,7 @@ import { refreshClient } from '../trpc';
  */
 export function OutletSwitcher() {
   const { refreshToken, outlet, outlets, setSession } = useAuthStore();
-  const [open, setOpen] = useState(false);
+  const [open, toggleOpen, setOpen] = useToggle();
 
   const pick = useMutation({
     mutationFn: (outletId: string) =>
@@ -32,7 +33,7 @@ export function OutletSwitcher() {
       <button
         type="button"
         disabled={!switchable || pick.isPending}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className="flex h-12 w-full items-center gap-2 rounded-md border border-border-subtle p-2 text-left transition-colors enabled:hover:bg-primary-lighter disabled:cursor-default"
       >
         <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-white">
@@ -51,22 +52,30 @@ export function OutletSwitcher() {
         <>
           {/* Cheapest light dismiss there is: a full-screen catcher under the panel. */}
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <ul className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-md border border-border-subtle bg-surface py-1 shadow-lg">
-            {outlets.map((o) => (
-              <li key={o.id}>
-                <button
-                  type="button"
-                  disabled={pick.isPending}
-                  onClick={() => pick.mutate(o.id)}
-                  className={`flex w-full items-center px-2 py-1.5 text-left text-sm transition-colors hover:bg-primary-lighter ${
-                    o.id === outlet?.id ? 'font-medium text-ink-primary' : 'text-ink-secondary'
-                  }`}
-                >
-                  <span className="truncate">{o.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="absolute left-0 right-0 top-full z-20 mt-1 flex flex-col gap-1">
+            <ul className="overflow-hidden rounded-md border border-border-subtle bg-surface py-1 shadow-lg">
+              {outlets.map((o) => (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    disabled={pick.isPending}
+                    onClick={() => pick.mutate(o.id)}
+                    className={`flex w-full items-center px-2 py-1.5 text-left text-sm transition-colors hover:bg-primary-lighter ${
+                      o.id === outlet?.id ? 'font-medium text-ink-primary' : 'text-ink-secondary'
+                    }`}
+                  >
+                    <span className="truncate">{o.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {pick.error && (
+              <Alert variant="danger" role="alert">
+                {pick.error.message}
+              </Alert>
+            )}
+          </div>
         </>
       )}
     </div>

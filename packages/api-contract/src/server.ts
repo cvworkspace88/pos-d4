@@ -271,6 +271,7 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  active: z.boolean(),
 })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     get: publicProcedure
@@ -281,6 +282,7 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  active: z.boolean(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     create: publicProcedure
@@ -301,6 +303,7 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     update: publicProcedure
@@ -316,6 +319,7 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     setCode: publicProcedure
@@ -334,11 +338,19 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
-    remove: publicProcedure
-      .input(z.object({ id: z.uuid() }))
-      .output(z.object({ success: z.boolean() }))
+    setActive: publicProcedure
+      .input(z.object({ id: z.uuid(), active: z.boolean() }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  active: z.boolean(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     staff: publicProcedure
       .input(z.object({ outletId: z.uuid() }))

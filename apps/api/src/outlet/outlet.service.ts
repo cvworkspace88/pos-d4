@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation, violatedConstraint } from '../db/errors';
 import { outletStaff, outlets, roles, users, type Outlet } from '../db/schema';
@@ -23,13 +23,14 @@ export interface StaffOutput {
   roleId: string;
 }
 
-/** What clients see of an outlet. Timestamps and `deletedAt` stay server-side. */
+/** What clients see of an outlet. Timestamps stay server-side; `deletedAt` shows only as `active`. */
 export const outletOutput = (o: Outlet) => ({
   id: o.id,
   name: o.name,
   code: o.code,
   address: o.address,
   phone: o.phone,
+  active: o.deletedAt === null,
 });
 export type OutletOutput = ReturnType<typeof outletOutput>;
 
@@ -37,7 +38,7 @@ export type OutletOutput = ReturnType<typeof outletOutput>;
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 const live = isNull(outlets.deletedAt);
-const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Outlet not found.' });
+const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Outlet tidak ditemukan.' });
 
 /**
  * A duplicate name and a duplicate code are the same Postgres error; only the index name tells
@@ -46,8 +47,8 @@ const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Outlet not f
 const rethrowAsConflict = (error: unknown): never => {
   if (isUniqueViolation(error)) {
     const field = conflictField(violatedConstraint(error));
-    if (field === 'name') throw new TRPCError({ code: 'CONFLICT', message: 'Outlet name already in use.' });
-    if (field === 'code') throw new TRPCError({ code: 'CONFLICT', message: 'Outlet code already in use.' });
+    if (field === 'name') throw new TRPCError({ code: 'CONFLICT', message: 'Nama outlet sudah dipakai.' });
+    if (field === 'code') throw new TRPCError({ code: 'CONFLICT', message: 'Kode outlet sudah dipakai.' });
   }
   throw error;
 };
@@ -65,8 +66,12 @@ const createRow = (input: OutletInput) => ({ ...detailsRow(input), code: normali
 export class OutletService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
+  /** Every outlet, including the deactivated ones: this list is the screen that reactivates them. */
   async list(): Promise<OutletOutput[]> {
-    const rows = await this.db.select().from(outlets).where(live).orderBy(outlets.name);
+    const rows = await this.db
+      .select()
+      .from(outlets)
+      .orderBy(sql`${outlets.deletedAt} IS NULL DESC`, outlets.name);
     return rows.map(outletOutput);
   }
 
@@ -116,13 +121,43 @@ export class OutletService {
   }
 
   /**
-   * Soft delete. Nothing references outlets yet, so there is no precondition to check, and the
-   * `outlet_staff` rows stay behind — clearing `deletedAt` in a data fix restores the roster.
+   * Takes an outlet out of service, or puts it back. `deletedAt` is the only state axis, so this
+   * is the old soft delete with a way back. The lookup deliberately skips the `live` filter that
+   * `find` applies — a deactivated outlet is exactly the row reactivation has to find.
+   *
+   * Reactivating can collide: the unique indexes are partial, so closing an outlet frees its name
+   * and code for another one to take.
    */
-  async remove(id: string): Promise<{ success: boolean }> {
-    await this.find(id);
-    await this.db.update(outlets).set({ deletedAt: new Date() }).where(eq(outlets.id, id));
-    return { success: true };
+  async setActive(id: string, active: boolean): Promise<OutletOutput> {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(outlets).where(eq(outlets.id, id));
+      if (!row) throw notFound();
+      if ((row.deletedAt === null) === active) return outletOutput(row);
+
+      if (!active) {
+        // A system with no live outlet has nobody able to sign in anywhere, and no screen left to
+        // undo it from.
+        // ponytail: read-committed count, so two concurrent deactivations could both pass it.
+        // Owner-only writes at single-digit volume; take an advisory lock if that ever races.
+        const [liveCount] = await tx.select({ n: count() }).from(outlets).where(isNull(outlets.deletedAt));
+        if ((liveCount?.n ?? 0) <= 1)
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Harus ada minimal satu outlet aktif.',
+          });
+      }
+
+      try {
+        const [updated] = await tx
+          .update(outlets)
+          .set({ deletedAt: active ? null : new Date() })
+          .where(eq(outlets.id, id))
+          .returning();
+        return outletOutput(updated!);
+      } catch (error) {
+        return rethrowAsConflict(error);
+      }
+    });
   }
 
   async staff(outletId: string): Promise<StaffOutput[]> {

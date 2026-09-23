@@ -64,15 +64,16 @@ function TextFieldShowcase() {
 export default function HomeScreen() {
   const trpc = useTRPC();
   const router = useRouter();
-  const { user, accessToken, hydrated, outlet, outlets, switching, startSwitch } = useAuthStore();
+  const { user, accessToken, hydrated, outlet, switching, startSwitch } = useAuthStore();
   const me = useQuery({ ...trpc.auth.me.queryOptions(), enabled: Boolean(accessToken) });
 
   if (!hydrated) return <ActivityIndicator style={styles.center} />;
   if (!accessToken) return <Redirect href="/profiles" />;
   // A profile without a PIN cannot be re-entered; make them set one before doing anything else.
   if (user && !user.hasPin) return <Redirect href="/set-pin" />;
-  // No outlet means no role, so nothing below would be allowed anyway. Pick first.
-  if (outlets.length && (!outlet || switching)) return <Redirect href="/outlet" />;
+  // No outlet means no role, so nothing below would be allowed anyway. Pick first — an empty
+  // list still routes here, where the picker shows its own "no outlets" empty state.
+  if (!outlet || switching) return <Redirect href="/outlet" />;
 
   return (
     <SafeAreaView style={styles.container}>

@@ -105,7 +105,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'outlet.staff_assign': 'Atur staf di outlet.',
   'outlet.view_all': 'Lihat semua outlet.',
   'outlet.create': 'Tambah outlet.',
-  'outlet.delete': 'Hapus outlet.',
+  'outlet.delete': 'Nonaktifkan atau aktifkan outlet.',
 };
 
 /** The full holder list for a permission. Owner is the only implicit holder; everyone else is listed. */

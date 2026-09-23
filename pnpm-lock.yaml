@@ -120,6 +120,9 @@ importers:
       '@repo/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract
+      '@repo/hooks':
+        specifier: workspace:*
+        version: link:../../packages/hooks
       '@repo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -317,6 +320,9 @@ importers:
       '@repo/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract
+      '@repo/hooks':
+        specifier: workspace:*
+        version: link:../../packages/hooks
       '@tanstack/react-query':
         specifier: 5.102.8
         version: 5.102.8(react@19.2.3)
@@ -494,6 +500,27 @@ importers:
         specifier: 8.68.0
         version: 8.68.0(eslint@10.9.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
 
+  packages/hooks:
+    devDependencies:
+      '@repo/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      eslint:
+        specifier: 10.9.1
+        version: 10.9.1(jiti@2.7.0)(supports-color@10.2.2)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   packages/tailwind-config: {}
 
   packages/typescript-config: {}
@@ -503,6 +530,9 @@ importers:
       '@base-ui/react':
         specifier: 1.8.0
         version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@repo/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

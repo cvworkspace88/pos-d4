@@ -19,6 +19,7 @@ const outletOutput = z.object({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  active: z.boolean(),
 });
 
 const staffOutput = z.object({ id: z.string(), name: z.string(), username: z.string(), roleId: z.string() });
@@ -114,11 +115,16 @@ export class OutletRouter {
     return this.service.setCode(input.id, input.code);
   }
 
-  @Mutation({ input: z.object({ id: z.uuid() }), output: z.object({ success: z.boolean() }) })
+  /**
+   * Deactivate or reactivate. Behind `outlet.delete`, the permission the old `remove` used: taking
+   * an outlet out of service is a decision about the set of outlets, so there is no `canActOn`
+   * confinement to the session's own outlet.
+   */
+  @Mutation({ input: z.object({ id: z.uuid(), active: z.boolean() }), output: outletOutput })
   @UseMiddlewares(ProtectedMiddleware)
-  async remove(@Ctx() ctx: Ctx, @Input('id') id: string) {
+  async setActive(@Ctx() ctx: Ctx, @Input() input: { id: string; active: boolean }) {
     await this.rbac.require(ctx, 'outlet.delete');
-    return this.service.remove(id);
+    return this.service.setActive(input.id, input.active);
   }
 
   // Behind staff_assign, not view: a cashier needs the outlet list, not the roster of who else
