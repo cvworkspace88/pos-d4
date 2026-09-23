@@ -54,6 +54,9 @@ export class RbacService {
   async require(actor: Actor, permission: string): Promise<void> {
     const held = await this.permissionsOf(actor.user.id, actor.outletId);
     if (!held.includes(permission))
-      throw new TRPCError({ code: 'FORBIDDEN', message: `Requires ${permission}.` });
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Anda tidak memiliki akses.',
+      });
   }
 }

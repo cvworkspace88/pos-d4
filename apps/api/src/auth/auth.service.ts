@@ -46,7 +46,7 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 const alive = or(isNull(refreshTokens.revokedAt), eq(refreshTokens.revokedReason, 'parked'));
 
 /** FORBIDDEN: we know who this is; they just do not work there. A 401 would sign them out. */
-const notAssigned = () => new TRPCError({ code: 'FORBIDDEN', message: 'Not assigned to this outlet.' });
+const notAssigned = () => new TRPCError({ code: 'FORBIDDEN', message: 'Outlet tidak ditemukan.' });
 
 @Injectable()
 export class AuthService {
@@ -226,7 +226,7 @@ export class AuthService {
     if (user.pinHash) {
       const valid = input.password ? await argon2.verify(user.passwordHash, input.password) : false;
       if (!valid)
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Enter your password to change your PIN.' });
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Masukkan password untuk mengganti PIN.' });
     }
 
     const [updated] = await this.db

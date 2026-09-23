@@ -121,7 +121,7 @@ test('refresh with an outlet the user is not assigned to is FORBIDDEN and consum
   const first = await login('ann');
   await expect(auth.refresh(first.refreshToken, o2.id)).rejects.toMatchObject({
     code: 'FORBIDDEN',
-    message: 'Not assigned to this outlet.',
+    message: 'Outlet tidak ditemukan.',
   });
   // The token is still live: the refusal happened before rotation. Checked directly, not just via
   // a follow-up refresh — a buggy rotate-then-throw would still leave a refreshable row (the

@@ -119,6 +119,6 @@ test('require is FORBIDDEN, never UNAUTHORIZED', async () => {
   await expect(rbac.require(actor, 'sales.create')).resolves.toBeUndefined();
   await expect(rbac.require(actor, 'outlet.manage')).rejects.toMatchObject({
     code: 'FORBIDDEN',
-    message: 'Requires outlet.manage.',
+    message: 'Anda tidak memiliki akses.',
   });
 });
