@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { CircleAlert, CircleCheck, LoaderCircle, Plus, TriangleAlertIcon } from 'lucide-react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { RouterOutputs } from '@repo/api-contract';
@@ -11,8 +12,10 @@ import { Dialog } from '@repo/ui/dialog';
 import { Skeleton } from '@repo/ui/skeleton';
 import { Switch } from '@repo/ui/switch';
 import { useDialog } from '@repo/hooks/use-dialog';
+import { useSpinDelay } from '@repo/hooks/use-spin-delay';
 import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { TextField } from '@repo/ui/text-field';
+import { Tooltip } from '@repo/ui/tooltip';
 import { PageHeader } from '../components/page-header';
 import { useTRPC } from '../trpc';
 
@@ -210,9 +213,34 @@ function OutletRow({ outlet }: { outlet: Outlet }) {
 
   const setActive = useMutation(
     trpc.outlet.setActive.mutationOptions({
+      onSuccess: () => confirm.close(),
       onSettled: () => queryClient.invalidateQueries({ queryKey: trpc.outlet.list.queryKey() }),
     }),
   );
+  const isSwitching =
+    useSpinDelay(setActive.isPending, { delay: 0, minDuration: 400 }) || setActive.isPending;
+
+  // Declared after `setActive` for the same reason as the create dialog above: each is only
+  // touched from an event.
+  const confirm = useDialog();
+  // Backing out clears the attempt's error; a success closes with `confirm.close` alone, so its
+  // check still shows beside the switch.
+  const cancel = () => {
+    confirm.close();
+    setActive.reset();
+  };
+
+  // The check is a moment's acknowledgement, not a state: it goes once seen, counted from when it
+  // appears. A new toggle flips `isSuccess` off first, and the cleanup drops the pending reset.
+  const { isSuccess, reset } = setActive;
+  const showCheck = isSuccess && !isSwitching;
+  useEffect(() => {
+    if (!showCheck) return;
+    const timer = setTimeout(reset, 1500);
+    return () => clearTimeout(timer);
+  }, [showCheck, reset]);
+
+  const deactivate = () => setActive.mutateAsync({ id: outlet.id, active: false }).catch(() => undefined);
 
   return (
     <>
@@ -223,7 +251,7 @@ function OutletRow({ outlet }: { outlet: Outlet }) {
         <td className="px-4 py-3 text-ink-secondary">{outlet.phone ?? '—'}</td>
         <td className="px-4 py-3">
           <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+            className={`inline-flex w-20 justify-center rounded-full py-0.5 text-xs font-medium ${
               outlet.active ? 'bg-success-light text-success-dark' : 'bg-surface-canvas text-ink-tertiary'
             }`}
           >
@@ -231,31 +259,70 @@ function OutletRow({ outlet }: { outlet: Outlet }) {
           </span>
         </td>
         <td className="px-4 py-3">
-          <div className="flex justify-end flex-col items-center gap-2">
+          <div className="flex justify-end flex-row items-center gap-2">
             <Switch
               checked={outlet.active}
-              disabled={setActive.isPending}
+              disabled={isSwitching}
               aria-label={`${outlet.active ? 'Nonaktifkan' : 'Aktifkan'} ${outlet.name}`}
-              // tambah onclick show alert dialog.
-
-              
-              // A refused toggle leaves `checked` on the server's answer, so the switch springs back
-              // on its own once the list refetches; the rejection stays in the row below.
-              onCheckedChange={(active) => setActive.mutate({ id: outlet.id, active })}
+              onCheckedChange={(active) =>
+                // A failed reopen's error would otherwise greet the dialog above `Tutup`.
+                active ? setActive.mutate({ id: outlet.id, active }) : (setActive.reset(), confirm.open())
+              }
             />
+            {/* A live region, so a screen reader hears saving, saved and failed as they happen. */}
+            <span role="status" className="mr-2 flex size-4 items-center justify-center">
+              {isSwitching && (
+                <>
+                  <LoaderCircle className="size-4 animate-spin text-primary" aria-hidden />
+                  <span className="sr-only">Menyimpan</span>
+                </>
+              )}
+              {showCheck && (
+                <>
+                  <CircleCheck className="size-4 text-success" aria-hidden />
+                  <span className="sr-only">Tersimpan</span>
+                </>
+              )}
+              {setActive.error && !isSwitching && !confirm.isOpen && (
+                <Tooltip delay={100} content={setActive.error.message} aria-label={setActive.error.message}>
+                  <CircleAlert className="size-4 text-danger" aria-hidden />
+                </Tooltip>
+              )}
+            </span>
           </div>
         </td>
       </tr>
 
-      {setActive.error && (
-        <tr className="border-b border-border-muted last:border-0">
-          <td colSpan={6} className="px-4 pb-3">
-            <Alert variant="danger" role="alert">
-              {setActive.error.message}
-            </Alert>
-          </td>
-        </tr>
-      )}
+      <Dialog
+        open={confirm.isOpen}
+        onClose={cancel}
+        blocking={setActive.isPending}
+        // `blocking` would drop the X mid-save and jump the header; `Batal` is the way out.
+        closeButton={false}
+        title="Tutup outlet?"
+        footer={
+          <div className="flex w-full flex-col gap-3">
+            {setActive.error && (
+              <div className="text-danger text-sm flex items-center flex-row gap-1">
+                <TriangleAlertIcon className="size-4" /> {setActive.error.message}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button variant="danger" className="flex-1" loading={setActive.isPending} onClick={deactivate}>
+                Tutup
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={cancel} disabled={setActive.isPending}>
+                Batal
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <p className="text-sm text-ink-secondary">
+          <span className="font-medium text-ink-primary">{outlet.name}</span> akan dinonaktifkan.
+        </p>
+      </Dialog>
     </>
   );
 }
