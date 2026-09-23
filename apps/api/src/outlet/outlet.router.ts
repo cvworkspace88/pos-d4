@@ -31,8 +31,15 @@ const staffOutput = z.object({
   global: z.boolean(),
 });
 
-/** FORBIDDEN, not NOT_FOUND: hiding the outlet would tell a manager nothing they can act on. */
-const wrongOutlet = () => new TRPCError({ code: 'FORBIDDEN', message: 'Wrong outlet.' });
+/**
+ * Reads like NOT_FOUND, so it does not confirm an outlet the caller may not see — but stays FORBIDDEN
+ * in code: a client refetching on NOT_FOUND would loop, and 403 is the honest status.
+ */
+const wrongOutlet = () =>
+  new TRPCError({
+    code: 'FORBIDDEN',
+    message: 'Outlet tidak ditemukan.',
+  });
 
 @Router({ alias: 'outlet' })
 export class OutletRouter {

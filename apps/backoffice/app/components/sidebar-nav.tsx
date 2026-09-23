@@ -5,7 +5,8 @@ import { useTRPC } from '../trpc';
 /**
  * The menu, grouped like the design. `permission` is the name `rbac.require` checks on the server —
  * gating here only hides a door the router still guards, so a stale permission list cannot grant
- * anything. Until the list loads, items that need a permission stay disabled.
+ * anything. An item without its permission is not shown at all, nor is a group left empty; until
+ * the list loads, the menu is empty.
  */
 export const MENU = [
   {
@@ -31,15 +32,17 @@ export function SidebarNav() {
 
   return (
     <nav className="min-h-0 flex-1 overflow-auto">
-      {MENU.map((group) => (
-        <div key={group.label}>
-          <p className="bg-surface-canvas px-4 py-2 text-xs font-semibold uppercase tracking-wider text-ink-tertiary">
-            {group.label}
-          </p>
-          <ul>
-            {group.items.map(({ to, label, permission }) => (
-              <li key={to}>
-                {granted(permission) ? (
+      {MENU.map((group) => {
+        const items = group.items.filter(({ permission }) => granted(permission));
+        if (!items.length) return null;
+        return (
+          <div key={group.label}>
+            <p className="bg-surface-canvas px-4 py-2 text-xs font-semibold uppercase tracking-wider text-ink-tertiary">
+              {group.label}
+            </p>
+            <ul>
+              {items.map(({ to, label }) => (
+                <li key={to}>
                   <NavLink
                     to={to}
                     className={({ isActive }) =>
@@ -50,16 +53,12 @@ export function SidebarNav() {
                   >
                     <span className="truncate">{label}</span>
                   </NavLink>
-                ) : (
-                  <span className={`${ROW} cursor-not-allowed text-ink-tertiary/50`}>
-                    <span className="truncate">{label}</span>
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
     </nav>
   );
 }
