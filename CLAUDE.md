@@ -82,6 +82,43 @@ Also load-bearing on the floor domain: `CONFLICT` (duplicate live name), `PRECON
 
 Three files now truncate that one shared `_test` database, so `vitest.config.ts` sets `fileParallelism: false` — tests inside a file are serialized too (`sequence.concurrent: false`).
 
+## Domain: F&B POS
+
+This is a point-of-sale system for food & beverage outlets (dine-in with floor plans and reservations,
+multi-outlet, shared staff tablets). UI copy is Indonesian. Money, orders and audit trails are what a
+POS is judged on — apply these rules to every feature that touches them, including ones not built yet:
+
+- **Money is integer minor units** (`integer`/`bigint` rupiah), never `float`/`real`. Round once, at a
+  defined step (line → discount → service charge → tax → total), and keep that order in a pure
+  `*-rules.ts` function with tests. Tax and service-charge rates live in data, not code.
+- **Financial records are append-only.** A sent order line, payment, or closed bill is never updated or
+  hard-deleted: correct it with a void/refund/adjustment row carrying who, when, and a reason. Soft
+  delete (`deleted_at`) is for catalogue/config data (tables, menu items), not transactions.
+- **Snapshot at sale time.** An order line stores the item name, price, modifiers and tax rate it was
+  sold with — later menu edits must not rewrite history or reprints.
+- **Voids, refunds, discounts, price overrides and reopening a closed bill are permission-gated**
+  (`rbac.require`) and audited; a manager override records both the cashier and the approver.
+- **Idempotency on every money-moving mutation.** Tablets retry on flaky Wi-Fi; a double tap or a
+  retried request must not create a second payment or duplicate order. Accept a client-generated
+  id/idempotency key and make the write a no-op on repeat.
+- **Concurrency is normal**: several tablets edit the same table/bill. Guard state transitions in the DB
+  (conditional `UPDATE ... WHERE status = ...`, unique constraints, transactions) and answer a lost race
+  with `CONFLICT`/`PRECONDITION_FAILED` so the client refetches — never last-write-wins on a bill.
+- **Business day ≠ calendar day.** Reports, shift/cash-drawer close and order numbering group by the
+  outlet's business date (service past midnight belongs to the previous day). Store `timestamptz`,
+  derive the business date with the outlet's timezone and cut-off.
+- **Everything is outlet-scoped.** Every transactional row carries `outlet_id`, and every query filters
+  by it via `canActOn` — never trust an outlet id from input without that check.
+- **Connectivity differs per app.**
+  - `apps/mobile` and `apps/desktop` are **offline-first** — the counter and floor apps. Service cannot
+    stop when the internet drops (hence the planned `local` deployment). Design their write paths so they
+    run against a local server and sync later: client-generated ids, queued writes, no reliance on
+    cloud-only state mid-transaction, and UI that shows sync state rather than failing.
+  - `apps/backoffice` is **always online** — admin/reporting against the cloud API. No offline queue or
+    local cache-as-truth there; a network failure is simply an error to show and retry.
+- **Speed at the counter.** Cashier/waiter screens are touch-first: large hit targets, minimal taps per
+  order, no blocking spinners on the order path, and every error message says what to do next.
+
 ## Conventions
 
 - Commits: conventional, lowercase (`feat:`, `fix:`, `refactor:`, `chore:`). **Do not commit or create branches/worktrees** — the user works on `main` and commits themselves; leave changes in the working tree.
