@@ -1,8 +1,9 @@
 import { cva, type VariantProps } from 'class-variance-authority';
+import { LoaderCircle } from 'lucide-react';
 import type { ComponentProps } from 'react';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center rounded-full border font-medium transition-[background-color,border-color,transform] enabled:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light',
+  'inline-flex items-center justify-center rounded-full border font-medium disabled:pointer-events-none transition-[background-color,border-color,transform] enabled:active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light',
   {
     variants: {
       variant: {
@@ -35,6 +36,8 @@ export type ButtonSize = NonNullable<VariantProps<typeof buttonVariants>['size']
 export interface ButtonProps extends Omit<ComponentProps<'button'>, 'className'> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** Disables the button and puts a spinner before its label, keeping the variant's colour. */
+  loading?: boolean;
   className?: string;
 }
 
@@ -42,17 +45,23 @@ export function Button({
   variant = 'default',
   size = 'md',
   disabled,
+  loading = false,
   className,
   type = 'button',
+  children,
   ...props
 }: ButtonProps) {
   return (
     <button
       type={type}
-      disabled={disabled}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       className={buttonVariants({ variant: disabled ? 'disabled' : variant, size, className })}
       {...props}
-    />
+    >
+      {loading && <LoaderCircle className="mr-2 size-4 animate-spin" aria-hidden />}
+      {children}
+    </button>
   );
 }
 
