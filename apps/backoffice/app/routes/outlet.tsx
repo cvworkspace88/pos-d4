@@ -9,6 +9,7 @@ import { Alert } from '@repo/ui/alert';
 import { Button } from '@repo/ui/button';
 import { Card } from '@repo/ui/card';
 import { Dialog } from '@repo/ui/dialog';
+import { Pill } from '@repo/ui/pill';
 import { Skeleton } from '@repo/ui/skeleton';
 import { Switch } from '@repo/ui/switch';
 import { useDialog } from '@repo/hooks/use-dialog';
@@ -250,13 +251,9 @@ function OutletRow({ outlet }: { outlet: Outlet }) {
         <td className="px-4 py-3 text-ink-secondary">{outlet.address ?? '—'}</td>
         <td className="px-4 py-3 text-ink-secondary">{outlet.phone ?? '—'}</td>
         <td className="px-4 py-3">
-          <span
-            className={`inline-flex w-20 justify-center rounded-full py-0.5 text-xs font-medium ${
-              outlet.active ? 'bg-success-light text-success-dark' : 'bg-surface-canvas text-ink-tertiary'
-            }`}
-          >
+          <Pill tone={outlet.active ? 'success' : 'neutral'} className="w-20">
             {outlet.active ? 'Aktif' : 'Nonaktif'}
-          </span>
+          </Pill>
         </td>
         <td className="px-4 py-3">
           <div className="flex justify-end flex-row items-center gap-2">
