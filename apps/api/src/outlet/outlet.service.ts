@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
-import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation, violatedConstraint } from '../db/errors';
 import { outletStaff, outlets, roles, users, type Outlet } from '../db/schema';
@@ -21,6 +21,7 @@ export interface StaffOutput {
   name: string;
   username: string;
   roleId: string;
+  roleName: string;
 }
 
 /** What clients see of an outlet. Timestamps stay server-side; `deletedAt` shows only as `active`. */
@@ -219,11 +220,27 @@ export class OutletService {
     });
   }
 
+  /** The roles `setStaff` accepts: every role but owner, which is global and never on a roster. */
+  async assignableRoles(): Promise<{ id: string; name: string }[]> {
+    return this.db
+      .select({ id: roles.id, name: roles.name })
+      .from(roles)
+      .where(ne(roles.name, OWNER_ROLE))
+      .orderBy(roles.name);
+  }
+
   private async rosterOf(db: Database | Tx, outletId: string): Promise<StaffOutput[]> {
     return db
-      .select({ id: users.id, name: users.name, username: users.username, roleId: outletStaff.roleId })
+      .select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        roleId: outletStaff.roleId,
+        roleName: roles.name,
+      })
       .from(outletStaff)
       .innerJoin(users, eq(users.id, outletStaff.userId))
+      .innerJoin(roles, eq(roles.id, outletStaff.roleId))
       .where(and(eq(outletStaff.outletId, outletId), isNull(users.deletedAt)))
       .orderBy(users.name);
   }

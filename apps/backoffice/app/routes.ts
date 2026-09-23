@@ -7,6 +7,7 @@ export default [
       index('routes/home.tsx'),
       route('pengaturan', 'routes/settings.tsx'),
       route('outlet', 'routes/outlet.tsx'),
+      route('staf', 'routes/staff.tsx'),
     ]),
   ]),
 ] satisfies RouteConfig;

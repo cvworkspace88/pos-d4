@@ -231,6 +231,13 @@ test('the roster reports each member role', async () => {
   const ann = await addUser('ann');
   const roster = await service.setStaff(outlet.id, [as(ann.id, 'manager')]);
   expect(roster[0]?.roleId).toBe(roleId.manager);
+  expect(roster[0]?.roleName).toBe('manager');
+});
+
+test('assignable roles leave out owner', async () => {
+  const names = (await service.assignableRoles()).map((r) => r.name);
+  expect(names).toContain('manager');
+  expect(names).not.toContain('owner');
 });
 
 test('changing a member role replaces the row', async () => {

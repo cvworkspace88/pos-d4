@@ -354,14 +354,29 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     staff: publicProcedure
       .input(z.object({ outletId: z.uuid() }))
-      .output(z.array(z.object({ id: z.string(), name: z.string(), username: z.string(), roleId: z.string() })))
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  roleId: z.string(),
+  roleName: z.string(),
+})))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    roles: publicProcedure
+      .output(z.array(z.object({ id: z.string(), name: z.string() })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     setStaff: publicProcedure
       .input(z.object({
       outletId: z.uuid(),
       staff: z.array(z.object({ userId: z.uuid(), roleId: z.uuid() })).max(200),
     }))
-      .output(z.array(z.object({ id: z.string(), name: z.string(), username: z.string(), roleId: z.string() })))
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  roleId: z.string(),
+  roleName: z.string(),
+})))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   settings: t.router({

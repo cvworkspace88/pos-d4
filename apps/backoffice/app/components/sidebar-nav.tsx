@@ -15,6 +15,8 @@ export const MENU = [
       { to: '/pengaturan', label: 'Pengaturan', permission: 'settings.manage' },
       // Every outlet: the list, and each one's own fields.
       { to: '/outlet', label: 'Outlet', permission: 'outlet.view_all' },
+      // The active outlet's roster.
+      { to: '/staf', label: 'Staf', permission: 'outlet.staff_assign' },
     ],
   },
 ] as const;
