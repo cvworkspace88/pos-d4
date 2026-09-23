@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { conflictField, normalizeCode, staffDiff } from './outlet-rules.ts';
+import { canManageRole, conflictField, normalizeCode, staffDiff } from './outlet-rules.ts';
 
 test('a code is stored trimmed and uppercase, so br2 and BR2 collide', () => {
   assert.equal(normalizeCode(' br2 '), 'BR2');
@@ -50,4 +50,11 @@ test('a unique violation is traced back to the field the user typed', () => {
 test('someone else constraint is not ours to explain', () => {
   assert.equal(conflictField('tables_name_active_idx'), null);
   assert.equal(conflictField(''), null);
+});
+
+test('owner manages every role; everyone else stops below manager', () => {
+  assert.equal(canManageRole(true, 'manager'), true);
+  assert.equal(canManageRole(false, 'manager'), false);
+  assert.equal(canManageRole(false, 'owner'), false);
+  assert.equal(canManageRole(false, 'cashier'), true);
 });

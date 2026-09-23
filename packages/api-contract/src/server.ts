@@ -360,6 +360,7 @@ const appRouter = t.router({
   username: z.string(),
   roleId: z.string(),
   roleName: z.string(),
+  global: z.boolean(),
 })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     roles: publicProcedure
@@ -376,6 +377,7 @@ const appRouter = t.router({
   username: z.string(),
   roleId: z.string(),
   roleName: z.string(),
+  global: z.boolean(),
 })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),

@@ -28,6 +28,7 @@ const staffOutput = z.object({
   username: z.string(),
   roleId: z.string(),
   roleName: z.string(),
+  global: z.boolean(),
 });
 
 /** FORBIDDEN, not NOT_FOUND: hiding the outlet would tell a manager nothing they can act on. */
@@ -143,12 +144,15 @@ export class OutletRouter {
     return this.service.staff(outletId);
   }
 
-  /** What the roster screen may pick from. Same gate as `setStaff`, the only call that takes these ids. */
+  /**
+   * What the roster screen may pick from — and, by omission, which lines it may touch: manager only
+   * appears for a global role. Same gate as `setStaff`, the only call that takes these ids.
+   */
   @Query({ output: z.array(z.object({ id: z.string(), name: z.string() })) })
   @UseMiddlewares(ProtectedMiddleware)
   async roles(@Ctx() ctx: Ctx) {
     await this.rbac.require(ctx, 'outlet.staff_assign');
-    return this.service.assignableRoles();
+    return this.service.assignableRoles(ctx);
   }
 
   @Mutation({
@@ -162,6 +166,6 @@ export class OutletRouter {
   async setStaff(@Ctx() ctx: Ctx, @Input() input: { outletId: string; staff: StaffEntry[] }) {
     await this.rbac.require(ctx, 'outlet.staff_assign');
     if (!canActOn(ctx, input.outletId)) throw wrongOutlet();
-    return this.service.setStaff(input.outletId, input.staff);
+    return this.service.setStaff(input.outletId, input.staff, ctx);
   }
 }

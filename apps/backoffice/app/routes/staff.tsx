@@ -7,6 +7,7 @@ import { Button } from '@repo/ui/button';
 import { Card } from '@repo/ui/card';
 import { Dialog } from '@repo/ui/dialog';
 import { Pill, type PillProps } from '@repo/ui/pill';
+import { Select } from '@repo/ui/select';
 import { Skeleton } from '@repo/ui/skeleton';
 import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { TextField } from '@repo/ui/text-field';
@@ -18,17 +19,19 @@ type Member = RouterOutputs['outlet']['staff'][number];
 
 // Role names are seed keys, not copy. An unknown one shows as-is rather than blank.
 const ROLE_LABEL: Record<string, string> = {
+  owner: 'Pemilik',
   manager: 'Manajer',
   cashier: 'Kasir',
   waiter: 'Pelayan',
   inventory_staff: 'Staf gudang',
   auditor: 'Auditor',
 };
-const ROLE_TONE: Record<string, PillProps['tone']> = { manager: 'warning', cashier: 'success' };
+const ROLE_TONE: Record<string, PillProps['tone']> = {
+  owner: 'danger',
+  manager: 'warning',
+  cashier: 'success',
+};
 const roleLabel = (name: string) => ROLE_LABEL[name] ?? name;
-
-const SELECT =
-  'rounded-xl border border-border bg-surface px-4 py-3 text-base text-ink-primary outline-none focus:border-primary';
 
 /** The active outlet's roster: who works here and as what. The sidebar switcher decides which outlet. */
 export default function StaffPage() {
@@ -57,9 +60,13 @@ export default function StaffPage() {
       },
     }),
   );
+  // Global-role lines (owner) are listed but are no membership, so they never go back to the server.
   const write = (next: Member[]) =>
     save
-      .mutateAsync({ outletId, staff: next.map((m) => ({ userId: m.id, roleId: m.roleId })) })
+      .mutateAsync({
+        outletId,
+        staff: next.filter((m) => !m.global).map((m) => ({ userId: m.id, roleId: m.roleId })),
+      })
       .catch(() => undefined);
 
   const close = () => {
@@ -76,6 +83,12 @@ export default function StaffPage() {
   );
 
   const failed = staff.error && !staff.data;
+
+  // The filter offers the roles actually on the roster, owner and manager included.
+  const rosterRoles = [...new Map(staff.data?.map((m) => [m.roleId, m.roleName])).entries()];
+  // `outlet.roles` is what this session may hand out, so it doubles as what it may touch: the server
+  // leaves manager out unless the caller is owner, and owner never appears.
+  const manageable = new Set(roles.data?.map((r) => r.id));
 
   const saveError = save.error && (
     <div className="text-danger text-sm flex items-center flex-row gap-1">
@@ -99,19 +112,17 @@ export default function StaffPage() {
                 adornment={<Search className="size-4 shrink-0 text-ink-tertiary" aria-hidden />}
               />
             </div>
-            <select
-              aria-label="Filter peran"
-              className={SELECT}
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-            >
-              <option value="">Semua peran</option>
-              {roles.data?.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {roleLabel(r.name)}
-                </option>
-              ))}
-            </select>
+            <div className="w-48">
+              <Select
+                aria-label="Filter peran"
+                value={role}
+                onValueChange={setRole}
+                items={[
+                  { value: '', label: 'Semua peran' },
+                  ...rosterRoles.map(([id, name]) => ({ value: id, label: roleLabel(name) })),
+                ]}
+              />
+            </div>
           </div>
         )}
 
@@ -165,7 +176,9 @@ export default function StaffPage() {
                       <Pill tone={ROLE_TONE[m.roleName]}>{roleLabel(m.roleName)}</Pill>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
+                      <div
+                        className={`flex justify-end gap-2 ${manageable.has(m.roleId) ? '' : 'invisible'}`}
+                      >
                         <Button
                           size="sm"
                           variant="ghost"
@@ -239,21 +252,12 @@ export default function StaffPage() {
           <p className="mb-3 text-sm text-ink-secondary">
             <span className="font-medium text-ink-primary">{editing?.name}</span> ({editing?.username})
           </p>
-          <label htmlFor="staff-role" className="text-sm text-ink-secondary">
-            Peran
-          </label>
-          <select
-            id="staff-role"
-            className={SELECT}
+          <Select
+            label="Peran"
             value={roleId}
-            onChange={(e) => setRoleId(e.target.value)}
-          >
-            {roles.data?.map((r) => (
-              <option key={r.id} value={r.id}>
-                {roleLabel(r.name)}
-              </option>
-            ))}
-          </select>
+            onValueChange={setRoleId}
+            items={roles.data?.map((r) => ({ value: r.id, label: roleLabel(r.name) })) ?? []}
+          />
         </div>
       </Dialog>
 

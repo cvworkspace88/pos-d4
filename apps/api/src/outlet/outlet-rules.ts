@@ -7,6 +7,19 @@ export type StaffEntry = { userId: string; roleId: string };
 /** The one role that never goes on a roster: it is global (`users.role_id`), so a manager cannot hand it out. */
 export const OWNER_ROLE = 'owner';
 
+/** The top of the per-outlet roles: only a global role (owner) may assign, change or remove one. */
+export const MANAGER_ROLE = 'manager';
+
+/**
+ * May an `outlet.staff_assign` holder touch a roster line holding `roleName` — give it, take it, or
+ * change it? Owner (global) manages everyone; anyone else manages every role below manager, their
+ * own role included — a cashier granted staff_assign can place other cashiers. Manager is named, not
+ * derived: roles have no rank of their own.
+ * ponytail: one named tier. Custom roles that need their own ceiling want a rank or subset rule.
+ */
+export const canManageRole = (actorGlobal: boolean, roleName: string): boolean =>
+  actorGlobal || (roleName !== MANAGER_ROLE && roleName !== OWNER_ROLE);
+
 /**
  * What `setStaff` has to write to turn `current` into `desired`. Set semantics keyed on the user:
  * a duplicate user in `desired` collapses to the last entry, order does not matter, and a changed

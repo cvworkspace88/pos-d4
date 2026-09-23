@@ -1,10 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
-import { and, count, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation, violatedConstraint } from '../db/errors';
 import { outletStaff, outlets, roles, users, type Outlet } from '../db/schema';
-import { OWNER_ROLE, conflictField, normalizeCode, staffDiff, type StaffEntry } from './outlet-rules';
+import {
+  OWNER_ROLE,
+  canManageRole,
+  conflictField,
+  normalizeCode,
+  staffDiff,
+  type StaffEntry,
+} from './outlet-rules';
 
 export interface OutletInput {
   name: string;
@@ -22,6 +29,8 @@ export interface StaffOutput {
   username: string;
   roleId: string;
   roleName: string;
+  /** A global role (owner): on every roster, never a membership, so `setStaff` does not take it. */
+  global: boolean;
 }
 
 /** What clients see of an outlet. Timestamps stay server-side; `deletedAt` shows only as `active`. */
@@ -170,7 +179,7 @@ export class OutletService {
    * Replaces the whole roster, roles included. Set semantics keyed on the user, so calling it twice
    * with the same entries is a no-op the second time and the caller never has to diff anything.
    */
-  async setStaff(outletId: string, staff: StaffEntry[]): Promise<StaffOutput[]> {
+  async setStaff(outletId: string, staff: StaffEntry[], actor: { global: boolean }): Promise<StaffOutput[]> {
     return this.db.transaction(async (tx) => {
       const [outlet] = await tx
         .select({ id: outlets.id })
@@ -181,22 +190,27 @@ export class OutletService {
       const userIds = [...new Set(staff.map((s) => s.userId))];
       if (userIds.length) {
         const found = await tx
-          .select({ id: users.id })
+          .select({ id: users.id, global: isNotNull(users.roleId) })
           .from(users)
           .where(and(inArray(users.id, userIds), isNull(users.deletedAt)));
         const alive = new Set(found.map((u) => u.id));
         const missing = userIds.find((id) => !alive.has(id));
         // Reject the whole call rather than silently assigning the ids that happened to be real.
         if (missing) throw new TRPCError({ code: 'BAD_REQUEST', message: `Not a valid user: ${missing}.` });
+        // A global-role user works everywhere already; a membership row for them is only a stray
+        // that the page never sends back, so the next save would read it as a removal.
+        if (found.some((u) => u.global))
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Owner is global.' });
       }
 
       const roleIds = [...new Set(staff.map((s) => s.roleId))];
+      const known = new Map<string, string>();
       if (roleIds.length) {
         const found = await tx
           .select({ id: roles.id, name: roles.name })
           .from(roles)
           .where(inArray(roles.id, roleIds));
-        const known = new Map(found.map((r) => [r.id, r.name]));
+        for (const r of found) known.set(r.id, r.name);
         const missing = roleIds.find((id) => !known.has(id));
         if (missing) throw new TRPCError({ code: 'BAD_REQUEST', message: `Not a valid role: ${missing}.` });
         // Owner is `users.role_id`, never a membership: handing it out here would be an escalation.
@@ -205,10 +219,18 @@ export class OutletService {
       }
 
       const current = await tx
-        .select({ userId: outletStaff.userId, roleId: outletStaff.roleId })
+        .select({ userId: outletStaff.userId, roleId: outletStaff.roleId, roleName: roles.name })
         .from(outletStaff)
+        .innerJoin(roles, eq(roles.id, outletStaff.roleId))
         .where(eq(outletStaff.outletId, outletId));
       const { add, remove } = staffDiff(current, staff);
+
+      // Only lines that change are judged: a manager resending a roster that still lists another
+      // manager, untouched, is fine. A role change is a remove plus an add, so both roles count.
+      const held = new Map(current.map((c) => [c.userId, c.roleName]));
+      const touched = [...add.map((a) => known.get(a.roleId)!), ...remove.map((id) => held.get(id)!)];
+      if (touched.some((name) => !canManageRole(actor.global, name)))
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur manajer.' });
 
       if (remove.length)
         await tx
@@ -220,29 +242,36 @@ export class OutletService {
     });
   }
 
-  /** The roles `setStaff` accepts: every role but owner, which is global and never on a roster. */
-  async assignableRoles(): Promise<{ id: string; name: string }[]> {
-    return this.db
+  /** The roles `setStaff` lets this actor hand out: never owner, and manager only for a global role. */
+  async assignableRoles(actor: { global: boolean }): Promise<{ id: string; name: string }[]> {
+    const rows = await this.db
       .select({ id: roles.id, name: roles.name })
       .from(roles)
       .where(ne(roles.name, OWNER_ROLE))
       .orderBy(roles.name);
+    return rows.filter((r) => canManageRole(actor.global, r.name));
   }
 
+  /**
+   * Members of the outlet plus every global-role user (owner), who works everywhere without a row.
+   * A global role wins over any stray membership, the same way `permissionsOf` resolves it.
+   */
   private async rosterOf(db: Database | Tx, outletId: string): Promise<StaffOutput[]> {
+    const roleId = sql<string>`coalesce(${users.roleId}, ${outletStaff.roleId})`;
     return db
       .select({
         id: users.id,
         name: users.name,
         username: users.username,
-        roleId: outletStaff.roleId,
+        roleId,
         roleName: roles.name,
+        global: sql<boolean>`${users.roleId} is not null`,
       })
-      .from(outletStaff)
-      .innerJoin(users, eq(users.id, outletStaff.userId))
-      .innerJoin(roles, eq(roles.id, outletStaff.roleId))
-      .where(and(eq(outletStaff.outletId, outletId), isNull(users.deletedAt)))
-      .orderBy(users.name);
+      .from(users)
+      .leftJoin(outletStaff, and(eq(outletStaff.userId, users.id), eq(outletStaff.outletId, outletId)))
+      .innerJoin(roles, eq(roles.id, roleId))
+      .where(and(isNull(users.deletedAt), or(isNotNull(users.roleId), eq(outletStaff.outletId, outletId))))
+      .orderBy(sql`${users.roleId} is null`, users.name);
   }
 
   private async find(id: string): Promise<Outlet> {
