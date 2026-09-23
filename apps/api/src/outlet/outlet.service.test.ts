@@ -393,3 +393,62 @@ test('manager is assignable only for a global role', async () => {
   expect((await service.assignableRoles(STAFF)).map((r) => r.name)).not.toContain('manager');
   expect((await service.assignableRoles(OWNER)).map((r) => r.name)).toContain('manager');
 });
+
+const newStaff = (username: string, role = 'cashier') => ({
+  name: 'Budi',
+  username,
+  password: 'rahasia123',
+  pin: '123456',
+  roleId: roleId[role]!,
+});
+
+test('addStaff creates the account on this roster, username lowercased, secrets hashed', async () => {
+  const outlet = await anOutlet();
+  const roster = await service.addStaff(outlet.id, newStaff('Budi'), STAFF);
+  expect(roster).toMatchObject([{ username: 'budi', roleName: 'cashier', global: false }]);
+
+  const [row] = await db.select().from(users).where(eq(users.username, 'budi'));
+  expect(row!.passwordHash).not.toBe('rahasia123');
+  expect(row!.pinHash).toMatch(/^\$argon2/);
+});
+
+test('addStaff with a taken username is a CONFLICT and leaves no membership', async () => {
+  const outlet = await anOutlet();
+  await addUser('budi', new Date()); // soft-deleted, still holds the name
+  await expect(service.addStaff(outlet.id, newStaff('BUDI'), STAFF)).rejects.toMatchObject({
+    code: 'CONFLICT',
+    message: 'Username sudah dipakai.',
+  });
+  expect(await service.staff(outlet.id)).toEqual([]);
+});
+
+test('addStaff follows the setStaff role rules', async () => {
+  const outlet = await anOutlet();
+  await expect(service.addStaff(outlet.id, newStaff('a', 'owner'), OWNER)).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+  });
+  await expect(service.addStaff(outlet.id, newStaff('b', 'manager'), STAFF)).rejects.toMatchObject({
+    code: 'FORBIDDEN',
+  });
+  expect(await service.addStaff(outlet.id, newStaff('c', 'manager'), OWNER)).toHaveLength(1);
+  // A refused call wrote nothing, not even the user row.
+  expect((await db.select().from(users)).map((u) => u.username)).toEqual(['c']);
+});
+
+test('findUsers: username prefix, only accounts that could join this roster', async () => {
+  const outlet = await anOutlet();
+  const [owner] = await db.select().from(roles).where(eq(roles.name, 'owner'));
+  await db
+    .insert(users)
+    .values({ username: 'bos', name: 'Bos', passwordHash: 'x', roleId: owner!.id }); // global
+  const here = await addUser('budi');
+  await addUser('bu_di');
+  await addUser('buxdi');
+  await addUser('budiman', new Date()); // soft-deleted
+  await addUser('ani');
+  await service.setStaff(outlet.id, [as(here.id)], STAFF);
+
+  expect((await service.findUsers(outlet.id, 'B')).map((u) => u.username)).toEqual(['bu_di', 'buxdi']);
+  // `_` is a literal, not LIKE's any-character.
+  expect((await service.findUsers(outlet.id, 'bu_')).map((u) => u.username)).toEqual(['bu_di']);
+});

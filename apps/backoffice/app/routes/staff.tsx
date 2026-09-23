@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, TriangleAlertIcon } from 'lucide-react';
+import { Pencil, Search, Trash2, TriangleAlertIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { RouterOutputs } from '@repo/api-contract';
 import { Alert } from '@repo/ui/alert';
@@ -11,6 +11,7 @@ import { Select } from '@repo/ui/select';
 import { Skeleton } from '@repo/ui/skeleton';
 import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { TextField } from '@repo/ui/text-field';
+import { AddStaff } from '../components/add-staff-dialog';
 import { PageHeader } from '../components/page-header';
 import { useAuthStore } from '../stores/auth';
 import { useTRPC } from '../trpc';
@@ -89,6 +90,7 @@ export default function StaffPage() {
   // `outlet.roles` is what this session may hand out, so it doubles as what it may touch: the server
   // leaves manager out unless the caller is owner, and owner never appears.
   const manageable = new Set(roles.data?.map((r) => r.id));
+  const roleItems = roles.data?.map((r) => ({ value: r.id, label: roleLabel(r.name) })) ?? [];
 
   const saveError = save.error && (
     <div className="text-danger text-sm flex items-center flex-row gap-1">
@@ -123,6 +125,13 @@ export default function StaffPage() {
                 ]}
               />
             </div>
+            <AddStaff
+              outletId={outletId}
+              roster={staff.data ?? []}
+              roleItems={roleItems}
+              // A staff line belongs to an outlet: with none active there is nowhere to add them.
+              disabled={!outlet || !staff.data}
+            />
           </div>
         )}
 
@@ -180,7 +189,7 @@ export default function StaffPage() {
                         className={`flex justify-end gap-2 ${manageable.has(m.roleId) ? '' : 'invisible'}`}
                       >
                         <Button
-                          size="sm"
+                          size="icon-sm"
                           variant="ghost"
                           aria-label={`Ubah ${m.username}`}
                           onClick={() => {
@@ -189,19 +198,18 @@ export default function StaffPage() {
                             setEditing(m);
                           }}
                         >
-                          Ubah
+                          <Pencil className="size-4 text-primary" aria-hidden />
                         </Button>
                         <Button
-                          size="sm"
+                          size="icon-sm"
                           variant="ghost"
-                          className="text-danger"
                           aria-label={`Hapus ${m.username}`}
                           onClick={() => {
                             save.reset();
                             setRemoving(m);
                           }}
                         >
-                          Hapus
+                          <Trash2 className="size-4 text-danger" aria-hidden />
                         </Button>
                       </div>
                     </td>
@@ -252,12 +260,7 @@ export default function StaffPage() {
           <p className="mb-3 text-sm text-ink-secondary">
             <span className="font-medium text-ink-primary">{editing?.name}</span> ({editing?.username})
           </p>
-          <Select
-            label="Peran"
-            value={roleId}
-            onValueChange={setRoleId}
-            items={roles.data?.map((r) => ({ value: r.id, label: roleLabel(r.name) })) ?? []}
-          />
+          <Select label="Peran" value={roleId} onValueChange={setRoleId} items={roleItems} />
         </div>
       </Dialog>
 
@@ -266,7 +269,7 @@ export default function StaffPage() {
         onClose={close}
         blocking={save.isPending}
         closeButton={false}
-        title="Hapus staf?"
+        title={`Hapus ${removing?.name ?? ''} dari ${outlet?.name ?? ''}?`}
         footer={
           <div className="flex w-full flex-col gap-3">
             {saveError}
@@ -286,10 +289,16 @@ export default function StaffPage() {
           </div>
         }
       >
-        <p className="text-sm text-ink-secondary">
-          <span className="font-medium text-ink-primary">{removing?.name}</span> tidak lagi bekerja di{' '}
-          {outlet?.name}. Akunnya tetap ada.
-        </p>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-ink-secondary">
+            <span className="font-medium text-ink-primary">{removing?.name}</span> tidak lagi bekerja di{' '}
+            {outlet?.name}. Akunnya tetap ada.
+          </p>
+          <Alert>
+            Untuk menambahkannya kembali ke outlet ini, pilih <strong>Tambah staf</strong> lalu cari dari
+            username.
+          </Alert>
+        </div>
       </Dialog>
     </>
   );

@@ -6,7 +6,7 @@ import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
 import { canActOn, type Actor } from '../auth/rbac-rules';
-import { OutletService, type OutletDetails, type OutletInput } from './outlet.service';
+import { OutletService, type NewStaffInput, type OutletDetails, type OutletInput } from './outlet.service';
 import type { StaffEntry } from './outlet-rules';
 
 type Ctx = Actor & { user: PublicUser };
@@ -167,5 +167,40 @@ export class OutletRouter {
     await this.rbac.require(ctx, 'outlet.staff_assign');
     if (!canActOn(ctx, input.outletId)) throw wrongOutlet();
     return this.service.setStaff(input.outletId, input.staff, ctx);
+  }
+
+  /** Accounts `setStaff` could add here, by username prefix. Same gate and confinement as `setStaff`. */
+  @Query({
+    input: z.object({ outletId: z.uuid(), username: z.string().trim().min(1).max(32) }),
+    output: z.array(z.object({ id: z.string(), name: z.string(), username: z.string() })),
+  })
+  @UseMiddlewares(ProtectedMiddleware)
+  async findUsers(@Ctx() ctx: Ctx, @Input() input: { outletId: string; username: string }) {
+    await this.rbac.require(ctx, 'outlet.staff_assign');
+    if (!canActOn(ctx, input.outletId)) throw wrongOutlet();
+    return this.service.findUsers(input.outletId, input.username);
+  }
+
+  /** A new account, straight onto this outlet's roster. Same gate and confinement as `setStaff`. */
+  @Mutation({
+    input: z.object({
+      outletId: z.uuid(),
+      name: z.string().trim().min(2).max(80),
+      username: z.string().trim().min(3).max(32),
+      password: z.string().min(8).max(128),
+      pin: z
+        .string()
+        .regex(/^\d{6}$/)
+        .optional(),
+      roleId: z.uuid(),
+    }),
+    output: z.array(staffOutput),
+  })
+  @UseMiddlewares(ProtectedMiddleware)
+  async addStaff(@Ctx() ctx: Ctx, @Input() input: NewStaffInput & { outletId: string }) {
+    await this.rbac.require(ctx, 'outlet.staff_assign');
+    if (!canActOn(ctx, input.outletId)) throw wrongOutlet();
+    const { outletId, ...staff } = input;
+    return this.service.addStaff(outletId, staff, ctx);
   }
 }

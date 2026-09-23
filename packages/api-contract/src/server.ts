@@ -379,6 +379,31 @@ const appRouter = t.router({
   roleName: z.string(),
   global: z.boolean(),
 })))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    findUsers: publicProcedure
+      .input(z.object({ outletId: z.uuid(), username: z.string().trim().min(1).max(32) }))
+      .output(z.array(z.object({ id: z.string(), name: z.string(), username: z.string() })))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    addStaff: publicProcedure
+      .input(z.object({
+      outletId: z.uuid(),
+      name: z.string().trim().min(2).max(80),
+      username: z.string().trim().min(3).max(32),
+      password: z.string().min(8).max(128),
+      pin: z
+        .string()
+        .regex(/^\d{6}$/)
+        .optional(),
+      roleId: z.uuid(),
+    }))
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  username: z.string(),
+  roleId: z.string(),
+  roleName: z.string(),
+  global: z.boolean(),
+})))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   settings: t.router({
