@@ -8,7 +8,7 @@ import { useToggle } from '@repo/hooks/use-toggle';
  * bare input and a fully annotated one. The border lives on the row rather than the input so an
  * adornment (the password toggle) sits inside the box and still lights up with it on focus.
  */
-const rowVariants = cva('flex items-center gap-2 rounded-xl border px-4 py-3', {
+const rowVariants = cva('flex items-center gap-2 rounded-lg border px-3 py-2', {
   variants: {
     invalid: {
       true: 'border-danger focus-within:border-danger',
@@ -60,7 +60,7 @@ export function TextField({
           disabled={disabled}
           aria-invalid={error ? true : undefined}
           aria-describedby={message ? messageId : undefined}
-          className="w-full bg-transparent text-base text-ink-primary outline-none placeholder:text-ink-muted disabled:cursor-not-allowed disabled:text-ink-muted"
+          className="w-full bg-transparent text-sm text-ink-primary outline-none placeholder:text-ink-muted disabled:cursor-not-allowed disabled:text-ink-muted"
           {...props}
         />
         {adornment}
@@ -99,7 +99,7 @@ export function PasswordField({ disabled, ...props }: PasswordFieldProps) {
           className="shrink-0 text-ink-tertiary disabled:text-ink-muted"
           onClick={toggleVisible}
         >
-          <Icon size={20} aria-hidden />
+          <Icon size={16} aria-hidden />
         </button>
       }
       {...props}
