@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { PERMISSIONS, PERMISSION_DESCRIPTIONS, holdersOf } from './seed-rbac.ts';
+import { PERMISSIONS, holdersOf } from './seed-rbac.ts';
 
 test('an approve gate belongs to owner and manager', () => {
   assert.deepEqual(holdersOf('sales.void_approve'), ['owner', 'manager']);
@@ -17,9 +17,9 @@ test('settings.manage is owner only — manager does not hold everything after a
 test('manager is granted, never assumed: an empty list is the owner alone', () => {
   assert.deepEqual(
     Object.keys(PERMISSIONS)
-      .filter((p) => PERMISSIONS[p]!.length === 0)
+      .filter((p) => PERMISSIONS[p]!.roles.length === 0)
       .sort(),
-    ['outlet.create', 'outlet.delete', 'outlet.view_all', 'settings.manage'],
+    ['outlet.create', 'outlet.delete', 'outlet.view_all', 'role.view', 'settings.manage'],
   );
   // Owner is the only implicit holder, and an unlisted permission grants nobody else.
   for (const permission of Object.keys(PERMISSIONS))
@@ -61,13 +61,8 @@ test('one outlet is the manager job — its settings and its roster', () => {
 test('no floor role holds an outlet permission', () => {
   for (const permission of Object.keys(PERMISSIONS).filter((p) => p.startsWith('outlet.')))
     assert.deepEqual(
-      PERMISSIONS[permission],
+      PERMISSIONS[permission]!.roles,
       holdersOf(permission).includes('manager') ? ['manager'] : [],
       permission,
     );
-});
-
-test('every described permission is a real permission', () => {
-  for (const permission of Object.keys(PERMISSION_DESCRIPTIONS))
-    assert.ok(permission in PERMISSIONS, permission);
 });

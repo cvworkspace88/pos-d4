@@ -406,6 +406,32 @@ const appRouter = t.router({
 })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
+  role: t.router({
+    matrix: publicProcedure
+      .output(z.object({
+      roles: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          description: z.string().nullable(),
+          permissionCount: z.number(),
+        }),
+      ),
+      groups: z.array(
+        z.object({
+          domain: z.string(),
+          rows: z.array(
+            z.object({
+              key: z.string(),
+              description: z.string().nullable(),
+              granted: z.array(z.boolean()),
+            }),
+          ),
+        }),
+      ),
+    }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
   settings: t.router({
     get: publicProcedure
       .output(z.object({ idleTimeoutSeconds: z.number() }))

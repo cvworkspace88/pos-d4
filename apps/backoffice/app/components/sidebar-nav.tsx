@@ -18,6 +18,8 @@ export const MENU = [
       { to: '/outlet', label: 'Outlet', permission: 'outlet.view_all' },
       // The active outlet's roster.
       { to: '/staf', label: 'Staf', permission: 'outlet.staff_assign' },
+      // Every role against every permission. Read-only.
+      { to: '/peran', label: 'Peran & izin', permission: 'role.view' },
     ],
   },
 ] as const;

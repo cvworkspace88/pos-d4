@@ -78,6 +78,8 @@ export const permissions = pgTable('permissions', {
   id: uuid('id').primaryKey().defaultRandom(),
   // Dotted `domain.action`, e.g. `sales.void_approve`. The code checks this string, not the id.
   name: text('name').notNull().unique(),
+  // The Indonesian label the UI shows ("Ajukan void penjualan"). Written by the seed from
+  // `PERMISSIONS`, which is the one place labels live.
   description: text('description'),
 });
 

@@ -13,26 +13,17 @@ import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { TextField } from '@repo/ui/text-field';
 import { AddStaff } from '../components/add-staff-dialog';
 import { PageHeader } from '../components/page-header';
+import { roleLabel } from '../roles';
 import { useAuthStore } from '../stores/auth';
 import { useTRPC } from '../trpc';
 
 type Member = RouterOutputs['outlet']['staff'][number];
 
-// Role names are seed keys, not copy. An unknown one shows as-is rather than blank.
-const ROLE_LABEL: Record<string, string> = {
-  owner: 'Pemilik',
-  manager: 'Manajer',
-  cashier: 'Kasir',
-  waiter: 'Pelayan',
-  inventory_staff: 'Staf gudang',
-  auditor: 'Auditor',
-};
 const ROLE_TONE: Record<string, PillProps['tone']> = {
   owner: 'danger',
   manager: 'warning',
   cashier: 'success',
 };
-const roleLabel = (name: string) => ROLE_LABEL[name] ?? name;
 
 /** The active outlet's roster: who works here and as what. The sidebar switcher decides which outlet. */
 export default function StaffPage() {

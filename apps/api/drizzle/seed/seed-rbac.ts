@@ -13,104 +13,100 @@ export const ROLES = [
   ['auditor', 'Read-only across sales, products and inventory.'],
 ] as const;
 
-/** A role name, narrowed to what `ROLES` actually lists — catches a typo in `PERMISSIONS` at compile time. */
 export type RoleName = (typeof ROLES)[number][0];
 
-/**
- * permission -> every role that holds it besides owner, who holds all of them. Manager is listed
- * like any other role, so an empty list means the owner alone and a row is the whole answer.
- */
-export const PERMISSIONS: Record<string, RoleName[]> = {
-  'sales.view': ['manager', 'cashier', 'auditor'],
-  'sales.create': ['manager', 'cashier'],
-  'sales.void_request': ['manager', 'cashier'],
-  'sales.void_approve': ['manager'],
-  'sales.discount_request': ['manager', 'cashier'],
-  'sales.discount_approve': ['manager'],
-  'sales.price_override_request': ['manager'],
-  'sales.price_override_approve': ['manager'],
+export const PERMISSIONS: Record<string, { label: string; roles: RoleName[] }> = {
+  'sales.view': { label: 'Lihat penjualan', roles: ['manager', 'cashier', 'auditor'] },
+  'sales.create': { label: 'Buat penjualan', roles: ['manager', 'cashier'] },
+  'sales.void_request': { label: 'Ajukan void penjualan', roles: ['manager', 'cashier'] },
+  'sales.void_approve': { label: 'Setujui void penjualan', roles: ['manager'] },
+  'sales.discount_request': { label: 'Ajukan diskon', roles: ['manager', 'cashier'] },
+  'sales.discount_approve': { label: 'Setujui diskon', roles: ['manager'] },
+  'sales.price_override_request': { label: 'Ajukan ubah harga', roles: ['manager'] },
+  'sales.price_override_approve': { label: 'Setujui ubah harga', roles: ['manager'] },
 
-  'payments.accept': ['manager', 'cashier'],
-  'payments.refund_request': ['manager'],
-  'payments.refund_approve': ['manager'],
+  'payments.accept': { label: 'Terima pembayaran', roles: ['manager', 'cashier'] },
+  'payments.refund_request': { label: 'Ajukan refund', roles: ['manager'] },
+  'payments.refund_approve': { label: 'Setujui refund', roles: ['manager'] },
 
-  'product.view': ['manager', 'cashier', 'inventory_staff', 'auditor'],
-  'product.create': ['manager', 'inventory_staff'],
-  'product.edit': ['manager', 'inventory_staff'],
-  'product.price_edit': ['manager'],
-  'product.delete': ['manager'],
+  'product.view': { label: 'Lihat produk', roles: ['manager', 'cashier', 'inventory_staff', 'auditor'] },
+  'product.create': { label: 'Tambah produk', roles: ['manager', 'inventory_staff'] },
+  'product.edit': { label: 'Ubah produk', roles: ['manager', 'inventory_staff'] },
+  'product.price_edit': { label: 'Ubah harga produk', roles: ['manager'] },
+  'product.delete': { label: 'Hapus produk', roles: ['manager'] },
 
-  'inventory.view': ['manager', 'inventory_staff', 'auditor'],
-  'inventory.stock_adjust_request': ['manager', 'inventory_staff'],
-  'inventory.stock_adjust_approve': ['manager'],
-  'inventory.receive_stock': ['manager', 'inventory_staff'],
-  'inventory.transfer_request': ['manager', 'inventory_staff'],
-  'inventory.transfer_approve': ['manager'],
-  'inventory.purchase_order_create': ['manager', 'inventory_staff'],
-  'inventory.purchase_order_approve': ['manager'],
-  'inventory.supplier_manage': ['manager'],
+  'inventory.view': { label: 'Lihat stok', roles: ['manager', 'inventory_staff', 'auditor'] },
+  'inventory.stock_adjust_request': {
+    label: 'Ajukan penyesuaian stok',
+    roles: ['manager', 'inventory_staff'],
+  },
+  'inventory.stock_adjust_approve': { label: 'Setujui penyesuaian stok', roles: ['manager'] },
+  'inventory.receive_stock': { label: 'Terima barang masuk', roles: ['manager', 'inventory_staff'] },
+  'inventory.transfer_request': { label: 'Ajukan transfer stok', roles: ['manager', 'inventory_staff'] },
+  'inventory.transfer_approve': { label: 'Setujui transfer stok', roles: ['manager'] },
+  'inventory.purchase_order_create': { label: 'Buat purchase order', roles: ['manager', 'inventory_staff'] },
+  'inventory.purchase_order_approve': { label: 'Setujui purchase order', roles: ['manager'] },
+  'inventory.supplier_manage': { label: 'Kelola supplier', roles: ['manager'] },
 
-  'table.view': ['manager', 'waiter', 'cashier'],
-  'table.create': ['manager'],
-  'table.delete': ['manager'],
+  'table.view': { label: 'Lihat meja', roles: ['manager', 'waiter', 'cashier'] },
+  'table.create': { label: 'Tambah meja', roles: ['manager'] },
+  'table.delete': { label: 'Hapus meja', roles: ['manager'] },
   // Move, resize, rename, seats.
-  'table.layout_manage': ['manager'],
-  'table.assign': ['manager', 'waiter', 'cashier'],
-  'table.transfer_request': ['manager', 'waiter', 'cashier'],
-  'table.transfer_approve': ['manager'],
+  'table.layout_manage': { label: 'Atur denah meja', roles: ['manager'] },
+  'table.assign': { label: 'Tempatkan tamu di meja', roles: ['manager', 'waiter', 'cashier'] },
+  'table.transfer_request': { label: 'Ajukan pindah meja', roles: ['manager', 'waiter', 'cashier'] },
+  'table.transfer_approve': { label: 'Setujui pindah meja', roles: ['manager'] },
   // Direct: join tables into a group for a big party and split them again. No approval step.
-  'table.merge': ['manager', 'waiter', 'cashier'],
-  'table.close': ['manager', 'waiter', 'cashier'],
-  'table.force_close_request': ['manager', 'waiter', 'cashier'],
-  'table.force_close_approve': ['manager'],
-  'table.reopen_request': ['manager', 'waiter', 'cashier'],
-  'table.reopen_approve': ['manager'],
+  'table.merge': { label: 'Gabung & pisah meja', roles: ['manager', 'waiter', 'cashier'] },
+  'table.close': { label: 'Tutup meja', roles: ['manager', 'waiter', 'cashier'] },
+  'table.force_close_request': { label: 'Ajukan tutup paksa meja', roles: ['manager', 'waiter', 'cashier'] },
+  'table.force_close_approve': { label: 'Setujui tutup paksa meja', roles: ['manager'] },
+  'table.reopen_request': { label: 'Ajukan buka kembali meja', roles: ['manager', 'waiter', 'cashier'] },
+  'table.reopen_approve': { label: 'Setujui buka kembali meja', roles: ['manager'] },
 
-  'reservation.view': ['manager', 'waiter', 'cashier'],
-  'reservation.create': ['manager', 'waiter', 'cashier'],
+  'reservation.view': { label: 'Lihat reservasi', roles: ['manager', 'waiter', 'cashier'] },
+  'reservation.create': { label: 'Buat reservasi', roles: ['manager', 'waiter', 'cashier'] },
   // Seat, no-show, cancel, edit while still booked.
-  'reservation.update': ['manager', 'waiter', 'cashier'],
+  'reservation.update': { label: 'Ubah status reservasi', roles: ['manager', 'waiter', 'cashier'] },
 
-  'order.view': ['manager', 'waiter', 'cashier', 'auditor'],
-  'order.create': ['manager', 'waiter', 'cashier'],
-  'order.item_add': ['manager', 'waiter', 'cashier'],
-  'order.item_remove_request': ['manager', 'waiter', 'cashier'],
-  'order.item_remove_approve': ['manager'],
-  'order.adjustment_request': ['manager', 'waiter', 'cashier'],
-  'order.adjustment_approve': ['manager'],
+  'order.view': { label: 'Lihat pesanan', roles: ['manager', 'waiter', 'cashier', 'auditor'] },
+  'order.create': { label: 'Buat pesanan', roles: ['manager', 'waiter', 'cashier'] },
+  'order.item_add': { label: 'Tambah item pesanan', roles: ['manager', 'waiter', 'cashier'] },
+  'order.item_remove_request': {
+    label: 'Ajukan hapus item pesanan',
+    roles: ['manager', 'waiter', 'cashier'],
+  },
+  'order.item_remove_approve': { label: 'Setujui hapus item pesanan', roles: ['manager'] },
+  'order.adjustment_request': {
+    label: 'Ajukan penyesuaian pesanan',
+    roles: ['manager', 'waiter', 'cashier'],
+  },
+  'order.adjustment_approve': { label: 'Setujui penyesuaian pesanan', roles: ['manager'] },
   // Kitchen tickets are the floor's job; a cashier never sends one.
-  'order.send_to_kitchen': ['manager', 'waiter'],
-  'order.hold': ['manager', 'waiter', 'cashier'],
-  'order.cancel_request': ['manager', 'waiter', 'cashier'],
-  'order.cancel_approve': ['manager'],
+  'order.send_to_kitchen': { label: 'Kirim pesanan ke dapur', roles: ['manager', 'waiter'] },
+  'order.hold': { label: 'Tahan pesanan', roles: ['manager', 'waiter', 'cashier'] },
+  'order.cancel_request': { label: 'Ajukan batal pesanan', roles: ['manager', 'waiter', 'cashier'] },
+  'order.cancel_approve': { label: 'Setujui batal pesanan', roles: ['manager'] },
 
   // The manager two are about one outlet, pinned to the session's own by `canActOn`; the
   // owner-only three are about the set of outlets. Reading your own outlet needs no permission.
-  'outlet.manage': ['manager'],
-  'outlet.staff_assign': ['manager'],
+  'outlet.manage': { label: 'Ubah detail outlet', roles: ['manager'] },
+  'outlet.staff_assign': { label: 'Atur staf outlet', roles: ['manager'] },
 
-  'outlet.view_all': [],
-  'outlet.create': [],
-  'outlet.delete': [],
+  'outlet.view_all': { label: 'Lihat semua outlet', roles: [] },
+  'outlet.create': { label: 'Tambah outlet', roles: [] },
+  'outlet.delete': { label: 'Aktifkan / nonaktifkan outlet', roles: [] },
 
   // global app settings
-  'settings.manage': [],
-};
+  'settings.manage': { label: 'Kelola pengaturan aplikasi', roles: [] },
 
-/**
- * Permission descriptions `permissions.description`.
- */
-export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
-  'outlet.manage': 'Ubah pengaturan dan detail outlet.',
-  'outlet.staff_assign': 'Atur staf di outlet.',
-  'outlet.view_all': 'Lihat semua outlet.',
-  'outlet.create': 'Tambah outlet.',
-  'outlet.delete': 'Nonaktifkan atau aktifkan outlet.',
+  // The roles & permissions page. Read-only for now; owner alone.
+  'role.view': { label: 'Lihat peran & izin', roles: [] },
 };
 
 /** The full holder list for a permission. Owner is the only implicit holder; everyone else is listed. */
 export const holdersOf = (permission: string): string[] => [
-  ...new Set(['owner', ...(PERMISSIONS[permission] ?? [])]),
+  ...new Set(['owner', ...(PERMISSIONS[permission]?.roles ?? [])]),
 ];
 
 /** Idempotent: re-running adds what is missing and touches nothing else. */
@@ -125,7 +121,8 @@ export async function seedRbac(db: NodePgDatabase<typeof schema>): Promise<void>
   await db
     .insert(permissions)
     .values(
-      Object.keys(PERMISSIONS).map((name) => ({ name, description: PERMISSION_DESCRIPTIONS[name] ?? null })),
+      // `description` holds the Indonesian label the UI shows; the dotted name stays the key code checks.
+      Object.entries(PERMISSIONS).map(([name, { label }]) => ({ name, description: label })),
     )
     .onConflictDoUpdate({ target: permissions.name, set: { description: sql`excluded.description` } });
 
