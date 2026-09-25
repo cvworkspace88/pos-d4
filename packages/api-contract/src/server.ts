@@ -271,6 +271,17 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
   active: z.boolean(),
 })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -282,6 +293,17 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
   active: z.boolean(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -303,6 +325,17 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -312,6 +345,8 @@ const appRouter = t.router({
       name: z.string().trim().min(1).max(60),
       address: z.string().trim().max(200).optional(),
       phone: z.string().trim().max(32).optional(),
+      city: z.string().trim().max(60).optional(),
+      timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
     }))
       .output(z.object({
   id: z.string(),
@@ -319,6 +354,17 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -338,6 +384,54 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
+  active: z.boolean(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    setCharges: publicProcedure
+      .input(z.object({
+      id: z.uuid(),
+      pbjtLabel: z.string().trim().min(1).max(30),
+      pbjtRateBp: z.number().int().min(0).max(10000),
+      pbjtInclusive: z.boolean(),
+      serviceName: z.string().trim().min(1).max(30),
+      serviceRateBp: z.number().int().min(0).max(10000),
+      servicePbjtTaxable: z.boolean(),
+      // Digits only — the client strips the dots and dash of the printed form.
+      npwp: z
+        .string()
+        .regex(/^\d{15,16}$/)
+        .optional(),
+      npwpd: z.string().trim().max(30).optional(),
+      ppnInclusive: z.boolean(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -349,6 +443,17 @@ const appRouter = t.router({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -434,11 +539,15 @@ const appRouter = t.router({
     }),
   settings: t.router({
     get: publicProcedure
-      .output(z.object({ idleTimeoutSeconds: z.number() }))
+      .output(z.object({ idleTimeoutSeconds: z.number(), ppnRateBp: z.number().int() }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     update: publicProcedure
       .input(z.object({ idleTimeoutSeconds: z.number().int().min(30).max(3600) }))
-      .output(z.object({ idleTimeoutSeconds: z.number() }))
+      .output(z.object({ idleTimeoutSeconds: z.number(), ppnRateBp: z.number().int() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    setPpnRate: publicProcedure
+      .input(z.object({ ppnRateBp: z.number().int().min(0).max(10000) }))
+      .output(z.object({ idleTimeoutSeconds: z.number(), ppnRateBp: z.number().int() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     })
 });

@@ -6,7 +6,13 @@ import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
 import { canActOn, type Actor } from '../auth/rbac-rules';
-import { OutletService, type NewStaffInput, type OutletDetails, type OutletInput } from './outlet.service';
+import {
+  OutletService,
+  type NewStaffInput,
+  type OutletCharges,
+  type OutletDetails,
+  type OutletInput,
+} from './outlet.service';
 import type { StaffEntry } from './outlet-rules';
 
 type Ctx = Actor & { user: PublicUser };
@@ -19,6 +25,17 @@ const outletOutput = z.object({
   code: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
   active: z.boolean(),
 });
 
@@ -56,13 +73,13 @@ export class OutletRouter {
   }
 
   /**
-   * One outlet, the caller's own. No permission: the session already carries which outlets you
-   * work at, so its address and phone are not a privilege on top — same call shape as
-   * `settings.get`. `canActOn` is what keeps it to your own.
+   * One outlet, the caller's own, with everything the settings page edits — tax numbers included —
+   * so it sits behind the same permission as saving it. `canActOn` keeps it to your own outlet.
    */
   @Query({ input: z.object({ id: z.uuid() }), output: outletOutput })
   @UseMiddlewares(ProtectedMiddleware)
   async get(@Ctx() ctx: Ctx, @Input('id') id: string) {
+    await this.rbac.require(ctx, 'outlet.manage');
     if (!canActOn(ctx, id)) throw wrongOutlet();
     return this.service.get(id);
   }
@@ -95,6 +112,8 @@ export class OutletRouter {
       name: z.string().trim().min(1).max(60),
       address: z.string().trim().max(200).optional(),
       phone: z.string().trim().max(32).optional(),
+      city: z.string().trim().max(60).optional(),
+      timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
     }),
     output: outletOutput,
   })
@@ -127,6 +146,37 @@ export class OutletRouter {
     await this.rbac.require(ctx, 'outlet.manage');
     if (!canActOn(ctx, input.id)) throw wrongOutlet();
     return this.service.setCode(input.id, input.code);
+  }
+
+  /**
+   * The outlet's one tax and one service charge, saved as one form. Rates are basis points
+   * (1000 = 10%). Same permission and confinement as `update`.
+   */
+  @Mutation({
+    input: z.object({
+      id: z.uuid(),
+      pbjtLabel: z.string().trim().min(1).max(30),
+      pbjtRateBp: z.number().int().min(0).max(10000),
+      pbjtInclusive: z.boolean(),
+      serviceName: z.string().trim().min(1).max(30),
+      serviceRateBp: z.number().int().min(0).max(10000),
+      servicePbjtTaxable: z.boolean(),
+      // Digits only — the client strips the dots and dash of the printed form.
+      npwp: z
+        .string()
+        .regex(/^\d{15,16}$/)
+        .optional(),
+      npwpd: z.string().trim().max(30).optional(),
+      ppnInclusive: z.boolean(),
+    }),
+    output: outletOutput,
+  })
+  @UseMiddlewares(ProtectedMiddleware)
+  async setCharges(@Ctx() ctx: Ctx, @Input() input: OutletCharges & { id: string }) {
+    await this.rbac.require(ctx, 'outlet.manage');
+    if (!canActOn(ctx, input.id)) throw wrongOutlet();
+    const { id, ...charges } = input;
+    return this.service.setCharges(id, charges);
   }
 
   /**

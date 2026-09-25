@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  boolean,
   check,
   index,
   integer,
@@ -138,9 +139,13 @@ export const settings = pgTable(
     // defaults when the row does not exist yet, so nothing has to seed it.
     id: integer('id').primaryKey().default(1),
     idleTimeoutSeconds: integer('idle_timeout_seconds').notNull().default(120),
+    ppnRateBp: integer('ppn_rate_bp').notNull().default(1100),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [check('settings_singleton', sql`${table.id} = 1`)],
+  (table) => [
+    check('settings_singleton', sql`${table.id} = 1`),
+    check('settings_ppn_rate_bp', sql`${table.ppnRateBp} BETWEEN 0 AND 10000`),
+  ],
 );
 
 export type Settings = typeof settings.$inferSelect;
@@ -216,6 +221,28 @@ export const outlets = pgTable(
     code: text('code').notNull(),
     address: text('address'),
     phone: text('phone'),
+    city: text('city'),
+    // IANA name, limited to Indonesia's three zones: WIB, WITA, WIT.
+    timezone: text('timezone').notNull().default('Asia/Jakarta'),
+    // One tax per outlet, printed on receipts under this label, e.g. 'PBJT'.
+    pbjtLabel: text('pbjt_label').notNull().default('PBJT'),
+    // Basis points: 1000 = 10.00%. Integer, like money — never a float.
+    pbjtRateBp: integer('pbjt_rate_bp').notNull().default(1000),
+    // true: menu prices already include the tax. false: tax is added on top.
+    pbjtInclusive: boolean('pbjt_inclusive').notNull().default(false),
+    serviceName: text('service_name').notNull().default('Biaya Layanan'),
+    serviceRateBp: integer('service_rate_bp').notNull().default(0),
+    // true: tax is computed on subtotal + service. false: on subtotal only.
+    servicePbjtTaxable: boolean('service_pbjt_taxable').notNull().default(true),
+    // Which tax a sale carries — PBJT, PPN or none — is decided per menu item, not here. The outlet
+    // holds only the numbers and rates those taxes use.
+    // Central taxpayer number, digits only: 16 (NIK-based) or the legacy 15. Optional.
+    npwp: text('npwp'),
+    // Regional taxpayer number for PBJT. Format differs per region, so free text. Optional.
+    npwpd: text('npwpd'),
+    // true: a PPN item's price already includes PPN. Separate from `pbjt_inclusive` because retail
+    // prices are conventionally shown tax-included while restaurant menus usually are not.
+    ppnInclusive: boolean('ppn_inclusive').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
@@ -232,6 +259,9 @@ export const outlets = pgTable(
     uniqueIndex('outlets_code_active_idx')
       .on(table.code)
       .where(sql`${table.deletedAt} IS NULL`),
+    check('outlets_timezone', sql`${table.timezone} IN ('Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura')`),
+    check('outlets_pbjt_rate_bp', sql`${table.pbjtRateBp} BETWEEN 0 AND 10000`),
+    check('outlets_service_rate_bp', sql`${table.serviceRateBp} BETWEEN 0 AND 10000`),
   ],
 );
 

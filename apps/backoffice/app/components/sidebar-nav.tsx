@@ -13,7 +13,9 @@ export const MENU = [
     label: 'Manajemen',
     items: [
       // Scoped to the session's active outlet, not the whole deployment.
-      { to: '/pengaturan', label: 'Pengaturan', permission: 'settings.manage' },
+      { to: '/pengaturan', label: 'Pengaturan Outlet', permission: 'outlet.manage' },
+      // Deployment-wide: every outlet at once. Owner only.
+      { to: '/pengaturan-aplikasi', label: 'Pengaturan Aplikasi', permission: 'settings.manage' },
       // Every outlet: the list, and each one's own fields.
       { to: '/outlet', label: 'Outlet', permission: 'outlet.view_all' },
       // The active outlet's roster.

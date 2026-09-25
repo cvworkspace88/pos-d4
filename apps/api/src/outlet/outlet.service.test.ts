@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import { seedRbac } from '../../drizzle/seed/seed-rbac';
-import { roles, users } from '../db/schema';
+import { outlets, roles, users } from '../db/schema';
 import { connectTestDatabase, truncateAll, type TestDatabase } from '../test/test-db';
 import { OutletService } from './outlet.service';
 
@@ -98,13 +98,13 @@ test('get returns one outlet, and a closed one is NOT_FOUND', async () => {
 
 test('update is a form save: an omitted address clears the column', async () => {
   const outlet = await service.create({ name: 'Downtown', code: 'dt', address: '1 Main St' });
-  const saved = await service.update(outlet.id, { name: 'Downtown' });
+  const saved = await service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Jakarta' });
   expect(saved.address).toBeNull();
 });
 
 test('update leaves the code alone — only setCode writes it', async () => {
   const outlet = await anOutlet();
-  const saved = await service.update(outlet.id, { name: 'Uptown' });
+  const saved = await service.update(outlet.id, { name: 'Uptown', timezone: 'Asia/Jakarta' });
   expect(saved).toMatchObject({ name: 'Uptown', code: 'DT' });
 });
 
@@ -136,10 +136,88 @@ test('update of a closed outlet is NOT_FOUND, not a silent no-op', async () => {
   const outlet = await anOutlet();
   await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
   await service.setActive(outlet.id, false);
-  await expect(service.update(outlet.id, { name: 'Downtown' })).rejects.toMatchObject({
+  await expect(
+    service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Jakarta' }),
+  ).rejects.toMatchObject({
     code: 'NOT_FOUND',
     message: 'Outlet tidak ditemukan.',
   });
+});
+
+const CHARGES = {
+  pbjtLabel: 'PPN',
+  pbjtRateBp: 1100,
+  pbjtInclusive: true,
+  serviceName: 'Service',
+  serviceRateBp: 550,
+  servicePbjtTaxable: false,
+  npwp: '0123456789012345',
+  npwpd: 'P.1.0001234.01.01',
+  ppnInclusive: false,
+};
+
+test('a new outlet starts at PBJT 10% exclusive, no service charge, in WIB', async () => {
+  const outlet = await anOutlet();
+  expect(outlet).toMatchObject({
+    city: null,
+    timezone: 'Asia/Jakarta',
+    pbjtLabel: 'PBJT',
+    pbjtRateBp: 1000,
+    pbjtInclusive: false,
+    serviceName: 'Biaya Layanan',
+    serviceRateBp: 0,
+    servicePbjtTaxable: true,
+    ppnInclusive: true,
+  });
+});
+
+test('update saves city and timezone, and an omitted city clears it', async () => {
+  const outlet = await anOutlet();
+  const saved = await service.update(outlet.id, {
+    name: 'Downtown',
+    city: 'Denpasar',
+    timezone: 'Asia/Makassar',
+  });
+  expect(saved).toMatchObject({ city: 'Denpasar', timezone: 'Asia/Makassar' });
+  expect((await service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Makassar' })).city).toBeNull();
+});
+
+test('setCharges saves the tax and service charge and reads them back', async () => {
+  const outlet = await anOutlet();
+  expect(await service.setCharges(outlet.id, CHARGES)).toMatchObject(CHARGES);
+  expect(await service.get(outlet.id)).toMatchObject(CHARGES);
+});
+
+test('setCharges is a form save: omitted NPWP and NPWPD clear the columns', async () => {
+  const outlet = await anOutlet();
+  await service.setCharges(outlet.id, CHARGES);
+  expect(
+    await service.setCharges(outlet.id, { ...CHARGES, npwp: undefined, npwpd: undefined }),
+  ).toMatchObject({ npwp: null, npwpd: null });
+});
+
+test('an NPWPD that trimmed down to nothing clears the column rather than storing an empty string', async () => {
+  const outlet = await anOutlet();
+  await service.setCharges(outlet.id, CHARGES);
+  expect((await service.setCharges(outlet.id, { ...CHARGES, npwpd: '' })).npwpd).toBeNull();
+});
+
+test('setCharges on a closed outlet is NOT_FOUND', async () => {
+  const outlet = await anOutlet();
+  await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
+  await service.setActive(outlet.id, false);
+  await expect(service.setCharges(outlet.id, CHARGES)).rejects.toMatchObject({
+    code: 'NOT_FOUND',
+    message: 'Outlet tidak ditemukan.',
+  });
+});
+
+test('the database refuses a rate over 100% and a timezone outside Indonesia', async () => {
+  const outlet = await anOutlet();
+  const where = eq(outlets.id, outlet.id);
+  await expect(db.update(outlets).set({ pbjtRateBp: 10001 }).where(where)).rejects.toThrow();
+  await expect(db.update(outlets).set({ serviceRateBp: -1 }).where(where)).rejects.toThrow();
+  await expect(db.update(outlets).set({ timezone: 'Asia/Singapore' }).where(where)).rejects.toThrow();
 });
 
 test('deactivating an outlet twice is a no-op the second time', async () => {
@@ -438,9 +516,7 @@ test('addStaff follows the setStaff role rules', async () => {
 test('findUsers: username prefix, only accounts that could join this roster', async () => {
   const outlet = await anOutlet();
   const [owner] = await db.select().from(roles).where(eq(roles.name, 'owner'));
-  await db
-    .insert(users)
-    .values({ username: 'bos', name: 'Bos', passwordHash: 'x', roleId: owner!.id }); // global
+  await db.insert(users).values({ username: 'bos', name: 'Bos', passwordHash: 'x', roleId: owner!.id }); // global
   const here = await addUser('budi');
   await addUser('bu_di');
   await addUser('buxdi');

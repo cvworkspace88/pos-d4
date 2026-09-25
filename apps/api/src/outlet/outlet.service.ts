@@ -21,8 +21,28 @@ export interface OutletInput {
   phone?: string;
 }
 
-/** What `update` saves. The code is not in here: only `create` and `setCode` write it. */
-export type OutletDetails = Omit<OutletInput, 'code'>;
+/** Indonesia's three zones, as IANA names: WIB, WITA, WIT. */
+export type Timezone = 'Asia/Jakarta' | 'Asia/Makassar' | 'Asia/Jayapura';
+
+/**
+ * What `update` saves. The code is not in here: only `create` and `setCode` write it. City and
+ * timezone are not on `create`: a new outlet takes the defaults and is edited on the settings page.
+ */
+export type OutletDetails = Omit<OutletInput, 'code'> & { city?: string; timezone: Timezone };
+
+/** What `setCharges` saves: the outlet's one tax and one service charge. Rates in basis points. */
+export interface OutletCharges {
+  pbjtLabel: string;
+  pbjtRateBp: number;
+  pbjtInclusive: boolean;
+  serviceName: string;
+  serviceRateBp: number;
+  servicePbjtTaxable: boolean;
+  /** Omitted = cleared, like the address on `update`. */
+  npwp?: string;
+  npwpd?: string;
+  ppnInclusive: boolean;
+}
 
 export interface StaffOutput {
   id: string;
@@ -41,6 +61,17 @@ export const outletOutput = (o: Outlet) => ({
   code: o.code,
   address: o.address,
   phone: o.phone,
+  city: o.city,
+  timezone: o.timezone,
+  pbjtLabel: o.pbjtLabel,
+  pbjtRateBp: o.pbjtRateBp,
+  pbjtInclusive: o.pbjtInclusive,
+  serviceName: o.serviceName,
+  serviceRateBp: o.serviceRateBp,
+  servicePbjtTaxable: o.servicePbjtTaxable,
+  npwp: o.npwp,
+  npwpd: o.npwpd,
+  ppnInclusive: o.ppnInclusive,
   active: o.deletedAt === null,
 });
 export type OutletOutput = ReturnType<typeof outletOutput>;
@@ -64,11 +95,13 @@ const rethrowAsConflict = (error: unknown): never => {
   throw error;
 };
 
-/** Omitted address and phone clear the column: `update` is a full form save, not a patch. */
+/** Omitted address, phone and city clear the column: `update` is a full form save, not a patch. */
 const detailsRow = (input: OutletDetails) => ({
   name: input.name,
   address: input.address ?? null,
   phone: input.phone ?? null,
+  city: input.city ?? null,
+  timezone: input.timezone,
 });
 
 export interface NewStaffInput {
@@ -80,7 +113,12 @@ export interface NewStaffInput {
   roleId: string;
 }
 
-const createRow = (input: OutletInput) => ({ ...detailsRow(input), code: normalizeCode(input.code) });
+const createRow = (input: OutletInput) => ({
+  name: input.name,
+  address: input.address ?? null,
+  phone: input.phone ?? null,
+  code: normalizeCode(input.code),
+});
 
 @Injectable()
 export class OutletService {
@@ -109,14 +147,14 @@ export class OutletService {
   }
 
   async update(id: string, input: OutletDetails): Promise<OutletOutput> {
-    await this.find(id);
     try {
       const [row] = await this.db
         .update(outlets)
         .set(detailsRow(input))
         .where(and(eq(outlets.id, id), live))
         .returning();
-      return outletOutput(row!);
+      if (!row) throw notFound();
+      return outletOutput(row);
     } catch (error) {
       return rethrowAsConflict(error);
     }
@@ -127,17 +165,29 @@ export class OutletService {
    * setup, so changing it stays a deliberate act rather than a field saved with the address.
    */
   async setCode(id: string, code: string): Promise<OutletOutput> {
-    await this.find(id);
     try {
       const [row] = await this.db
         .update(outlets)
         .set({ code: normalizeCode(code) })
         .where(and(eq(outlets.id, id), live))
         .returning();
-      return outletOutput(row!);
+      if (!row) throw notFound();
+      return outletOutput(row);
     } catch (error) {
       return rethrowAsConflict(error);
     }
+  }
+
+  /** The tax and service charge, saved as one form. Last save wins: this is configuration, not a bill. */
+  async setCharges(id: string, charges: OutletCharges): Promise<OutletOutput> {
+    const [row] = await this.db
+      .update(outlets)
+      // `||`, not `??`: the router trims, so a blank-but-spaced NPWPD arrives as '' and must clear too.
+      .set({ ...charges, npwp: charges.npwp ?? null, npwpd: charges.npwpd || null })
+      .where(and(eq(outlets.id, id), live))
+      .returning();
+    if (!row) throw notFound();
+    return outletOutput(row);
   }
 
   /**
@@ -299,7 +349,10 @@ export class OutletService {
    * Existing accounts that could join this roster: live, not global (owner works everywhere
    * already), not on it yet. Username prefix only — the one key staff are told to search by.
    */
-  async findUsers(outletId: string, username: string): Promise<{ id: string; name: string; username: string }[]> {
+  async findUsers(
+    outletId: string,
+    username: string,
+  ): Promise<{ id: string; name: string; username: string }[]> {
     await this.find(outletId);
     // Usernames are stored lowercase, so a plain LIKE is case-insensitive. Escape the wildcards so
     // `_` in a search is a literal underscore.

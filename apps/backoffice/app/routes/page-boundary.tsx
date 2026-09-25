@@ -42,7 +42,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         <Button size="sm" onClick={() => window.location.reload()}>
           Coba lagi
         </Button>
-        <Button variant="outline" size="sm" onClick={() => void navigate('/pengaturan')}>
+        <Button variant="outline" size="sm" onClick={() => void navigate('/')}>
           Kembali
         </Button>
       </StateMessageLayout>
