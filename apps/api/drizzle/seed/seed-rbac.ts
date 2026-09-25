@@ -69,6 +69,11 @@ export const PERMISSIONS: Record<string, { label: string; roles: RoleName[] }> =
   // Seat, no-show, cancel, edit while still booked.
   'reservation.update': { label: 'Ubah status reservasi', roles: ['manager', 'waiter', 'cashier'] },
 
+  // Menu categories of the active outlet: their names and the order the cashier screen shows them in.
+  'category.view': { label: 'Lihat kategori', roles: ['manager'] },
+  // Add, rename, delete, reorder.
+  'category.edit': { label: 'Kelola kategori', roles: ['manager'] },
+
   'order.view': { label: 'Lihat pesanan', roles: ['manager', 'waiter', 'cashier', 'auditor'] },
   'order.create': { label: 'Buat pesanan', roles: ['manager', 'waiter', 'cashier'] },
   'order.item_add': { label: 'Tambah item pesanan', roles: ['manager', 'waiter', 'cashier'] },

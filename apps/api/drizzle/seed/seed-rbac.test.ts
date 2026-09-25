@@ -66,3 +66,8 @@ test('no floor role holds an outlet permission', () => {
       permission,
     );
 });
+
+test('menu categories are the manager job, per outlet', () => {
+  assert.deepEqual(holdersOf('category.view'), ['owner', 'manager']);
+  assert.deepEqual(holdersOf('category.edit'), ['owner', 'manager']);
+});

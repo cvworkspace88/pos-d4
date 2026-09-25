@@ -10,6 +10,7 @@ export default [
       route('outlet', 'routes/outlet.tsx'),
       route('staf', 'routes/staff.tsx'),
       route('peran', 'routes/roles.tsx'),
+      route('kategori', 'routes/categories.tsx'),
     ]),
   ]),
 ] satisfies RouteConfig;

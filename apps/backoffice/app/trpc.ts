@@ -29,11 +29,13 @@ export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
 });
 
-// Every path that ends a session funnels through the store, so this is the one chokepoint that drops
-// the previous user's cached query results. Only the set -> null transition counts; a token refresh
-// writes the same slice and must not clear a live cache.
+// Every path that ends a session, and every outlet switch within one, funnels through the store, so this
+// is the one chokepoint that drops stale cached query results. Sign-out (set -> null) clears everything;
+// staying signed in but switching the active outlet resets every query so no unscoped cache (`category.list`,
+// `auth.me`) leaks the previous outlet's data. A token refresh for the same outlet must not trigger either.
 useAuthStore.subscribe((state, prevState) => {
   if (prevState.accessToken !== null && state.accessToken === null) queryClient.clear();
+  else if (state.accessToken && prevState.outlet?.id !== state.outlet?.id) void queryClient.resetQueries();
 });
 
 export const trpcClient = createTRPCClient<AppRouter>({

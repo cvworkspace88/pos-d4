@@ -292,3 +292,29 @@ export const outletStaff = pgTable(
 
 export type Outlet = typeof outlets.$inferSelect;
 export type OutletStaff = typeof outletStaff.$inferSelect;
+
+export const categories = pgTable(
+  'categories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id),
+    name: text('name').notNull(),
+    // 0-based position on the cashier screen. Gaps after a delete are harmless: lists sort by it.
+    sortOrder: integer('sort_order').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Soft delete: catalogue data, and products will point at it.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    // A deleted 'Minuman' can be recreated; only live names must be unique, per outlet.
+    uniqueIndex('categories_outlet_name_active_idx')
+      .on(table.outletId, table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
+    // Not unique: `reorder` rewrites every row in one transaction and would trip it mid-update.
+    index('categories_outlet_sort_idx').on(table.outletId, table.sortOrder),
+  ],
+);
+
+export type Category = typeof categories.$inferSelect;

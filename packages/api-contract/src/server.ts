@@ -106,6 +106,27 @@ const appRouter = t.router({
 }).extend({ outletId: z.string().nullable(), permissions: z.array(z.string()) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
+  category: t.router({
+    list: publicProcedure
+      .output(z.array(z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() })))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    create: publicProcedure
+      .input(z.object({ name: z.string().trim().min(1).max(40) }))
+      .output(z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    rename: publicProcedure
+      .input(z.object({ id: z.uuid(), name: z.string().trim().min(1).max(40) }))
+      .output(z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    delete: publicProcedure
+      .input(z.object({ id: z.uuid() }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    reorder: publicProcedure
+      .input(z.object({ ids: z.array(z.uuid()).max(200) }))
+      .output(z.array(z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() })))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
   reservation: t.router({
     list: publicProcedure
       .input(z.object({ from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }) }))

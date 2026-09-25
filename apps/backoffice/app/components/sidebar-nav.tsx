@@ -8,7 +8,20 @@ import { useTRPC } from '../trpc';
  * anything. An item without its permission is not shown at all, nor is a group left empty; until
  * the list loads, the menu is empty.
  */
-export const MENU = [
+interface MenuItem {
+  to: string;
+  label: string;
+  permission: string;
+}
+
+export const MENU: { label: string; items: MenuItem[] }[] = [
+  {
+    label: 'Menu',
+    items: [
+      // The active outlet's categories and the order the cashier screen shows them in.
+      { to: '/kategori', label: 'Kategori', permission: 'category.view' },
+    ],
+  },
   {
     label: 'Manajemen',
     items: [
@@ -24,7 +37,7 @@ export const MENU = [
       { to: '/peran', label: 'Peran & izin', permission: 'role.view' },
     ],
   },
-] as const;
+];
 
 const ROW = 'flex h-10 w-full items-center border-b border-border-muted px-4 text-left text-sm';
 

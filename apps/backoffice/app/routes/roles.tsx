@@ -16,6 +16,7 @@ const DOMAIN_LABEL: Record<string, string> = {
   table: 'Meja',
   reservation: 'Reservasi',
   product: 'Produk',
+  category: 'Kategori',
   inventory: 'Persediaan',
   outlet: 'Outlet',
   role: 'Peran',
