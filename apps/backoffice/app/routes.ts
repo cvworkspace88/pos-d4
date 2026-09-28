@@ -11,6 +11,7 @@ export default [
       route('staf', 'routes/staff.tsx'),
       route('peran', 'routes/roles.tsx'),
       route('kategori', 'routes/categories.tsx'),
+      route('menu', 'routes/menu.tsx'),
     ]),
   ]),
 ] satisfies RouteConfig;

@@ -71,6 +71,6 @@ export const connectTestDatabase = async (): Promise<{
 /** Every table these tests touch, plus whatever cascades off `users`. Roles and permissions stay: they are seed data. */
 export const truncateAll = async (db: TestDatabase): Promise<void> => {
   await db.execute(
-    sql`truncate table categories, refresh_tokens, user_permissions, outlet_staff, outlets, users restart identity cascade`,
+    sql`truncate table menu_items, categories, refresh_tokens, user_permissions, outlet_staff, outlets, users restart identity cascade`,
   );
 };

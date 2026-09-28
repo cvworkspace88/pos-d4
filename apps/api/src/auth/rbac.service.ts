@@ -6,6 +6,9 @@ import { DRIZZLE, type Database } from '../db/db.module';
 import { outletStaff, outlets, permissions, rolePermissions, userPermissions, users } from '../db/schema';
 import { type Actor, type PermissionRow, effectivePermissions } from './rbac-rules';
 
+/** FORBIDDEN, not UNAUTHORIZED: we know who this is, they just may not do this. */
+export const forbidden = () => new TRPCError({ code: 'FORBIDDEN', message: 'Anda tidak memiliki akses.' });
+
 /** Role → permission lookups. The code checks permission *names* (`domain.action`), never ids. */
 @Injectable()
 export class RbacService {
@@ -50,13 +53,8 @@ export class RbacService {
     return effectivePermissions(await unionAll(fromRole, fromOverrides));
   }
 
-  /** FORBIDDEN, not UNAUTHORIZED: we know who this is, they just may not do this. */
   async require(actor: Actor, permission: string): Promise<void> {
     const held = await this.permissionsOf(actor.user.id, actor.outletId);
-    if (!held.includes(permission))
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Anda tidak memiliki akses.',
-      });
+    if (!held.includes(permission)) throw forbidden();
   }
 }

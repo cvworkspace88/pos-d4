@@ -1,7 +1,7 @@
 import { Inject } from '@nestjs/common';
-import { TRPCError } from '@trpc/server';
 import { Ctx, Input, Mutation, Query, Router, UseMiddlewares } from 'nestjs-trpc';
 import { z } from 'zod';
+import { activeOutlet } from '../auth/active-outlet';
 import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
@@ -13,16 +13,6 @@ type Ctx = Actor & { user: PublicUser };
 // The generator hoists these into the shared contract. Bounds are literals on purpose: it cannot
 // hoist an identifier a schema references.
 const categoryOutput = z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() });
-
-/**
- * Categories belong to the session's active outlet; no procedure takes an outlet id, so there is
- * none from input to trust. An owner who has not picked an outlet has nothing to work on yet.
- */
-const activeOutlet = (ctx: Ctx): string => {
-  if (!ctx.outletId)
-    throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Pilih outlet terlebih dahulu.' });
-  return ctx.outletId;
-};
 
 @Router({ alias: 'category' })
 export class CategoryRouter {

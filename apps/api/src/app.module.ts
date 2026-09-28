@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { CategoryModule } from './category/category.module';
 import { DbModule } from './db/db.module';
 import { FloorModule } from './floor/floor.module';
+import { MenuModule } from './menu/menu.module';
 import { OutletModule } from './outlet/outlet.module';
 import { RoleModule } from './role/role.module';
 import { SettingsModule } from './settings/settings.module';
@@ -22,6 +23,7 @@ import { errorFormatter } from './trpc/error-formatter';
     OutletModule,
     RoleModule,
     CategoryModule,
+    MenuModule,
   ],
   providers: [AppContext],
 })

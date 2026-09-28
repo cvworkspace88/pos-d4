@@ -284,6 +284,75 @@ const appRouter = t.router({
 })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
+  menu: t.router({
+    list: publicProcedure
+      .output(z.array(z.object({
+  id: z.string(),
+  categoryId: z.string(),
+  categoryName: z.string(),
+  name: z.string(),
+  price: z.number().int(),
+  // Null when not entered — and always null for a caller without `menu.manage`.
+  cost: z.number().int().nullable(),
+  tax: z.enum(['pbjt', 'ppn', 'none']),
+  available: z.boolean(),
+})))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    taxRates: publicProcedure
+      .output(z.object({ pbjtRateBp: z.number().int(), ppnRateBp: z.number().int() }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    create: publicProcedure
+      .input(z.object({
+      categoryId: z.uuid(),
+      name: z.string().trim().min(1).max(60),
+      price: z.number().int().min(0).max(100000000),
+      cost: z.number().int().min(0).max(100000000).nullable(),
+      tax: z.enum(['pbjt', 'ppn', 'none']),
+      available: z.boolean(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  categoryId: z.string(),
+  categoryName: z.string(),
+  name: z.string(),
+  price: z.number().int(),
+  // Null when not entered — and always null for a caller without `menu.manage`.
+  cost: z.number().int().nullable(),
+  tax: z.enum(['pbjt', 'ppn', 'none']),
+  available: z.boolean(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    update: publicProcedure
+      .input(z.object({
+      id: z.uuid(),
+      categoryId: z.uuid(),
+      name: z.string().trim().min(1).max(60),
+      price: z.number().int().min(0).max(100000000),
+      cost: z.number().int().min(0).max(100000000).nullable(),
+      tax: z.enum(['pbjt', 'ppn', 'none']),
+      available: z.boolean(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  categoryId: z.string(),
+  categoryName: z.string(),
+  name: z.string(),
+  price: z.number().int(),
+  // Null when not entered — and always null for a caller without `menu.manage`.
+  cost: z.number().int().nullable(),
+  tax: z.enum(['pbjt', 'ppn', 'none']),
+  available: z.boolean(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    setAvailable: publicProcedure
+      .input(z.object({ id: z.uuid(), available: z.boolean() }))
+      .output(z.object({ id: z.string(), available: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    delete: publicProcedure
+      .input(z.object({ id: z.uuid() }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
   outlet: t.router({
     list: publicProcedure
       .output(z.array(z.object({

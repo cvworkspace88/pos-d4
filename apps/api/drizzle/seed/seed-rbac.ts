@@ -74,6 +74,11 @@ export const PERMISSIONS: Record<string, { label: string; roles: RoleName[] }> =
   // Add, rename, delete, reorder.
   'category.edit': { label: 'Kelola kategori', roles: ['manager'] },
 
+  // The active outlet's menu. The floor and counter read it to take orders; managing it is the manager's.
+  'menu.view': { label: 'Lihat menu', roles: ['manager', 'cashier', 'waiter'] },
+  // Add, edit, price, tax, available.
+  'menu.manage': { label: 'Kelola menu', roles: ['manager'] },
+
   'order.view': { label: 'Lihat pesanan', roles: ['manager', 'waiter', 'cashier', 'auditor'] },
   'order.create': { label: 'Buat pesanan', roles: ['manager', 'waiter', 'cashier'] },
   'order.item_add': { label: 'Tambah item pesanan', roles: ['manager', 'waiter', 'cashier'] },

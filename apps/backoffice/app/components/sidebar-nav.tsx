@@ -20,6 +20,8 @@ export const MENU: { label: string; items: MenuItem[] }[] = [
     items: [
       // The active outlet's categories and the order the cashier screen shows them in.
       { to: '/kategori', label: 'Kategori', permission: 'category.view' },
+      // The active outlet's menu: read by the floor and counter, managed by a manager.
+      { to: '/menu', label: 'Daftar Menu', permission: 'menu.view' },
     ],
   },
   {

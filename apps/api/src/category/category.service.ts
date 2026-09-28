@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation } from '../db/errors';
-import { categories, type Category } from '../db/schema';
+import { categories, menuItems, type Category } from '../db/schema';
 import { checkReorder } from './category-rules';
 
 const categoryOutput = (c: Category) => ({ id: c.id, name: c.name, sortOrder: c.sortOrder });
@@ -66,14 +66,32 @@ export class CategoryService {
     }
   }
 
-  /** Soft delete. The others keep their `sort_order`; the gap is harmless. */
+  /**
+   * Soft delete. The others keep their `sort_order`; the gap is harmless. Refused while live menu
+   * items point at it — they would drop off the cashier screen with no category to show under.
+   * The row is locked first, so a menu save into this category (which holds it `FOR SHARE`) either
+   * commits before the count below sees it, or waits and then finds the category gone.
+   */
   async delete(outletId: string, id: string): Promise<{ success: true }> {
-    const [row] = await this.db
-      .update(categories)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(categories.id, id), liveAt(outletId)))
-      .returning({ id: categories.id });
-    if (!row) throw notFound();
+    await this.db.transaction(async (tx) => {
+      const [live] = await tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(and(eq(categories.id, id), liveAt(outletId)))
+        .for('update');
+      if (!live) throw notFound();
+      const [item] = await tx
+        .select({ id: menuItems.id })
+        .from(menuItems)
+        .where(and(eq(menuItems.categoryId, id), isNull(menuItems.deletedAt)))
+        .limit(1);
+      if (item)
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Kategori masih berisi menu. Pindahkan menu ke kategori lain dulu.',
+        });
+      await tx.update(categories).set({ deletedAt: new Date() }).where(eq(categories.id, id));
+    });
     return { success: true };
   }
 
@@ -90,8 +108,16 @@ export class CategoryService {
         .from(categories)
         .where(liveAt(outletId))
         .for('update');
-      if (!checkReorder(live.map((r) => r.id), ids))
-        throw new TRPCError({ code: 'CONFLICT', message: 'Urutan kategori berubah. Muat ulang lalu coba lagi.' });
+      if (
+        !checkReorder(
+          live.map((r) => r.id),
+          ids,
+        )
+      )
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Urutan kategori berubah. Muat ulang lalu coba lagi.',
+        });
       for (const [sortOrder, id] of ids.entries())
         await tx.update(categories).set({ sortOrder }).where(eq(categories.id, id));
     });

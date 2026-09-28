@@ -318,3 +318,50 @@ export const categories = pgTable(
 );
 
 export type Category = typeof categories.$inferSelect;
+
+/** Which tax a menu item carries. The router's zod enums repeat it inline: the contract generator cannot hoist it. */
+export const TAX_KINDS = ['pbjt', 'ppn', 'none'] as const;
+export type Tax = (typeof TAX_KINDS)[number];
+
+export const menuItems = pgTable(
+  'menu_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id),
+    // Restrict on delete: categories are soft-deleted, and a category with live items refuses to go.
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => categories.id),
+    name: text('name').notNull(),
+    // Rupiah, integer. Order lines will snapshot it, so editing it never rewrites a sale.
+    price: integer('price').notNull(),
+    // Hand-entered cost price (harga modal), rupiah. Null = not entered.
+    cost: integer('cost'),
+    // Which tax a sale of this item carries; the outlet holds the rates.
+    tax: text('tax').$type<Tax>().notNull().default('pbjt'),
+    // Off = sold out for now; the cashier screen hides it. Not a delete.
+    available: boolean('available').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    // Soft delete: catalogue data, and order lines will point at it.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    // Only live names must be unique, per outlet.
+    uniqueIndex('menu_items_outlet_name_active_idx')
+      .on(table.outletId, table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
+    // Also serves the category-delete check for live items.
+    index('menu_items_category_idx').on(table.categoryId),
+    check('menu_items_price', sql`${table.price} >= 0`),
+    check('menu_items_cost', sql`${table.cost} >= 0`),
+    check('menu_items_tax', sql`${table.tax} IN (${sql.raw(TAX_KINDS.map((t) => `'${t}'`).join(', '))})`),
+  ],
+);
+
+export type MenuItem = typeof menuItems.$inferSelect;

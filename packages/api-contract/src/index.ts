@@ -15,3 +15,4 @@ export {
   type FloorReservation,
   type FloorTable,
 } from './floor';
+export { MAX_RUPIAH, parseRupiah } from './money';

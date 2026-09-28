@@ -71,3 +71,8 @@ test('menu categories are the manager job, per outlet', () => {
   assert.deepEqual(holdersOf('category.view'), ['owner', 'manager']);
   assert.deepEqual(holdersOf('category.edit'), ['owner', 'manager']);
 });
+
+test('the floor and counter read the menu; only a manager changes it', () => {
+  assert.deepEqual(holdersOf('menu.view'), ['owner', 'manager', 'cashier', 'waiter']);
+  assert.deepEqual(holdersOf('menu.manage'), ['owner', 'manager']);
+});
