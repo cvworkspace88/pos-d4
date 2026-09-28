@@ -17,12 +17,24 @@ const menuItemOutput = z.object({
   id: z.string(),
   categoryId: z.string(),
   categoryName: z.string(),
+  code: z.string().nullable(),
   name: z.string(),
+  // With variants: the lowest variant price, for display only.
   price: z.number().int(),
-  // Null when not entered — and always null for a caller without `menu.manage`.
+  // Null when not entered, when the item has variants — and always null for a caller without `menu.manage`.
   cost: z.number().int().nullable(),
   tax: z.enum(['pbjt', 'ppn', 'none']),
   available: z.boolean(),
+  variants: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      price: z.number().int(),
+      cost: z.number().int().nullable(),
+      available: z.boolean(),
+    }),
+  ),
+  addonGroupIds: z.array(z.string()),
 });
 
 @Router({ alias: 'menu' })
@@ -52,11 +64,29 @@ export class MenuRouter {
   @Mutation({
     input: z.object({
       categoryId: z.uuid(),
+      code: z
+        .string()
+        .trim()
+        .max(20)
+        .regex(/^[A-Za-z0-9-]*$/)
+        .nullable(),
       name: z.string().trim().min(1).max(60),
       price: z.number().int().min(0).max(100000000),
       cost: z.number().int().min(0).max(100000000).nullable(),
       tax: z.enum(['pbjt', 'ppn', 'none']),
       available: z.boolean(),
+      variants: z
+        .array(
+          z.object({
+            id: z.uuid().optional(),
+            name: z.string().trim().min(1).max(60),
+            price: z.number().int().min(0).max(100000000),
+            cost: z.number().int().min(0).max(100000000).nullable(),
+            available: z.boolean(),
+          }),
+        )
+        .max(30),
+      addonGroupIds: z.array(z.uuid()).max(20),
     }),
     output: menuItemOutput,
   })
@@ -71,11 +101,29 @@ export class MenuRouter {
     input: z.object({
       id: z.uuid(),
       categoryId: z.uuid(),
+      code: z
+        .string()
+        .trim()
+        .max(20)
+        .regex(/^[A-Za-z0-9-]*$/)
+        .nullable(),
       name: z.string().trim().min(1).max(60),
       price: z.number().int().min(0).max(100000000),
       cost: z.number().int().min(0).max(100000000).nullable(),
       tax: z.enum(['pbjt', 'ppn', 'none']),
       available: z.boolean(),
+      variants: z
+        .array(
+          z.object({
+            id: z.uuid().optional(),
+            name: z.string().trim().min(1).max(60),
+            price: z.number().int().min(0).max(100000000),
+            cost: z.number().int().min(0).max(100000000).nullable(),
+            available: z.boolean(),
+          }),
+        )
+        .max(30),
+      addonGroupIds: z.array(z.uuid()).max(20),
     }),
     output: menuItemOutput,
   })

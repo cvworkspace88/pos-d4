@@ -1,12 +1,47 @@
 import { expect, test } from 'vitest';
-import { forViewer } from './menu-rules';
+import {
+  duplicateName,
+  forViewer,
+  hasDuplicateId,
+  menuConflictMessage,
+  normalizeCode,
+  startingPrice,
+} from './menu-rules';
 
-const items = [{ name: 'Nasi Goreng', cost: 12000 }];
+const items = [{ name: 'Es Kopi', cost: 12000, variants: [{ name: 'Large', cost: 9000 }] }];
 
-test('a manager sees the cost price', () => {
+test('a manager sees the cost price, on the item and on every variant', () => {
   expect(forViewer(items, ['menu.view', 'menu.manage'])).toEqual(items);
 });
 
-test('a reader gets the cost blanked', () => {
-  expect(forViewer(items, ['menu.view'])).toEqual([{ name: 'Nasi Goreng', cost: null }]);
+test('a reader gets every cost blanked', () => {
+  expect(forViewer(items, ['menu.view'])).toEqual([
+    { name: 'Es Kopi', cost: null, variants: [{ name: 'Large', cost: null }] },
+  ]);
+});
+
+test('normalizeCode trims and uppercases; blank is null', () => {
+  expect(normalizeCode(' ng-01 ')).toBe('NG-01');
+  expect(normalizeCode('   ')).toBeNull();
+  expect(normalizeCode(null)).toBeNull();
+});
+
+test('startingPrice is the lowest variant price', () => {
+  expect(startingPrice([{ price: 30000 }, { price: 25000 }, { price: 28000 }])).toBe(25000);
+});
+
+test('duplicateName finds a repeat ignoring case and surrounding spaces', () => {
+  expect(duplicateName([{ name: 'Regular' }, { name: 'Large' }])).toBeNull();
+  expect(duplicateName([{ name: 'Regular' }, { name: ' regular ' }])).toBe('regular');
+});
+
+test('menuConflictMessage maps each unique index, and nothing else', () => {
+  expect(menuConflictMessage('menu_items_outlet_name_active_idx')).toBe('Nama menu sudah dipakai.');
+  expect(menuConflictMessage('menu_items_outlet_code_active_idx')).toBe('Kode menu sudah dipakai.');
+  expect(menuConflictMessage('something_else')).toBeNull();
+});
+
+test('hasDuplicateId flags one id sent twice; new rows without an id never count', () => {
+  expect(hasDuplicateId([{ id: 'a' }, { id: 'b' }, {}, {}])).toBe(false);
+  expect(hasDuplicateId([{ id: 'a' }, { id: 'a' }])).toBe(true);
 });

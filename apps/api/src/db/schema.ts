@@ -335,6 +335,8 @@ export const menuItems = pgTable(
       .notNull()
       .references(() => categories.id),
     name: text('name').notNull(),
+    // Kode menu, optional. Stored uppercase; unique among live items of the outlet when present.
+    code: text('code'),
     // Rupiah, integer. Order lines will snapshot it, so editing it never rewrites a sale.
     price: integer('price').notNull(),
     // Hand-entered cost price (harga modal), rupiah. Null = not entered.
@@ -356,6 +358,9 @@ export const menuItems = pgTable(
     uniqueIndex('menu_items_outlet_name_active_idx')
       .on(table.outletId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex('menu_items_outlet_code_active_idx')
+      .on(table.outletId, table.code)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.code} IS NOT NULL`),
     // Also serves the category-delete check for live items.
     index('menu_items_category_idx').on(table.categoryId),
     check('menu_items_price', sql`${table.price} >= 0`),
@@ -365,3 +370,97 @@ export const menuItems = pgTable(
 );
 
 export type MenuItem = typeof menuItems.$inferSelect;
+
+/**
+ * A sellable size/temperature of one menu item, each with its own full price. An item with any live
+ * variant is sold as one of them; its own `price` is then only the lowest, for display.
+ */
+export const menuVariants = pgTable(
+  'menu_variants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    menuItemId: uuid('menu_item_id')
+      .notNull()
+      .references(() => menuItems.id),
+    name: text('name').notNull(),
+    price: integer('price').notNull(),
+    cost: integer('cost'),
+    available: boolean('available').notNull().default(true),
+    sortOrder: integer('sort_order').notNull(),
+    // Soft delete: order lines will point at a variant.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    // Not unique on name: `duplicateName` refuses repeats per save, and a row-by-row set-save would
+    // trip a unique index on a rename chain (Regular→Large, Large→Jumbo).
+    index('menu_variants_item_idx').on(table.menuItemId),
+    check('menu_variants_price', sql`${table.price} >= 0`),
+    check('menu_variants_cost', sql`${table.cost} >= 0`),
+  ],
+);
+
+/** A shared add-on group (Level Pedas, Topping), linked to many menu items of one outlet. */
+export const addonGroups = pgTable(
+  'addon_groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id),
+    name: text('name').notNull(),
+    // How many options a customer picks. Required ⇔ min_select >= 1.
+    minSelect: integer('min_select').notNull(),
+    maxSelect: integer('max_select').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('addon_groups_outlet_name_active_idx')
+      .on(table.outletId, table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
+    check('addon_groups_min', sql`${table.minSelect} >= 0`),
+    check('addon_groups_max', sql`${table.maxSelect} >= 1`),
+    check('addon_groups_min_max', sql`${table.minSelect} <= ${table.maxSelect}`),
+  ],
+);
+
+export const addonOptions = pgTable(
+  'addon_options',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => addonGroups.id),
+    name: text('name').notNull(),
+    // Added to the line price. 0 is real: "Tidak pedas".
+    price: integer('price').notNull(),
+    available: boolean('available').notNull().default(true),
+    sortOrder: integer('sort_order').notNull(),
+    // Soft delete: order lines will point at an option.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    // Not unique on name, for the same reason as `menu_variants_item_idx`.
+    index('addon_options_group_idx').on(table.groupId),
+    check('addon_options_price', sql`${table.price} >= 0`),
+  ],
+);
+
+/** Which add-on groups a menu item offers, in order. Config, not history: rows are hard-deleted. */
+export const menuItemAddonGroups = pgTable(
+  'menu_item_addon_groups',
+  {
+    menuItemId: uuid('menu_item_id')
+      .notNull()
+      .references(() => menuItems.id),
+    addonGroupId: uuid('addon_group_id')
+      .notNull()
+      .references(() => addonGroups.id),
+    sortOrder: integer('sort_order').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.menuItemId, table.addonGroupId] }),
+    // "Dipakai di N menu" and the group delete's unlink.
+    index('menu_item_addon_groups_group_idx').on(table.addonGroupId),
+  ],
+);

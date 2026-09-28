@@ -31,7 +31,12 @@ export default function MenuPage() {
   // Only the drawer needs the full category list, and only a manager opens it.
   const categories = useQuery(trpc.category.list.queryOptions(undefined, { enabled: !!outlet && canManage }));
   const taxRates = useQuery(trpc.menu.taxRates.queryOptions(undefined, { enabled: !!outlet && canManage }));
-  const refetch = () => queryClient.invalidateQueries({ queryKey: listKey });
+  const addonGroups = useQuery(trpc.addon.list.queryOptions(undefined, { enabled: !!outlet && canManage }));
+  const refetch = () => {
+    void queryClient.invalidateQueries({ queryKey: listKey });
+    // Add-on groups show "Dipakai di N menu"; keep that count fresh after a menu save/delete.
+    void queryClient.invalidateQueries({ queryKey: trpc.addon.list.queryKey() });
+  };
 
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -91,7 +96,9 @@ export default function MenuPage() {
   ];
   const q = query.trim().toLowerCase();
   const rows = items.filter(
-    (m) => (filter === 'all' || m.categoryId === filter) && (!q || m.name.toLowerCase().includes(q)),
+    (m) =>
+      (filter === 'all' || m.categoryId === filter) &&
+      (!q || m.name.toLowerCase().includes(q) || m.code?.toLowerCase().includes(q)),
   );
 
   const failed = list.error && !list.data;
@@ -105,7 +112,7 @@ export default function MenuPage() {
             <div className="w-72">
               <TextField
                 aria-label="Cari menu"
-                placeholder="Cari nama menu"
+                placeholder="Cari nama atau kode menu"
                 adornment={<Search className="size-4 text-ink-tertiary" aria-hidden />}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -169,6 +176,7 @@ export default function MenuPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-surface-canvas text-left text-xs uppercase tracking-wider text-ink-tertiary">
                   <tr>
+                    <th className="w-24 px-4 py-3 font-semibold">Kode</th>
                     <th className="px-4 py-3 font-semibold">Nama</th>
                     <th className="px-4 py-3 font-semibold">Kategori</th>
                     <th className="px-4 py-3 text-right font-semibold">Harga</th>
@@ -180,14 +188,27 @@ export default function MenuPage() {
                 <tbody>
                   {rows.map((m) => (
                     <tr key={m.id} className="border-b border-border-muted last:border-0">
-                      <td className="px-4 py-3 font-medium text-ink-primary">{m.name}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-ink-secondary">{m.code ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className="font-medium text-ink-primary">{m.name}</span>
+                        {(m.variants.length > 0 || m.addonGroupIds.length > 0) && (
+                          <span className="block text-xs text-ink-tertiary">
+                            {[
+                              m.variants.length && `${m.variants.length} varian`,
+                              m.addonGroupIds.length && `${m.addonGroupIds.length} add-on`,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-ink-secondary">{m.categoryName}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-ink-primary">
-                        {rupiah(m.price)}
+                        {m.variants.length ? `Mulai ${rupiah(m.price)}` : rupiah(m.price)}
                       </td>
                       {canManage && (
                         <td className="px-4 py-3 text-right tabular-nums text-ink-secondary">
-                          {m.cost === null ? '—' : rupiah(m.cost)}
+                          {m.variants.length ? 'Per varian' : m.cost === null ? '—' : rupiah(m.cost)}
                         </td>
                       )}
                       <td className="px-4 py-3">
@@ -238,6 +259,8 @@ export default function MenuPage() {
       <MenuItemDrawer
         target={editing}
         categories={(categories.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+        addonGroups={addonGroups.data ?? []}
+        addonGroupsLoading={addonGroups.isLoading}
         onClose={() => setEditing(null)}
         onSave={save}
         saving={create.isPending || update.isPending}

@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
+import { AddonService, type AddonGroupInput } from '../addon/addon.service';
 import { CategoryService } from '../category/category.service';
-import { menuItems } from '../db/schema';
+import { menuItems, menuVariants } from '../db/schema';
 import { OutletService } from '../outlet/outlet.service';
 import { connectTestDatabase, truncateAll, type TestDatabase } from '../test/test-db';
 import { MenuService, type MenuItemInput } from './menu.service';
@@ -11,6 +12,7 @@ let close: () => Promise<void>;
 let service: MenuService;
 let categories: CategoryService;
 let outlets: OutletService;
+let addons: AddonService;
 let outletId: string;
 let makananId: string;
 
@@ -19,6 +21,7 @@ beforeAll(async () => {
   service = new MenuService(db);
   categories = new CategoryService(db);
   outlets = new OutletService(db);
+  addons = new AddonService(db);
 });
 
 afterAll(async () => {
@@ -33,12 +36,22 @@ beforeEach(async () => {
 
 const item = (over: Partial<MenuItemInput> = {}): MenuItemInput => ({
   categoryId: makananId,
+  code: null,
   name: 'Nasi Goreng',
   price: 35000,
   cost: 12000,
   tax: 'pbjt',
   available: true,
+  variants: [],
+  addonGroupIds: [],
   ...over,
+});
+
+const group = (name: string): AddonGroupInput => ({
+  name,
+  minSelect: 0,
+  maxSelect: 1,
+  options: [{ name: 'Ya', price: 0, available: true }],
 });
 
 test('create returns the item with its category name, and list shows it', async () => {
@@ -124,4 +137,169 @@ test('a category whose items are all deleted can be deleted', async () => {
 
 test('taxRates reads the outlet PBJT rate and the deployment PPN rate', async () => {
   expect(await service.taxRates(outletId)).toEqual({ pbjtRateBp: 1000, ppnRateBp: 1100 });
+});
+
+test('code is stored uppercase and unique among live items; blank is none; delete frees it', async () => {
+  const first = await service.create(outletId, item({ code: ' ng-01 ' }));
+  expect(first.code).toBe('NG-01');
+  await expect(service.create(outletId, item({ name: 'Mie Goreng', code: 'ng-01' }))).rejects.toMatchObject({
+    code: 'CONFLICT',
+    message: 'Kode menu sudah dipakai.',
+  });
+  // Any number of items may have no code.
+  await service.create(outletId, item({ name: 'Mie Goreng', code: null }));
+  expect((await service.create(outletId, item({ name: 'Mie Rebus', code: '  ' }))).code).toBeNull();
+  await service.delete(outletId, first.id);
+  await service.create(outletId, item({ name: 'Nasi Goreng Baru', code: 'NG-01' }));
+});
+
+test('with variants the item price is the lowest and its cost is null', async () => {
+  const created = await service.create(
+    outletId,
+    item({
+      price: 1,
+      cost: 5000,
+      variants: [
+        { name: 'Large', price: 30000, cost: 11000, available: true },
+        { name: 'Regular', price: 25000, cost: 9000, available: true },
+      ],
+    }),
+  );
+  expect(created).toMatchObject({ price: 25000, cost: null });
+  expect(created.variants.map((v) => v.name)).toEqual(['Large', 'Regular']);
+  expect(await service.list(outletId)).toEqual([created]);
+});
+
+test('a variant edit keeps ids, inserts new rows and soft-deletes the ones left out', async () => {
+  const created = await service.create(
+    outletId,
+    item({
+      variants: [
+        { name: 'Large', price: 30000, cost: null, available: true },
+        { name: 'Regular', price: 25000, cost: null, available: true },
+      ],
+    }),
+  );
+  const [large, regular] = created.variants;
+  const saved = await service.update(
+    outletId,
+    created.id,
+    item({
+      variants: [
+        { ...regular!, price: 26000 },
+        { name: 'Jumbo', price: 40000, cost: null, available: false },
+      ],
+    }),
+  );
+  expect(saved.price).toBe(26000);
+  expect(saved.variants).toMatchObject([
+    { id: regular!.id, name: 'Regular', price: 26000 },
+    { name: 'Jumbo', available: false },
+  ]);
+  const [row] = await db.select().from(menuVariants).where(eq(menuVariants.id, large!.id));
+  expect(row?.deletedAt).toBeInstanceOf(Date);
+
+  // Dropping every variant hands the price back to the item.
+  const plain = await service.update(outletId, created.id, item({ price: 20000 }));
+  expect(plain).toMatchObject({ price: 20000, cost: 12000, variants: [] });
+});
+
+test('a repeated variant name is BAD_REQUEST; a variant id from another item is NOT_FOUND', async () => {
+  await expect(
+    service.create(
+      outletId,
+      item({
+        variants: [
+          { name: 'Large', price: 1, cost: null, available: true },
+          { name: 'large', price: 2, cost: null, available: true },
+        ],
+      }),
+    ),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'Nama varian "large" dipakai dua kali.' });
+
+  const other = await service.create(
+    outletId,
+    item({ name: 'Es Teh', variants: [{ name: 'Large', price: 1, cost: null, available: true }] }),
+  );
+  const mine = await service.create(outletId, item());
+  await expect(
+    service.update(outletId, mine.id, item({ variants: [{ ...other.variants[0]! }] })),
+  ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'Varian tidak ditemukan.' });
+});
+
+test('add-on links keep the order sent, drop repeats, and are replaced on edit', async () => {
+  const pedas = await addons.create(outletId, group('Level Pedas'));
+  const topping = await addons.create(outletId, group('Topping'));
+  const created = await service.create(outletId, item({ addonGroupIds: [topping.id, pedas.id, topping.id] }));
+  expect(created.addonGroupIds).toEqual([topping.id, pedas.id]);
+  expect((await addons.list(outletId)).map((g) => g.usedBy)).toEqual([1, 1]);
+
+  const saved = await service.update(outletId, created.id, item({ addonGroupIds: [pedas.id] }));
+  expect(saved.addonGroupIds).toEqual([pedas.id]);
+});
+
+test("another outlet's add-on group is NOT_FOUND", async () => {
+  const other = (await outlets.create({ name: 'Uptown', code: 'UP' })).id;
+  const theirs = await addons.create(other, group('Level Pedas'));
+  await expect(service.create(outletId, item({ addonGroupIds: [theirs.id] }))).rejects.toMatchObject({
+    code: 'NOT_FOUND',
+    message: 'Add-on tidak ditemukan.',
+  });
+});
+
+test('deleting a group unlinks it; a deleted item no longer counts toward usedBy', async () => {
+  const pedas = await addons.create(outletId, group('Level Pedas'));
+  const a = await service.create(outletId, item({ addonGroupIds: [pedas.id] }));
+  await service.create(outletId, item({ name: 'Mie Goreng', addonGroupIds: [pedas.id] }));
+  await service.delete(outletId, a.id);
+  expect((await addons.list(outletId))[0]?.usedBy).toBe(1);
+
+  await addons.delete(outletId, pedas.id);
+  expect((await service.list(outletId)).map((m) => m.addonGroupIds)).toEqual([[]]);
+});
+
+test('a rename chain in one save works: Regular→Large and Large→Jumbo', async () => {
+  const created = await service.create(
+    outletId,
+    item({
+      variants: [
+        { name: 'Regular', price: 20000, cost: null, available: true },
+        { name: 'Large', price: 25000, cost: null, available: true },
+      ],
+    }),
+  );
+  const [regular, large] = created.variants;
+  const saved = await service.update(
+    outletId,
+    created.id,
+    item({
+      variants: [
+        { ...regular!, name: 'Large' },
+        { ...large!, name: 'Jumbo' },
+      ],
+    }),
+  );
+  expect(saved.variants).toMatchObject([
+    { id: regular!.id, name: 'Large' },
+    { id: large!.id, name: 'Jumbo' },
+  ]);
+});
+
+test('one variant id sent twice is BAD_REQUEST, and nothing is written', async () => {
+  const created = await service.create(
+    outletId,
+    item({ variants: [{ name: 'Regular', price: 20000, cost: null, available: true }] }),
+  );
+  const [regular] = created.variants;
+  await expect(
+    service.update(
+      outletId,
+      created.id,
+      item({ variants: [{ ...regular! }, { ...regular!, name: 'Large' }] }),
+    ),
+  ).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+    message: 'Varian terkirim dua kali. Muat ulang lalu simpan lagi.',
+  });
+  expect((await service.list(outletId))[0]?.variants).toMatchObject([{ id: regular!.id, name: 'Regular' }]);
 });

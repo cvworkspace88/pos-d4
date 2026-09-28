@@ -12,6 +12,7 @@ export default [
       route('peran', 'routes/roles.tsx'),
       route('kategori', 'routes/categories.tsx'),
       route('menu', 'routes/menu.tsx'),
+      route('add-on', 'routes/addons.tsx'),
     ]),
   ]),
 ] satisfies RouteConfig;

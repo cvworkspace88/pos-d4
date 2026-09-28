@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TRPCModule } from 'nestjs-trpc';
+import { AddonModule } from './addon/addon.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoryModule } from './category/category.module';
 import { DbModule } from './db/db.module';
@@ -24,6 +25,7 @@ import { errorFormatter } from './trpc/error-formatter';
     RoleModule,
     CategoryModule,
     MenuModule,
+    AddonModule,
   ],
   providers: [AppContext],
 })

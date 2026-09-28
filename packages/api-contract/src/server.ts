@@ -15,6 +15,81 @@ const t = initTRPC.create();
 const publicProcedure = t.procedure;
 
 const appRouter = t.router({
+  addon: t.router({
+    list: publicProcedure
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  minSelect: z.number().int(),
+  maxSelect: z.number().int(),
+  options: z.array(
+    z.object({ id: z.string(), name: z.string(), price: z.number().int(), available: z.boolean() }),
+  ),
+  usedBy: z.number().int(),
+})))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    create: publicProcedure
+      .input(z.object({
+      name: z.string().trim().min(1).max(60),
+      minSelect: z.number().int().min(0).max(50),
+      maxSelect: z.number().int().min(1).max(50),
+      options: z
+        .array(
+          z.object({
+            id: z.uuid().optional(),
+            name: z.string().trim().min(1).max(60),
+            price: z.number().int().min(0).max(100000000),
+            available: z.boolean(),
+          }),
+        )
+        .min(1)
+        .max(50),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  minSelect: z.number().int(),
+  maxSelect: z.number().int(),
+  options: z.array(
+    z.object({ id: z.string(), name: z.string(), price: z.number().int(), available: z.boolean() }),
+  ),
+  usedBy: z.number().int(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    update: publicProcedure
+      .input(z.object({
+      id: z.uuid(),
+      name: z.string().trim().min(1).max(60),
+      minSelect: z.number().int().min(0).max(50),
+      maxSelect: z.number().int().min(1).max(50),
+      options: z
+        .array(
+          z.object({
+            id: z.uuid().optional(),
+            name: z.string().trim().min(1).max(60),
+            price: z.number().int().min(0).max(100000000),
+            available: z.boolean(),
+          }),
+        )
+        .min(1)
+        .max(50),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  minSelect: z.number().int(),
+  maxSelect: z.number().int(),
+  options: z.array(
+    z.object({ id: z.string(), name: z.string(), price: z.number().int(), available: z.boolean() }),
+  ),
+  usedBy: z.number().int(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    delete: publicProcedure
+      .input(z.object({ id: z.uuid() }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
   auth: t.router({
     register: publicProcedure
       .input(z.object({
@@ -290,12 +365,24 @@ const appRouter = t.router({
   id: z.string(),
   categoryId: z.string(),
   categoryName: z.string(),
+  code: z.string().nullable(),
   name: z.string(),
+  // With variants: the lowest variant price, for display only.
   price: z.number().int(),
-  // Null when not entered — and always null for a caller without `menu.manage`.
+  // Null when not entered, when the item has variants — and always null for a caller without `menu.manage`.
   cost: z.number().int().nullable(),
   tax: z.enum(['pbjt', 'ppn', 'none']),
   available: z.boolean(),
+  variants: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      price: z.number().int(),
+      cost: z.number().int().nullable(),
+      available: z.boolean(),
+    }),
+  ),
+  addonGroupIds: z.array(z.string()),
 })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     taxRates: publicProcedure
@@ -304,44 +391,104 @@ const appRouter = t.router({
     create: publicProcedure
       .input(z.object({
       categoryId: z.uuid(),
+      code: z
+        .string()
+        .trim()
+        .max(20)
+        .regex(/^[A-Za-z0-9-]*$/)
+        .nullable(),
       name: z.string().trim().min(1).max(60),
       price: z.number().int().min(0).max(100000000),
       cost: z.number().int().min(0).max(100000000).nullable(),
       tax: z.enum(['pbjt', 'ppn', 'none']),
       available: z.boolean(),
+      variants: z
+        .array(
+          z.object({
+            id: z.uuid().optional(),
+            name: z.string().trim().min(1).max(60),
+            price: z.number().int().min(0).max(100000000),
+            cost: z.number().int().min(0).max(100000000).nullable(),
+            available: z.boolean(),
+          }),
+        )
+        .max(30),
+      addonGroupIds: z.array(z.uuid()).max(20),
     }))
       .output(z.object({
   id: z.string(),
   categoryId: z.string(),
   categoryName: z.string(),
+  code: z.string().nullable(),
   name: z.string(),
+  // With variants: the lowest variant price, for display only.
   price: z.number().int(),
-  // Null when not entered — and always null for a caller without `menu.manage`.
+  // Null when not entered, when the item has variants — and always null for a caller without `menu.manage`.
   cost: z.number().int().nullable(),
   tax: z.enum(['pbjt', 'ppn', 'none']),
   available: z.boolean(),
+  variants: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      price: z.number().int(),
+      cost: z.number().int().nullable(),
+      available: z.boolean(),
+    }),
+  ),
+  addonGroupIds: z.array(z.string()),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     update: publicProcedure
       .input(z.object({
       id: z.uuid(),
       categoryId: z.uuid(),
+      code: z
+        .string()
+        .trim()
+        .max(20)
+        .regex(/^[A-Za-z0-9-]*$/)
+        .nullable(),
       name: z.string().trim().min(1).max(60),
       price: z.number().int().min(0).max(100000000),
       cost: z.number().int().min(0).max(100000000).nullable(),
       tax: z.enum(['pbjt', 'ppn', 'none']),
       available: z.boolean(),
+      variants: z
+        .array(
+          z.object({
+            id: z.uuid().optional(),
+            name: z.string().trim().min(1).max(60),
+            price: z.number().int().min(0).max(100000000),
+            cost: z.number().int().min(0).max(100000000).nullable(),
+            available: z.boolean(),
+          }),
+        )
+        .max(30),
+      addonGroupIds: z.array(z.uuid()).max(20),
     }))
       .output(z.object({
   id: z.string(),
   categoryId: z.string(),
   categoryName: z.string(),
+  code: z.string().nullable(),
   name: z.string(),
+  // With variants: the lowest variant price, for display only.
   price: z.number().int(),
-  // Null when not entered — and always null for a caller without `menu.manage`.
+  // Null when not entered, when the item has variants — and always null for a caller without `menu.manage`.
   cost: z.number().int().nullable(),
   tax: z.enum(['pbjt', 'ppn', 'none']),
   available: z.boolean(),
+  variants: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      price: z.number().int(),
+      cost: z.number().int().nullable(),
+      available: z.boolean(),
+    }),
+  ),
+  addonGroupIds: z.array(z.string()),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     setAvailable: publicProcedure

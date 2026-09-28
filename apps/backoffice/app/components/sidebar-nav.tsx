@@ -22,6 +22,8 @@ export const MENU: { label: string; items: MenuItem[] }[] = [
       { to: '/kategori', label: 'Kategori', permission: 'category.view' },
       // The active outlet's menu: read by the floor and counter, managed by a manager.
       { to: '/menu', label: 'Daftar Menu', permission: 'menu.view' },
+      // Shared add-on groups (Level Pedas, Topping) linked from each menu item.
+      { to: '/add-on', label: 'Add-on', permission: 'menu.view' },
     ],
   },
   {
