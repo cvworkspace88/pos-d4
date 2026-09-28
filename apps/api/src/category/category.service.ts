@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation } from '../db/errors';
 import { categories, menuItems, type Category } from '../db/schema';
@@ -8,6 +8,8 @@ import { checkReorder } from './category-rules';
 
 const categoryOutput = (c: Category) => ({ id: c.id, name: c.name, sortOrder: c.sortOrder });
 export type CategoryOutput = ReturnType<typeof categoryOutput>;
+/** A list row also says how many live menu items sit in the category. */
+export type CategoryListOutput = CategoryOutput & { itemCount: number };
 
 const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Kategori tidak ditemukan.' });
 
@@ -25,13 +27,19 @@ const liveAt = (outletId: string) => and(eq(categories.outletId, outletId), isNu
 export class CategoryService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
-  async list(outletId: string): Promise<CategoryOutput[]> {
-    const rows = await this.db
-      .select()
+  async list(outletId: string): Promise<CategoryListOutput[]> {
+    return this.db
+      .select({
+        id: categories.id,
+        name: categories.name,
+        sortOrder: categories.sortOrder,
+        itemCount: count(menuItems.id),
+      })
       .from(categories)
+      .leftJoin(menuItems, and(eq(menuItems.categoryId, categories.id), isNull(menuItems.deletedAt)))
       .where(liveAt(outletId))
+      .groupBy(categories.id)
       .orderBy(asc(categories.sortOrder), asc(categories.createdAt));
-    return rows.map(categoryOutput);
   }
 
   /** Appended after the last live category. */

@@ -95,7 +95,11 @@ export default function CategoriesPage() {
         queryClient.setQueryData(listKey, context?.previous);
         void refetch();
       },
-      onSuccess: (saved) => queryClient.setQueryData(listKey, saved),
+      // The reply carries the saved order but not the item counts, so keep the counts already on hand.
+      onSuccess: (saved) =>
+        queryClient.setQueryData(listKey, (old) =>
+          saved.map((c) => ({ ...c, itemCount: old?.find((o) => o.id === c.id)?.itemCount ?? 0 })),
+        ),
     }),
   );
 
@@ -249,6 +253,8 @@ export default function CategoriesPage() {
                 variant="danger"
                 className="flex-1"
                 loading={remove.isPending}
+                // The server refuses anyway; the count may be stale, so it still has the last word.
+                disabled={!!removing?.itemCount}
                 onClick={() => removing && remove.mutate({ id: removing.id })}
               >
                 Hapus
@@ -265,7 +271,11 @@ export default function CategoriesPage() {
           </div>
         }
       >
-        <p className="text-sm text-ink-secondary">Kategori ini tidak lagi tampil di layar kasir.</p>
+        <p className="text-sm text-ink-secondary">
+          {removing?.itemCount
+            ? `Masih berisi ${removing.itemCount} menu. Pindahkan menu ke kategori lain dulu.`
+            : 'Kategori ini tidak lagi tampil di layar kasir.'}
+        </p>
       </Dialog>
     </>
   );
@@ -306,6 +316,7 @@ function CategoryRow({
         </button>
       )}
       <span className="flex-1 truncate font-medium text-ink-primary">{category.name}</span>
+      <span className="shrink-0 tabular-nums text-ink-tertiary">{category.itemCount} menu</span>
       {canEdit && (
         <div className="flex gap-2">
           <Button

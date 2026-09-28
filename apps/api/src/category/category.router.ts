@@ -13,6 +13,14 @@ type Ctx = Actor & { user: PublicUser };
 // The generator hoists these into the shared contract. Bounds are literals on purpose: it cannot
 // hoist an identifier a schema references.
 const categoryOutput = z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() });
+// Written out, not `categoryOutput.extend(...)`: the generator cannot hoist a schema built from another.
+const categoryListOutput = z.object({
+  id: z.string(),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  // Live menu items in the category.
+  itemCount: z.number().int(),
+});
 
 @Router({ alias: 'category' })
 export class CategoryRouter {
@@ -21,7 +29,7 @@ export class CategoryRouter {
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
-  @Query({ output: z.array(categoryOutput) })
+  @Query({ output: z.array(categoryListOutput) })
   @UseMiddlewares(ProtectedMiddleware)
   async list(@Ctx() ctx: Ctx) {
     await this.rbac.require(ctx, 'category.view');

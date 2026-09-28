@@ -183,7 +183,13 @@ const appRouter = t.router({
     }),
   category: t.router({
     list: publicProcedure
-      .output(z.array(z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() })))
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  // Live menu items in the category.
+  itemCount: z.number().int(),
+})))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     create: publicProcedure
       .input(z.object({ name: z.string().trim().min(1).max(40) }))

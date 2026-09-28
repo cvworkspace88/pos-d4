@@ -36,6 +36,8 @@ export default function MenuPage() {
     void queryClient.invalidateQueries({ queryKey: listKey });
     // Add-on groups show "Dipakai di N menu"; keep that count fresh after a menu save/delete.
     void queryClient.invalidateQueries({ queryKey: trpc.addon.list.queryKey() });
+    // The category page shows how many menu items each category holds.
+    void queryClient.invalidateQueries({ queryKey: trpc.category.list.queryKey() });
   };
 
   const [query, setQuery] = useState('');

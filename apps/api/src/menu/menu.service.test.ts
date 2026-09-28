@@ -303,3 +303,15 @@ test('one variant id sent twice is BAD_REQUEST, and nothing is written', async (
   });
   expect((await service.list(outletId))[0]?.variants).toMatchObject([{ id: regular!.id, name: 'Regular' }]);
 });
+
+test('category list counts each category’s live menu items', async () => {
+  const minuman = (await categories.create(outletId, 'Minuman')).id;
+  await service.create(outletId, item({ name: 'Nasi Goreng' }));
+  const mie = await service.create(outletId, item({ name: 'Mie Goreng' }));
+  await service.create(outletId, item({ name: 'Ayam Geprek' }));
+  await service.delete(outletId, mie.id);
+  expect((await categories.list(outletId)).map((c) => [c.id, c.itemCount])).toEqual([
+    [makananId, 2],
+    [minuman, 0],
+  ]);
+});
