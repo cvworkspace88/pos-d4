@@ -19,9 +19,14 @@ export const forViewer = <T extends Costed & { variants: Costed[] }>(
 /** Kode menu as stored: trimmed, uppercase; blank means none. */
 export const normalizeCode = (raw: string | null): string | null => raw?.trim().toUpperCase() || null;
 
-/** The "mulai dari" price of an item with variants. Callers pass a non-empty list. */
-export const startingPrice = (variants: { price: number }[]): number =>
-  Math.min(...variants.map((v) => v.price));
+/**
+ * The "mulai dari" price of an item with variants: the cheapest one the cashier can sell now, or the
+ * cheapest overall when every variant is sold out. Callers pass a non-empty list.
+ */
+export const startingPrice = (variants: { price: number; available: boolean }[]): number => {
+  const sellable = variants.filter((v) => v.available);
+  return Math.min(...(sellable.length ? sellable : variants).map((v) => v.price));
+};
 
 /** The first name repeated within one input (trimmed, case-insensitive), or null. Variants and options. */
 export const duplicateName = (rows: { name: string }[]): string | null => {

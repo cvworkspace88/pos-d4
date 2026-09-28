@@ -139,7 +139,10 @@ export function MenuItemDrawer({
   }));
   // Any variant row, even a blank one, means the item is sold as one of them.
   const hasVariants = variants.length > 0;
-  const variantPrices = variants.flatMap((v) => (v.parsedPrice.value === null ? [] : [v.parsedPrice.value]));
+  // Mirrors menu-rules.ts's startingPrice: sold-out variants count only when every one is sold out.
+  const priced = variants.filter((v) => v.parsedPrice.value !== null);
+  const sellable = priced.filter((v) => v.available);
+  const variantPrices = (sellable.length ? sellable : priced).map((v) => v.parsedPrice.value!);
   const lowestVariantPrice = variantPrices.length ? String(Math.min(...variantPrices)) : '';
   // Mirrors menu.router.ts's bounds (0 allowed: a free item is a real item); the server still validates.
   const pricesValid = hasVariants

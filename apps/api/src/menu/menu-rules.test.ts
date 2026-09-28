@@ -26,8 +26,23 @@ test('normalizeCode trims and uppercases; blank is null', () => {
   expect(normalizeCode(null)).toBeNull();
 });
 
-test('startingPrice is the lowest variant price', () => {
-  expect(startingPrice([{ price: 30000 }, { price: 25000 }, { price: 28000 }])).toBe(25000);
+test('startingPrice is the lowest price among available variants', () => {
+  expect(
+    startingPrice([
+      { price: 15000, available: false },
+      { price: 25000, available: true },
+      { price: 20000, available: true },
+    ]),
+  ).toBe(20000);
+});
+
+test('startingPrice falls back to every variant when all are sold out', () => {
+  expect(
+    startingPrice([
+      { price: 25000, available: false },
+      { price: 20000, available: false },
+    ]),
+  ).toBe(20000);
 });
 
 test('duplicateName finds a repeat ignoring case and surrounding spaces', () => {
