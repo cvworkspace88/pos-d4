@@ -3,10 +3,11 @@ import { useId, useState, type ReactNode } from 'react';
 import { describeRule, parseRupiah, type RouterInputs, type RouterOutputs } from '@repo/api-contract';
 import { Button } from '@repo/ui/button';
 import { Checkbox } from '@repo/ui/checkbox';
+import { Combobox, type ComboboxItem } from '@repo/ui/combobox';
 import { Dialog } from '@repo/ui/dialog';
 import { Drawer } from '@repo/ui/drawer';
 import { RadioGroup } from '@repo/ui/radio';
-import { Select, type SelectItem } from '@repo/ui/select';
+
 import { Switch } from '@repo/ui/switch';
 import { TextField } from '@repo/ui/text-field';
 
@@ -37,7 +38,7 @@ type Draft = {
 const blankVariant = (): VariantDraft => ({ name: '', price: '', cost: '', available: true });
 const money = (n: number | null) => (n === null ? '' : String(n));
 
-const toDraft = (target: MenuItem | 'new', categories: SelectItem[]): Draft =>
+const toDraft = (target: MenuItem | 'new', categories: ComboboxItem[]): Draft =>
   target === 'new'
     ? {
         code: '',
@@ -72,7 +73,7 @@ const toDraft = (target: MenuItem | 'new', categories: SelectItem[]): Draft =>
 interface MenuItemDrawerProps {
   /** `null` closed, `'new'` adding, an item editing it. */
   target: MenuItem | 'new' | null;
-  categories: SelectItem[];
+  categories: ComboboxItem[];
   /** The outlet's add-on groups, offered as checkboxes. */
   addonGroups: AddonGroup[];
   /** True while addonGroups' first fetch is in flight, so the empty state isn't shown too early. */
@@ -222,8 +223,10 @@ export function MenuItemDrawer({
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </div>
-          <Select
+          <Combobox
+            searchable
             label="Kategori"
+            searchPlaceholder="Cari kategori…"
             items={categories}
             value={draft.categoryId}
             onValueChange={(categoryId) => setDraft({ ...draft, categoryId })}

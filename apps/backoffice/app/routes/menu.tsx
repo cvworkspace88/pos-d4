@@ -6,7 +6,7 @@ import { Button } from '@repo/ui/button';
 import { Card } from '@repo/ui/card';
 import { Dialog } from '@repo/ui/dialog';
 import { Pill } from '@repo/ui/pill';
-import { Select } from '@repo/ui/select';
+import { Combobox } from '@repo/ui/combobox';
 import { Skeleton } from '@repo/ui/skeleton';
 import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { Switch } from '@repo/ui/switch';
@@ -121,8 +121,10 @@ export default function MenuPage() {
               />
             </div>
             <div className="w-48">
-              <Select
+              <Combobox
+                searchable
                 aria-label="Filter kategori"
+                searchPlaceholder="Cari kategori…"
                 items={filterItems}
                 value={filter}
                 onValueChange={setFilter}
