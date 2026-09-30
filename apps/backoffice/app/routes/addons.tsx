@@ -12,7 +12,6 @@ import { PageHeader } from '../components/page-header';
 import { useAuthStore } from '../stores/auth';
 import { useTRPC } from '../trpc';
 
-/** The active outlet's shared add-on groups. `menu.view` reads; `menu.manage` adds and edits. */
 export default function AddonsPage() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -23,7 +22,8 @@ export default function AddonsPage() {
   const list = useQuery(trpc.addon.list.queryOptions(undefined, { enabled: !!outlet }));
   const refetch = () => {
     void queryClient.invalidateQueries({ queryKey: trpc.addon.list.queryKey() });
-    // The menu drawer's add-on checkboxes and "Dipakai di N menu" read menu.list; keep it fresh too.
+    // Deleting a group drops its id from every linked item's addonGroupIds in menu.list; keep it fresh
+    // so a menu drawer opened right after doesn't try to save a link to a group that's gone.
     void queryClient.invalidateQueries({ queryKey: trpc.menu.list.queryKey() });
   };
 

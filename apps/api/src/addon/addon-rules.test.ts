@@ -1,6 +1,10 @@
 import { expect, test } from 'vitest';
 import { addonConflictMessage, selectionError } from './addon-rules';
 
+// Duplicated from packages/api-contract/src/addon.ts's own tests: apps/api cannot import that
+// package at runtime (see the comment on selectionError above, in addon-rules.ts), so this copy
+// needs its own coverage. This file keeps the local name (selectionError), not the renamed
+// api-contract export (getSelectAddonErrorMessage), since it tests apps/api's own duplicate.
 test('a sound rule has no error', () => {
   expect(selectionError({ min: 0, max: 3, optionCount: 2 })).toBeNull();
   expect(selectionError({ min: 1, max: 1, optionCount: 3 })).toBeNull();

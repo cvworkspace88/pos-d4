@@ -1,5 +1,6 @@
-/** Why a group's pick rule cannot work, or null. The backoffice drawer mirrors the first three checks. */
-export const selectionError = ({
+// Duplicated from packages/api-contract/src/addon.ts's `getSelectAddonErrorMessage`, not imported: that
+
+export const getSelectAddonErrorMessage = ({
   min,
   max,
   optionCount,

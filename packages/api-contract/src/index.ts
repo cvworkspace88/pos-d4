@@ -16,4 +16,4 @@ export {
   type FloorTable,
 } from './floor';
 export { MAX_RUPIAH, parseRupiah } from './money';
-export { describeRule } from './addon';
+export { describeRule, getSelectAddonErrorMessage } from './addon';

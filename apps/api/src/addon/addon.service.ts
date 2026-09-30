@@ -2,10 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { and, asc, count, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
-import { isUniqueViolation, violatedConstraint } from '../db/errors';
+import { conflictHandler } from '../db/errors';
 import { addonGroups, addonOptions, menuItemAddonGroups, menuItems } from '../db/schema';
 import { duplicateName, hasDuplicateId } from '../menu/menu-rules';
-import { addonConflictMessage, selectionError } from './addon-rules';
+import { addonConflictMessage, getSelectAddonErrorMessage } from './addon-rules';
 
 export interface AddonOptionInput {
   /** Present: an existing option to update. Absent: a new one. */
@@ -35,11 +35,7 @@ const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Add-on tidak
 const optionNotFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Pilihan tidak ditemukan.' });
 const badRequest = (message: string) => new TRPCError({ code: 'BAD_REQUEST', message });
 
-const rethrowAsConflict = (error: unknown): never => {
-  const message = isUniqueViolation(error) ? addonConflictMessage(violatedConstraint(error)) : null;
-  if (message) throw new TRPCError({ code: 'CONFLICT', message });
-  throw error;
-};
+const rethrowAsConflict = conflictHandler(addonConflictMessage);
 
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -65,24 +61,26 @@ export class AddonService {
     if (!groups.length) return [];
     const ids = groups.map((g) => g.id);
 
-    const options = await db
-      .select({
-        groupId: addonOptions.groupId,
-        id: addonOptions.id,
-        name: addonOptions.name,
-        price: addonOptions.price,
-        available: addonOptions.available,
-      })
-      .from(addonOptions)
-      .where(and(inArray(addonOptions.groupId, ids), isNull(addonOptions.deletedAt)))
-      .orderBy(asc(addonOptions.sortOrder));
-
-    const used = await db
-      .select({ groupId: menuItemAddonGroups.addonGroupId, n: count() })
-      .from(menuItemAddonGroups)
-      .innerJoin(menuItems, eq(menuItems.id, menuItemAddonGroups.menuItemId))
-      .where(and(inArray(menuItemAddonGroups.addonGroupId, ids), isNull(menuItems.deletedAt)))
-      .groupBy(menuItemAddonGroups.addonGroupId);
+    // Independent queries: run together rather than round-trip one after the other.
+    const [options, used] = await Promise.all([
+      db
+        .select({
+          groupId: addonOptions.groupId,
+          id: addonOptions.id,
+          name: addonOptions.name,
+          price: addonOptions.price,
+          available: addonOptions.available,
+        })
+        .from(addonOptions)
+        .where(and(inArray(addonOptions.groupId, ids), isNull(addonOptions.deletedAt)))
+        .orderBy(asc(addonOptions.sortOrder)),
+      db
+        .select({ groupId: menuItemAddonGroups.addonGroupId, n: count() })
+        .from(menuItemAddonGroups)
+        .innerJoin(menuItems, eq(menuItems.id, menuItemAddonGroups.menuItemId))
+        .where(and(inArray(menuItemAddonGroups.addonGroupId, ids), isNull(menuItems.deletedAt)))
+        .groupBy(menuItemAddonGroups.addonGroupId),
+    ]);
 
     return groups.map((g) => ({
       ...g,
@@ -129,7 +127,7 @@ export class AddonService {
     const dup = duplicateName(options);
     if (dup) throw badRequest(`Nama pilihan "${dup}" dipakai dua kali.`);
     if (hasDuplicateId(options)) throw badRequest('Pilihan terkirim dua kali. Muat ulang lalu simpan lagi.');
-    const invalid = selectionError({
+    const invalid = getSelectAddonErrorMessage({
       min: fields.minSelect,
       max: fields.maxSelect,
       optionCount: options.length,

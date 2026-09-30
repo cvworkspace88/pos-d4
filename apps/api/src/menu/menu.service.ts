@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { and, asc, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
-import { isUniqueViolation, violatedConstraint } from '../db/errors';
+import { conflictHandler } from '../db/errors';
 import {
   addonGroups,
   categories,
@@ -60,11 +60,7 @@ const variantNotFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Varia
 const addonNotFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Add-on tidak ditemukan.' });
 
 /** Maps by the index Postgres names: name, code and variant name each have their own message. */
-const rethrowAsConflict = (error: unknown): never => {
-  const message = isUniqueViolation(error) ? menuConflictMessage(violatedConstraint(error)) : null;
-  if (message) throw new TRPCError({ code: 'CONFLICT', message });
-  throw error;
-};
+const rethrowAsConflict = conflictHandler(menuConflictMessage);
 
 /** Live menu items of one outlet. Every query goes through this, so no id crosses outlets. */
 const liveAt = (outletId: string) => and(eq(menuItems.outletId, outletId), isNull(menuItems.deletedAt));
@@ -96,24 +92,29 @@ export class MenuService {
     if (!items.length) return [];
     const ids = items.map((i) => i.id);
 
-    const variants = await db
-      .select({
-        menuItemId: menuVariants.menuItemId,
-        id: menuVariants.id,
-        name: menuVariants.name,
-        price: menuVariants.price,
-        cost: menuVariants.cost,
-        available: menuVariants.available,
-      })
-      .from(menuVariants)
-      .where(and(inArray(menuVariants.menuItemId, ids), isNull(menuVariants.deletedAt)))
-      .orderBy(asc(menuVariants.sortOrder));
-
-    const links = await db
-      .select({ menuItemId: menuItemAddonGroups.menuItemId, addonGroupId: menuItemAddonGroups.addonGroupId })
-      .from(menuItemAddonGroups)
-      .where(inArray(menuItemAddonGroups.menuItemId, ids))
-      .orderBy(asc(menuItemAddonGroups.sortOrder));
+    // Independent queries: run together rather than round-trip one after the other.
+    const [variants, links] = await Promise.all([
+      db
+        .select({
+          menuItemId: menuVariants.menuItemId,
+          id: menuVariants.id,
+          name: menuVariants.name,
+          price: menuVariants.price,
+          cost: menuVariants.cost,
+          available: menuVariants.available,
+        })
+        .from(menuVariants)
+        .where(and(inArray(menuVariants.menuItemId, ids), isNull(menuVariants.deletedAt)))
+        .orderBy(asc(menuVariants.sortOrder)),
+      db
+        .select({
+          menuItemId: menuItemAddonGroups.menuItemId,
+          addonGroupId: menuItemAddonGroups.addonGroupId,
+        })
+        .from(menuItemAddonGroups)
+        .where(inArray(menuItemAddonGroups.menuItemId, ids))
+        .orderBy(asc(menuItemAddonGroups.sortOrder)),
+    ]);
 
     // ponytail: per-item filter is O(items × rows); group into a Map if menus reach thousands of items.
     return items.map((item) => ({

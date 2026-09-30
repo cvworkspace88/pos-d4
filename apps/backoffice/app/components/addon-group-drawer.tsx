@@ -1,6 +1,12 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { describeRule, parseRupiah, type RouterInputs, type RouterOutputs } from '@repo/api-contract';
+import {
+  describeRule,
+  parseRupiah,
+  getSelectAddonErrorMessage,
+  type RouterInputs,
+  type RouterOutputs,
+} from '@repo/api-contract';
 import { Button } from '@repo/ui/button';
 import { Dialog } from '@repo/ui/dialog';
 import { Drawer } from '@repo/ui/drawer';
@@ -68,17 +74,11 @@ export function AddonGroupDrawer({ target, onSave, onClose, saving, error }: Add
   const min = pickCount(draft.minSelect);
   const max = pickCount(draft.maxSelect);
   const options = draft.options.map((o) => ({ ...o, parsed: parseRupiah(o.price) }));
-  // Mirrors addon-rules.ts's selectionError; the server still validates and says why.
+  // The one check getSelectAddonErrorMessage cannot make: min/max must first parse as numbers.
   const ruleError =
     min === null || max === null
       ? 'Isi angka 0–50.'
-      : max < 1
-        ? 'Pilihan maksimum minimal 1.'
-        : min > max
-          ? 'Pilihan minimum tidak boleh melebihi maksimum.'
-          : min > options.length
-            ? `Pilihan minimum melebihi jumlah pilihan (${options.length}).`
-            : undefined;
+      : (getSelectAddonErrorMessage({ min, max, optionCount: options.length }) ?? undefined);
   const valid =
     draft.name.trim() &&
     !ruleError &&
