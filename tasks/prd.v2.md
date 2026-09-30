@@ -1,0 +1,1325 @@
+# PRD: F&B POS System (Indonesia)
+
+Date: 2026-09-30. Status: draft v1. Written from the product brief only; existing repo code and specs were deliberately not consulted. Where the repo already satisfies a story, the implementer verifies it and marks the story done instead of rebuilding.
+
+This is the current PRD for the product (v2). The earlier spec, kept for history as `tasks/prd.v1.md`, was reconciled into it; the owner's decisions are recorded in section 12. Stories US-088 and later were added during that reconciliation and sit in their phase, not in id order.
+
+## 1. Introduction
+
+A point-of-sale system for Indonesian food & beverage outlets (cafés, restaurants, bars, small chains). Three apps share one backend:
+
+| App | Role | Connectivity |
+| --- | --- | --- |
+| **Desktop** (Electron, Windows first) | Outlet terminal. Hosts the outlet's local API ("hub") on a local Postgres (installed with Docker or manually). Cashier: orders, payments, shift, printing, KDS host, outlet admin screens. | Local-first. Sells and administers with no internet. A background sync service syncs with the cloud when it is running and online. |
+| **Mobile** (Expo, tablet/phone) | Waiter: table map, order taking, send to kitchen, bill request, reservations. Kitchen tablets open the KDS screen. | Talks to the desktop hub over LAN. Never needs the internet. |
+| **Backoffice** (web) | Owner/HQ: outlets, users, roles, menu, prices, promotions, inventory, reports across outlets. Never takes orders. | Always online, cloud only. |
+
+The system sells in two editions: **Terminal** (desktop + mobile, fully local, no cloud account; each outlet is independent) and **Terminal + Cloud** (adds the background sync service, the backoffice and cross-outlet reporting). There is no licence enforcement: editions run on the honour system. Mobile always talks to the desktop over the LAN, never to the cloud. Every business rule that varies between outlets (tax, service charge, inclusive/exclusive pricing, rounding, business-day cutoff, tenders, receipt layout, void/discount policy, kitchen routing) is data, editable at runtime, never code.
+
+Problem solved: Indonesian competitors (Moka, Majoo, Pawoon, Olsera, ESB, iSeller, Qasir, Kasir Pintar, Nutapos) all require a cloud backoffice, treat "offline" as a single-device queue, gate essentials (KDS, multi-device offline, ingredients) behind premium tiers, and none ship course hold/fire, in-POS waste, or per-item tax types. Owners complain of lost transactions, POS totals that disagree with the web at close, and forced buggy updates. This product wins on: LAN hub that keeps every device consistent without internet, all restaurant essentials in the base edition, exact money handling, and auditable corrections.
+
+## 2. Goals
+
+- Sell continuously with the internet down: order, send to kitchen, pay cash and manual non-cash, print, close shift, all against the desktop hub.
+- Every tablet in the outlet sees the same live orders and table states within 1 second over LAN.
+- Money is exact: integer rupiah, one deterministic pricing pipeline (line → discount → service charge → tax → rounding → total) covered by tests, configurable per outlet including inclusive/exclusive modes.
+- Financial records are append-only and every correction (void, comp, refund, discount, price override, reopen) records who, approver, when, why.
+- Zero duplicate orders or payments from retries or double taps (client-generated ids, idempotent writes).
+- Desktop ↔ cloud sync loses nothing, never overwrites a bill, and shows its state on screen.
+- Roles editable, permissions overridable per user, manager PIN override at the point of refusal.
+- Terminal edition is fully operable from the desktop alone (menu, staff, settings, local reports) with no cloud at all.
+- Ship in the phase order in section 4 so a sellable Terminal edition exists before backoffice-only features.
+
+## 3. Competitive research summary
+
+Sources: vendor help centers and pricing pages (Moka, Majoo, Pawoon, Olsera, ESB, iSeller, Qasir, Kasir Pintar, Nutapos, Toast, Square for Restaurants, Lightspeed K-Series, Loyverse, Odoo, Clover, Revel, SpotOn), Bapenda Jakarta, DDTC, Bank Indonesia, Kemnaker, Permendag 35/2013, UU 1/2022, UU 27/2022, PP 33/2026. Full notes were gathered on 2026-09-30.
+
+**What Indonesian competitors ship (baseline we must match):** tables with move/split/merge, modifiers and combos, QRIS + EDC tenders, inclusive/exclusive tax toggle with tax base before/after discount (Moka), scheduled promos and price lists (dine-in vs online: Kasir Pintar, ESB, Majoo), recipe/ingredient inventory with stock opname and transfers (Pro tiers), staff PIN and shift close with drawer reconciliation (iSeller), KDS on any device including Android TV (Majoo Prime), table turn-time colours with two warning thresholds (ESB, Majoo), customer order display with queue number (Majoo), reservation + queue display (ESB Book/Lounge, Olsera), loyalty points and vouchers, GoFood/GrabFood integrations, QR self-order.
+
+**Gaps we exploit:** no local-only or hub topology (Majoo's LAN master/client is Rp999k/month), no course hold/fire anywhere, no in-POS waste log, no per-item tax type except Qasir Pro, tips not separated from service charge, sales-only reports without corrections/variance (Moka), data mismatch at close, employee-slot pricing.
+
+**Behaviours copied from global leaders:** KDS ticket lifecycle with item and ticket bump, recall, two-threshold timers, all-day counts, voided-item marking, print-when-KDS-down (Toast, Lightspeed); split by item / equal parts / amount with proportional discount split (Square, Toast); comp vs void with mandatory reason and manager passcode (Square, Toast); drawer states, pay in/out, blind count, business-day cutoff (Toast, Lightspeed); item countdown with auto sold-out and daily reset (Toast, Square); LAN peers editing the same order offline (Lightspeed K); unsynced badge and "cannot sign out with unsynced data" (Loyverse); cash-only rounding shown as its own line (Square).
+
+**Indonesian rules that shape the design (verified 2026-09-30):**
+- Restaurant sales are subject to PBJT Makanan/Minuman (ex-PB1), max 10%, set per region; PPN does not apply to F&B. Non-food merchandise is PPN. So tax type is per item.
+- Tax base is the amount paid after discount and includes service charge (Bapenda Jakarta worked example). Small outlets under a regional monthly turnover threshold are exempt; threshold and rate are outlet settings.
+- Service charge percentage is not fixed by law; typically 5–10%, usually dine-in only, shown as its own receipt line.
+- Displayed prices must say whether they include tax and other fees (Permendag 35/2013). Rounding is allowed only for denominations not in circulation and must be disclosed at payment, so cash rounding is a visible line; non-cash pays exact.
+- QRIS merchant fee may not be surcharged to customers. Every major e-wallet is a QRIS issuer, so one QRIS tender covers them.
+- Jakarta requires electronic reporting of every transaction (E-TRAPT reads POS databases or CSV exports). Other regions use tapping boxes with vendor-specific formats. A per-transaction export is required; adapters are per region.
+- Customer data (loyalty name/phone) falls under UU PDP 27/2022 and PP 33/2026: explicit consent, retention policy, deletion on request.
+- Tax reporting period is the calendar month; daily business-date cutoff is a POS convention, so reports need both business date and calendar month.
+
+## 4. Feature list and development order
+
+Phases are ordered so that each phase yields something usable. Phases 0–5 make the Terminal edition sellable. Phase 6 adds the cloud sync service, phase 7 the backoffice. Later phases are add-ons.
+
+| Phase | Feature area | Why here |
+| --- | --- | --- |
+| 0 | Platform: deployments (cloud/local), desktop hub on a local Postgres (Docker or manual install), first-run local setup, mobile hub discovery, outlet settings framework, auth, PIN profiles, outlets, roles/permissions/overrides, manager override, audit log, event log skeleton | Everything else depends on it |
+| 1 | Menu & catalogue: categories, items, variants, modifier groups, combos, tax type, kitchen station, per-outlet price and availability, sold-out, menu schedules; desktop admin screens | Orders need a menu |
+| 2 | Floor & tables: floors, tables, capacities, editor, statuses, timers, merge | Dine-in orders need tables |
+| 3 | Orders: order lifecycle, pricing engine, order numbering, idempotency, send to kitchen, notes, seats, courses hold/fire, manual discounts, price override, void/comp with approval, transfer/merge/split, order types | The core of a POS |
+| 4 | Kitchen: station printing, KDS web screen, ticket lifecycle, timers, recall, fallback printing | Orders must reach the kitchen |
+| 5 | Payments & cash: tenders, split tender, cash rounding, change, receipts, refunds, reopen, shifts, drawer, Z report | Money in |
+| 6 | Background sync service desktop ↔ cloud, device registration, second desktop as hub client, sync status UI, backup/restore | Cloud edition |
+| 7 | Backoffice: outlets, users, roles, menu, settings, cross-outlet reports, exports (incl. per-transaction tax export) | Backoffice edition |
+| 8 | Reservations & waitlist | Requested; independent of money |
+| 9 | Reports on desktop (local) and backoffice (consolidated): sales, items, payments, tax, shift, corrections, hourly, staff | Owners need numbers |
+| 10 | Inventory: ingredients, recipes, auto depletion, adjustments, opname, purchase orders, receiving, transfers, waste, low-stock, COGS | Bigger, separable |
+| 11 | Promotions & customers: automatic discount rules, happy-hour price lists, vouchers, customer profiles with consent, loyalty points | Revenue growth features |
+| 12 | Later: QR self-order + digital menu, delivery aggregators (GoFood, GrabFood), dynamic QRIS via gateway, regional tax adapters, tips, house accounts | Out of scope for this PRD, design must not block them |
+
+## 5. User stories
+
+Story ids are sequential across phases. Each story is one focused session. "Rules function" means a pure, decorator-free function in a `*-rules.ts` file with unit tests. "Setting" means a key in the outlet settings framework of Phase 0.
+
+### Phase 0 — Platform
+
+### US-001: Deployment modes
+**Description:** As an operator, I want one API codebase that runs as the cloud server or as the outlet hub so that both share business rules.
+
+**Acceptance Criteria:**
+- [ ] `DEPLOYMENT=cloud|local|all` read at boot; `all` only for contract generation and refuses to listen
+- [ ] `cloud` mounts: auth, outlets, users/roles, catalogue mutations, settings mutations, sync receiver, backoffice reports. No printing, no hub endpoints
+- [ ] `local` mounts: auth (against local users), POS routers (orders, payments, shifts, tables, kitchen), catalogue, user and settings mutations (the desktop is local-first, see US-052), printing, hub info. The sync client runs in the background sync service (US-049), not in the API
+- [ ] Boot log prints the mode and the mounted router list
+- [ ] Unit test: mounting table per mode
+- [ ] Typecheck/lint passes
+
+### US-002: Desktop hosts the local API on a local Postgres
+**Description:** As a cashier, I want the desktop to run without any external server so that sales continue when the internet drops.
+
+**Acceptance Criteria:**
+- [ ] Postgres is not bundled: it runs on the outlet PC from Docker (a `docker compose` file shipped with the app) or a manual Windows install; setup docs cover both
+- [ ] The desktop reads the database URL from its config; on first run, or when the database cannot be reached, a setup screen asks for host, port, database, user and password, tests the connection and saves it
+- [ ] Electron main starts the API in `local` mode as a child process bound to `0.0.0.0` on a configurable port (default 3333), waits for health, then opens the renderer
+- [ ] Drizzle migrations run on every start before the API accepts requests
+- [ ] An API crash is restarted up to 3 times, then the renderer shows a blocking error with the log path; a lost database connection shows "Database tidak terhubung" with what to check (Docker running, service started)
+- [ ] App quit stops the API cleanly
+- [ ] Typecheck/lint passes
+
+### US-088: First-run local setup (no cloud)
+**Description:** As an owner on the Terminal edition, I want to set up my business on the desktop with no cloud account so that the outlet can sell on day one.
+
+**Acceptance Criteria:**
+- [ ] When the local database has no company, the desktop shows a setup wizard: business name, first outlet (name, address, timezone, cutoff), owner username, password and PIN
+- [ ] The wizard seeds roles, permissions and default settings locally; no activation key or licence check (honour system)
+- [ ] Enabling cloud sync later is done in the sync service (US-053), never by re-running the wizard
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-003: Hub info and LAN pairing
+**Description:** As a waiter, I want my tablet to find the desktop on the outlet Wi-Fi so that I never type an IP.
+
+**Acceptance Criteria:**
+- [ ] Hub advertises `_pos-hub._tcp` via mDNS with outlet name and port; desktop shows a "Hub" panel with LAN IP, port, outlet name and a QR code encoding `{host, port, outletId}`
+- [ ] Mobile "Connect to hub" screen: lists discovered hubs, scans the QR, or accepts manual IP:port; stores the chosen hub per outlet
+- [ ] Mobile pings `hub.info` every 10s when the app is in the foreground; shows a red "Hub offline" banner after 2 failures and grey "Reconnecting" until 1 success
+- [ ] Renderer of the desktop talks to `127.0.0.1` on the same API
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-004: Outlet settings framework
+**Description:** As an owner, I want every outlet-level rule editable at runtime so that nothing about tax, rounding or receipts is hard-coded.
+
+**Acceptance Criteria:**
+- [ ] Table `outlet_settings(outlet_id, key, value jsonb, version, updated_by, updated_at)`; unique `(outlet_id, key)`
+- [ ] A typed settings schema (Zod) lists every key from Appendix A with type, default and validation; unknown keys rejected
+- [ ] `settings.get(outletId)` returns the full resolved object (defaults merged with stored values) in one query; `settings.set(outletId, key, value)` validates against the schema, bumps version, writes an audit row
+- [ ] Reads are cached in-process and invalidated on write and on sync pull
+- [ ] Rules function `resolveSettings(rows)` with tests: defaults applied, invalid value rejected, version increments
+- [ ] Typecheck/lint passes
+
+### US-005: Username/password login and sessions
+**Description:** As any staff member, I want to log in with username and password and stay logged in safely.
+
+**Acceptance Criteria:**
+- [ ] `auth.login(username, password)` → access JWT (15 min) + opaque refresh token (SHA-256 hash stored, rotated on use, 30 s grace for the previous token to absorb concurrent refreshes)
+- [ ] Passwords hashed with argon2id; 5 failed logins within 15 min lock the user for 15 min (`FORBIDDEN`, message says how long)
+- [ ] JWT carries `userId`, `outletId`, `roleId`, `deviceId`, `exp`
+- [ ] Any `UNAUTHORIZED` response ends the client session (store cleared, cache dropped, back to login); `FORBIDDEN` never does
+- [ ] `auth.logout` revokes the refresh token with reason `logout`
+- [ ] Tests: rotation, grace window, lockout, revoked token refused
+- [ ] Typecheck/lint passes
+
+### US-006: Mobile PIN profiles for shift changes
+**Description:** As a waiter on a shared tablet, I want to switch to my profile with a 6-digit PIN so that shift changes take seconds, but only after I logged in once with my password.
+
+**Acceptance Criteria:**
+- [ ] First login on a device with username/password creates a profile on that device (name, avatar initials, outlet) and asks the user to set a PIN if none exists
+- [ ] "Sign out" parks the session (refresh token kept with reason `parked`); profile stays on the device
+- [ ] Profile picker screen lists parked profiles; tapping one asks for the PIN; `auth.pinLogin(profileId, pin)` redeems the parked token and issues a new session
+- [ ] Wrong PIN returns `UNAUTHORIZED` with `data.reason: 'INVALID_PIN'`; client shows "PIN salah" and does not end the session; 5 wrong PINs in 10 min park-locks the profile for 10 min
+- [ ] Parked tokens cannot be used by `auth.refresh`; only `pinLogin` redeems them
+- [ ] Idle lock after `security.pin_idle_lock_seconds` (setting, default 120) returns to the profile picker
+- [ ] "Remove profile" requires the profile's PIN or a manager, revokes the parked token
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-007: Desktop login
+**Description:** As a cashier, I want to log in on the desktop with username and password, and lock the screen between users.
+
+**Acceptance Criteria:**
+- [ ] Desktop login screen with username/password; no PIN profiles, no idle lock
+- [ ] "Lock" button and `security.desktop_lock_seconds` (setting, default 0 = off) show a lock screen requiring the same user's password
+- [ ] Current user and role shown in the top bar; "Switch user" logs out and returns to login
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-008: Outlets and staff membership
+**Description:** As an owner, I want several outlets, each with its own staff and role assignments.
+
+**Acceptance Criteria:**
+- [ ] Tables `outlets(id, name, code, address, phone, npwp, timezone, active)`, `outlet_staff(outlet_id, user_id, role_id, active)`
+- [ ] `users.global_role_id` holds the global role (owner) that needs no membership; everyone else acts only in outlets where they have an active membership
+- [ ] Login on a device bound to outlet X refuses users without membership there: `FORBIDDEN` "Anda tidak terdaftar di outlet ini."
+- [ ] `auth.refresh({outletId})` switches active outlet for multi-outlet users (backoffice and owners)
+- [ ] `canActOn(ctx, outletId)` guard used by every query and mutation that takes an outlet id; refusal is `FORBIDDEN` "Outlet tidak ditemukan."
+- [ ] Tests: membership check, global role bypass, guard
+- [ ] Typecheck/lint passes
+
+### US-009: Roles, permissions catalogue and per-user overrides
+**Description:** As an owner, I want base roles I can adjust and the ability to grant or revoke single permissions for one person.
+
+**Acceptance Criteria:**
+- [ ] Tables `roles(id, name, is_global, editable)`, `permissions(name, description, group)`, `role_permissions`, `user_permission_overrides(user_id, outlet_id nullable, permission, effect grant|revoke)`
+- [ ] Seed the permission catalogue from Appendix B and base roles Owner, Manager, Supervisor, Cashier, Waiter, Kitchen, Accountant with the grants in Appendix B
+- [ ] Rules function `effectivePermissions(roleGrants, overrides)` = role grants + grants − revokes; revoke wins over grant; tests
+- [ ] `rbac.require(ctx, 'domain.action')` reads the role for `ctx.outletId`, applies overrides (outlet-specific first, then global); refusal is `FORBIDDEN` "Anda tidak memiliki akses." never `UNAUTHORIZED`
+- [ ] Owner role cannot be edited or deleted; Owner cannot be assigned per outlet (`BAD_REQUEST` "Owner is global.")
+- [ ] Role edits and overrides write audit rows
+- [ ] Typecheck/lint passes
+
+### US-010: Manager PIN override at the point of refusal
+**Description:** As a cashier lacking a permission, I want a manager to approve a single action by entering their PIN on my screen so that the manager's session is never exposed.
+
+**Acceptance Criteria:**
+- [ ] Any guarded mutation accepts optional `approval: {approverUserId, pin}`; server verifies the approver has the permission and `approval.grant`, checks the PIN, then executes as the caller while recording `approved_by`
+- [ ] Wrong approver PIN → `UNAUTHORIZED` + `data.reason: 'INVALID_PIN'`; approver without permission → `FORBIDDEN`
+- [ ] Client: on `FORBIDDEN` from an overridable action, shows an "Minta persetujuan" dialog (approver picker of users with `approval.grant` at this outlet + PIN pad + reason if the action needs one) and retries the same mutation with the same idempotency id
+- [ ] Every overridden action appears in the audit log with actor, approver, action, reason, entity
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-011: Audit log
+**Description:** As an owner, I want every sensitive action recorded so that disputes can be settled.
+
+**Acceptance Criteria:**
+- [ ] Table `audit_log(id uuid, outlet_id, actor_user_id, approver_user_id nullable, action, entity_type, entity_id, reason, before jsonb, after jsonb, device_id, created_at)`; insert-only, no update/delete routers
+- [ ] Helper `audit(ctx, {...})` used by settings, roles, menu, void/comp/refund/discount/price override/reopen, shift close, sync device actions
+- [ ] `audit.list(outletId, {from, to, action?, userId?})` paginated, permission `report.view_audit`
+- [ ] Typecheck/lint passes
+
+### US-012: Event log and client ids (write model)
+**Description:** As a developer, I need every transactional write to be an idempotent, ordered event so that sync and retries are safe by construction.
+
+**Acceptance Criteria:**
+- [ ] All transactional entities (orders, lines, payments, refunds, shifts, drawer entries, kitchen tickets, table sessions, reservations, stock ledger) use client-generated UUID v7 primary keys
+- [ ] Table `events(id uuid, outlet_id, device_id, seq bigserial, type, entity_id, payload jsonb, actor_user_id, created_at, synced_at nullable)`; every transactional mutation writes its entity change and an event in one DB transaction
+- [ ] Repeating a mutation with an already-stored id is a no-op that returns the stored result (idempotency), verified by a test that calls the same mutation twice
+- [ ] `events.pendingCount(outletId)` returns unsynced count
+- [ ] Typecheck/lint passes
+
+### Phase 1 — Menu & catalogue
+
+### US-013: Categories and items
+**Description:** As an owner, I want a menu of categories and items with images and descriptions.
+
+**Acceptance Criteria:**
+- [ ] Tables `categories(id, company_id, name, sort, color, kitchen_station_id nullable, active, deleted_at)`, `items(id, company_id, category_id, name, kitchen_name, sku, description, image_url, base_price int, tax_type pbjt|ppn|none, service_charge_applies bool, kitchen_station_id nullable, sold_by unit|weight, sort, active, deleted_at)`
+- [ ] Item kitchen station defaults to its category's station
+- [ ] Soft delete only (`deleted_at`); an item with historical order lines can never be hard-deleted
+- [ ] Name unique per company among live items (`CONFLICT` "Nama sudah dipakai.")
+- [ ] `menu.list(outletId)` returns the full menu resolved for that outlet in one call (categories → items → variants → modifier groups, outlet price and availability applied)
+- [ ] Typecheck/lint passes
+
+### US-014: Variants
+**Description:** As an owner, I want size or type variants of one item, each with its own price and SKU.
+
+**Acceptance Criteria:**
+- [ ] Table `item_variants(id, item_id, name, price int, sku, sort, active)`; an item with variants requires a variant choice at order time; an item without variants is sold at `base_price`
+- [ ] Item list shows "mulai Rp X" = lowest active available variant price
+- [ ] Typecheck/lint passes
+
+### US-015: Modifier groups
+**Description:** As an owner, I want modifier groups (e.g. sugar level, extra shot) with required/optional and min/max rules and per-option price.
+
+**Acceptance Criteria:**
+- [ ] Tables `modifier_groups(id, name, min_select, max_select, required, allow_duplicate, sort)`, `modifier_options(id, group_id, name, price int, kitchen_name, sort, active)`, `item_modifier_groups(item_id, group_id, sort)`
+- [ ] Rules function `validateSelection(group, selected[])` returns a localized error: below min "Pilih minimal N", above max "Maksimal N", required not chosen "Wajib dipilih"; tests
+- [ ] One group can attach to many items
+- [ ] Typecheck/lint passes
+
+### US-016: Combos
+**Description:** As an owner, I want combo items (paket) built from choice groups at a bundle price.
+
+**Acceptance Criteria:**
+- [ ] `items.kind = single|combo`; `combo_groups(id, combo_item_id, name, min, max, sort)`, `combo_group_items(group_id, item_id, variant_id nullable, extra_price int)`
+- [ ] Ordering a combo expands to component lines flagged `parent_line_id`, priced at the combo price plus extras; components route to their own kitchen stations
+- [ ] Voiding a combo voids all its components together
+- [ ] Rules function `expandCombo` with tests
+- [ ] Typecheck/lint passes
+
+### US-017: Per-outlet price and availability
+**Description:** As an owner of several outlets, I want one central menu with outlet-specific prices and on/off switches.
+
+**Acceptance Criteria:**
+- [ ] Table `outlet_item_overrides(outlet_id, item_id, variant_id nullable, price int nullable, enabled bool default true)`
+- [ ] `menu.list(outletId)` applies overrides; disabled items are omitted from POS but visible in admin
+- [ ] Bulk edit: set price for many items in one mutation
+- [ ] Typecheck/lint passes
+
+### US-018: Sold-out (86) and countdown
+**Description:** As a cashier, I want to mark an item sold out or set "only 12 left" so that waiters stop selling it.
+
+**Acceptance Criteria:**
+- [ ] Table `item_availability(outlet_id, item_id, variant_id nullable, status available|sold_out|counted, remaining int nullable, reset_daily bool, reset_to int nullable, updated_by, updated_at)`; owned by the outlet hub (works offline)
+- [ ] Selling a `counted` item decrements `remaining` on send; reaching 0 flips to `sold_out`; at business-day rollover items with `reset_daily` reset to `reset_to`
+- [ ] Sending a sold-out item is refused with `PRECONDITION_FAILED` "Habis." and the client refreshes the menu
+- [ ] POS shows a "Habis" badge and remaining count; a quick-toggle on the desktop and mobile item card guarded by `menu.sold_out`
+- [ ] Availability changes broadcast to all LAN clients within 1 s
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-019: Menu schedules
+**Description:** As an owner, I want categories or items only available at certain times (breakfast menu, happy hour set).
+
+**Acceptance Criteria:**
+- [ ] Table `menu_schedules(id, outlet_id nullable, target_type category|item, target_id, days int[] 0-6, start_time, end_time)`
+- [ ] Rules function `isScheduledNow(schedules, now, timezone)` handles ranges across midnight; tests
+- [ ] POS hides off-schedule items; admin sees them with a clock badge
+- [ ] Typecheck/lint passes
+
+### US-020: Desktop menu admin screens
+**Description:** As an owner on the Terminal edition, I want to manage the menu from the desktop.
+
+**Acceptance Criteria:**
+- [ ] Desktop "Menu" section: categories list, item list with search and filters, item editor (variants, modifier groups, combo groups, tax type, station, image), availability toggles, per-outlet price
+- [ ] Writes go to the local hub and work with no internet; each write is recorded as a master-data event that the sync service pushes to the cloud when it runs (US-052)
+- [ ] LAN clients see the change within 1 s (`menu.changed` broadcast)
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### Phase 2 — Floor & tables
+
+### US-021: Floors and tables
+**Description:** As a manager, I want floors (Lantai 1, Teras) with named tables and capacities.
+
+**Acceptance Criteria:**
+- [ ] Tables `floors(id, outlet_id, name, sort, active, deleted_at)`, `tables(id, outlet_id, floor_id, name, capacity, shape rect|round, x, y, w, h, rotation, active, deleted_at)`
+- [ ] Table name unique per outlet among live tables (`CONFLICT` "Nama meja sudah dipakai.")
+- [ ] Soft delete; a table with an open order cannot be deleted (`PRECONDITION_FAILED` "Meja masih terpakai.")
+- [ ] `floor.list(outletId)` returns floors, tables and each table's live status in one call
+- [ ] Typecheck/lint passes
+
+### US-022: Floor plan editor
+**Description:** As a manager, I want to drag tables into position so that the map matches the room.
+
+**Acceptance Criteria:**
+- [ ] Desktop editor: add/rename/resize/rotate/move tables on a grid, choose shape, set capacity, per floor; save writes positions in one mutation
+- [ ] Geometry rules (overlap check, bounds) in a rules function with tests
+- [ ] Permission `table.manage`
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-023: Table status and timers
+**Description:** As a waiter, I want to see which tables are free, seated, have a bill printed, or need attention.
+
+**Acceptance Criteria:**
+- [ ] Table status derived from live data: `free`, `seated` (open order or pax set), `billed` (bill printed, unpaid), `reserved` (reservation within the hold window), `merged`
+- [ ] Table card shows elapsed time since seating; colour thresholds from settings `tables.warn_minutes_1` and `tables.warn_minutes_2`
+- [ ] Status updates push to all LAN clients within 1 s
+- [ ] Map available on desktop and mobile with the same colours
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-024: Merge and unmerge tables
+**Description:** As a waiter, I want to join two tables for a large party and split them back later.
+
+**Acceptance Criteria:**
+- [ ] `table.merge(primaryId, secondaryIds[])`: secondaries must be free; merged group shares one order; secondaries show "→ primary"
+- [ ] `table.unmerge(primaryId)` allowed only when no open order (`PRECONDITION_FAILED` "Selesaikan pesanan dulu.")
+- [ ] Deleting or reserving a merged table is refused with "Unmerge first."
+- [ ] Typecheck/lint passes
+
+### Phase 3 — Orders
+
+### US-025: Pricing engine
+**Description:** As a developer, I need one pure function that turns order lines and outlet settings into every money figure so that receipts, reports and tax always agree.
+
+**Acceptance Criteria:**
+- [ ] Rules function `priceOrder(lines, discounts, settings) → {lines[], subtotal, discountTotal, serviceCharge, taxByType, rounding, total}` in integer rupiah, half-up rounding at each step
+- [ ] Pipeline order: line total (qty × unit + modifiers) → line discounts → bill discount allocated proportionally to remaining line totals → subtotal → service charge on the discounted subtotal of `service_charge_applies` lines (only for order types in `service_charge.order_types`) → tax per `tax_type` on (subtotal after discount) plus service charge when `tax.base_includes_service_charge` → cash rounding (US-041) → total
+- [ ] Settings honoured: `tax.rates` per type, `tax.inclusive`, `tax.base_after_discount`, `service_charge.rate`, `service_charge.inclusive`, `service_charge.taxable`
+- [ ] Inclusive mode backs tax (and service charge when inclusive) out of the gross price so that gross stays what the menu shows: net = gross ÷ ((1 + sc) × (1 + tax)) with the applicable factors only
+- [ ] Worked examples fixed by tests: (a) exclusive: 2 × 50.000, 10% bill discount, SC 5%, PBJT 10% → subtotal 90.000, SC 4.500, tax 9.450, total 103.950; (b) inclusive tax only: 50.000 → net 45.455, tax 4.545; (c) mixed cart with one `ppn` item and one `none` item taxed separately; (d) tax base before discount when `tax.base_after_discount=false`
+- [ ] Typecheck/lint passes
+
+### US-026: Order creation and lines
+**Description:** As a waiter or cashier, I want to open an order for a table, takeaway or delivery and add items with variants, modifiers, quantity and notes.
+
+**Acceptance Criteria:**
+- [ ] Tables `orders(id, outlet_id, business_date, order_no, type dine_in|takeaway|delivery, status open|paid|void, table_id nullable, pax, customer_id nullable, opened_by, opened_at, closed_at, notes, version, totals…)`, `order_lines(id, order_id, seq, item_id, variant_id, name_snapshot, variant_snapshot, modifiers_snapshot jsonb, unit_price_snapshot, tax_type_snapshot, tax_rate_snapshot, service_charge_applies_snapshot, kitchen_station_snapshot, qty, notes, seat, course, status pending|sent|voided|comped, parent_line_id, sent_at, created_by)`
+- [ ] `order.create({id, outletId, type, tableId?, pax?})`: dine-in requires a table when `orders.require_table_for_dine_in`; a table with an open order returns that order instead of creating a second (idempotent by table)
+- [ ] `order.addLines({orderId, lines[], expectedVersion})` snapshots name, price, modifiers, tax type/rate, station at that moment; validates modifier selection; totals recomputed with US-025 and stored
+- [ ] Every order mutation checks `expectedVersion` and returns `CONFLICT` "Pesanan berubah, muat ulang." on mismatch; clients refetch and reapply
+- [ ] Pending (unsent) lines may be edited or removed freely by the creator or anyone with `order.edit_others`
+- [ ] Typecheck/lint passes
+
+### US-027: Order numbering per business date
+**Description:** As a cashier, I want short sequential order numbers that restart every business day so that kitchen and customers can call them.
+
+**Acceptance Criteria:**
+- [ ] Rules function `businessDate(timestamp, timezone, cutoffTime)`: times before the cutoff belong to the previous date; tests including midnight and DST-free Asia/Jakarta
+- [ ] Hub assigns `order_no` from a per-outlet, per-business-date counter inside the same transaction as `order.create`, formatted by `orders.number_format` (e.g. `{type_prefix}{seq:03}` → `D-007`)
+- [ ] Numbers are gapless; a voided order keeps its number
+- [ ] Bill number for receipts (`bill_no`) is assigned at first payment from a separate gapless per-outlet counter that never resets (for tax recaps)
+- [ ] Typecheck/lint passes
+
+### US-028: Send to kitchen, courses and hold/fire
+**Description:** As a waiter, I want to send pending lines to the kitchen, optionally per course, and hold a course until the guest is ready.
+
+**Acceptance Criteria:**
+- [ ] `order.send({orderId, lineIds?, expectedVersion})` marks lines `sent`, creates kitchen tickets per station (Phase 4), decrements countdown availability
+- [ ] Lines carry `course` (1..n) and `hold` flag; `order.fire({orderId, course})` releases a held course to the kitchen; unsent held lines are visible to the kitchen only after fire
+- [ ] A sent line's course cannot change; changing quantity of a sent line is refused (`PRECONDITION_FAILED` "Sudah dikirim ke dapur, void saja.")
+- [ ] Mobile and desktop show per-line state badges: pending, held, sent, ready, served
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-029: Seats and guest notes
+**Description:** As a waiter, I want to tag lines with a seat number so that food is served to the right guest and bills can split by seat.
+
+**Acceptance Criteria:**
+- [ ] `seat` optional integer per line, default null (shared); seat picker in the order screen; kitchen ticket prints seat
+- [ ] Order-level note and per-line note (max 200 chars) printed on kitchen tickets
+- [ ] Typecheck/lint passes
+
+### US-030: Manual discounts
+**Description:** As a cashier, I want to give a percentage or fixed discount on a line or the whole bill with a reason.
+
+**Acceptance Criteria:**
+- [ ] Table `order_discounts(id, order_id, line_id nullable, kind percent|amount, value, reason_id, note, applied_by, approved_by, created_at, voided_at)`; discounts are rows, never edits of a price
+- [ ] Reasons from setting `discounts.reasons` (list); reason required
+- [ ] Permission `order.discount_line` / `order.discount_bill`; role setting `discounts.max_percent_by_role` caps percent, above cap triggers the manager override flow (US-010)
+- [ ] Removing a discount sets `voided_at`, does not delete
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-031: Price override and open-price items
+**Description:** As a manager, I want to override a line price or sell an open-price item (e.g. "Lainnya") with a typed price.
+
+**Acceptance Criteria:**
+- [ ] `order.overridePrice({lineId, price, reason})` guarded by `order.price_override`, keeps the original price in `unit_price_snapshot` and stores `override_price` + reason + approver
+- [ ] Items flagged `open_price` prompt for a price on add; min 0, max `orders.max_line_amount`
+- [ ] Typecheck/lint passes
+
+### US-032: Void and comp sent lines
+**Description:** As a cashier, I want to void a sent line (not made) or comp it (made, given free) with a reason and manager approval when required, so that waste and giveaways are tracked.
+
+**Acceptance Criteria:**
+- [ ] `order.voidLines({lineIds, reason, note})` requires `order.void_sent`; `order.compLines` requires `order.comp`; both accept `approval` (US-010)
+- [ ] Voided lines: excluded from all totals and from sales reports, counted in the corrections report; comped lines: kept in item sales counts and inventory depletion, contribute 0 to revenue, shown as "Comp" on the receipt
+- [ ] Kitchen receives a VOID ticket update (Phase 4)
+- [ ] Reasons from settings `voids.reasons`; note required when reason is "Lainnya"
+- [ ] Voiding the last live line on a dine-in order leaves the order open and the table seated until the order is cancelled (US-033)
+- [ ] Typecheck/lint passes
+
+### US-033: Cancel an unpaid order
+**Description:** As a cashier, I want to cancel an order that will not be paid so that the table frees up and the number is accounted for.
+
+**Acceptance Criteria:**
+- [ ] `order.cancel({orderId, reason})` allowed only when no captured payments; sent lines are voided in the same transaction with the same reason; status `void`; table freed
+- [ ] Permission `order.cancel`; appears in the corrections report
+- [ ] Typecheck/lint passes
+
+### US-034: Transfer, merge and split orders
+**Description:** As a waiter, I want to move an order to another table, move lines between orders, merge two orders, and split a bill by items, by seat, equally, or by amount.
+
+**Acceptance Criteria:**
+- [ ] `order.transferTable`, `order.moveLines(fromOrderId, toOrderId, lineIds)`, `order.merge(intoOrderId, fromOrderId)` guarded by `order.transfer`/`order.merge`; all keep line snapshots and sent status
+- [ ] `order.transferWaiter({orderId, toUserId, expectedVersion})` hands the order to another waiter at the same outlet, guarded by `order.transfer`, audited with from/to user
+- [ ] `order.split({orderId, mode: items|seats|equal|amount, spec})` creates child orders with new order numbers, moving lines (items/seats) or creating proportional shares (equal/amount); percent discounts copied, fixed discounts allocated proportionally; rules function with tests proving the children sum to the parent total to the rupiah
+- [ ] Split is refused when the order has a captured payment on the lines being moved (`PRECONDITION_FAILED`)
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-035: Order screens on mobile and desktop
+**Description:** As a waiter or cashier, I want a fast touch-first order screen.
+
+**Acceptance Criteria:**
+- [ ] Layout: category tabs, item grid with images and price, cart panel with quantity steppers, modifiers sheet, notes, seat/course chips, Send and Bill buttons; hit targets ≥ 48 dp
+- [ ] Adding an item with no variants/modifiers is one tap; item search by name
+- [ ] Cart totals use the same pricing function (shared package) so the preview matches the server to the rupiah
+- [ ] No blocking spinners on add/send: optimistic UI with reconciliation on `CONFLICT`
+- [ ] Every error toast says what to do next ("Pesanan berubah, memuat ulang…", "Habis, pilih menu lain")
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-089: Order search
+**Description:** As a cashier or waiter, I want to find any order quickly so that I can reprint, pay or correct it.
+
+**Acceptance Criteria:**
+- [ ] `order.search(outletId, {query?, status?, tableId?, waiterId?, customerPhone?, from?, to?})` matches order no, bill no, table name, waiter and customer phone; defaults to the current business date; paginated
+- [ ] Search box on the desktop cashier screen and on mobile; tapping a result opens the order
+- [ ] Rules or query test for business-date filtering and matching by bill no
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-090: Park and recall takeaway orders
+**Description:** As a cashier, I want to park a takeaway order and recall it later with a queue number so that the queue keeps moving while a customer decides.
+
+**Acceptance Criteria:**
+- [ ] Takeaway orders get a queue number per business date (from the order number counter's type prefix, e.g. `T-012`) printed on the receipt and kitchen ticket
+- [ ] "Simpan" parks the open takeaway order and clears the screen; a "Pesanan tersimpan" list shows parked orders with queue number, age and total; tapping recalls it
+- [ ] Parked orders are ordinary open orders (no separate table); two devices recalling the same order resolve via `expectedVersion`
+- [ ] Self-pickup is served by the takeaway type; there is no separate pickup type
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### Phase 4 — Kitchen
+
+### US-036: Kitchen stations and routing
+**Description:** As a manager, I want stations (Bar, Hot Kitchen, Dessert) with a printer and/or KDS each so that tickets go where the food is made.
+
+**Acceptance Criteria:**
+- [ ] Table `kitchen_stations(id, outlet_id, name, mode print|kds|both, printer_id nullable, print_when_kds_offline bool, sort, active)`
+- [ ] Sending an order creates one `kitchen_tickets(id, order_id, station_id, course, status new|in_progress|done|recalled, created_at, bumped_at, bumped_by)` per station per send, with `kitchen_ticket_lines(ticket_id, line_id, qty, status)`
+- [ ] Lines with no station go to the setting `kitchen.default_station_id`
+- [ ] Typecheck/lint passes
+
+### US-037: Kitchen ticket printing (ESC/POS)
+**Description:** As a cook, I want a printed ticket per station with order number, table, time, items, modifiers, notes, seat and course.
+
+**Acceptance Criteria:**
+- [ ] Electron main owns a print queue: jobs persisted in `print_jobs(id, printer_id, kind, payload, status queued|printed|failed, attempts, last_error)`; retry with backoff; failed jobs shown in a desktop "Printer" panel with Reprint
+- [ ] Printers configured per outlet: name, connection `network` (LAN/Wi-Fi, host:port 9100), `usb`, `bluetooth` (paired Windows COM port) or `serial`, paper width 58/80 mm, code page; the same printer list serves receipt and kitchen roles; test print button per printer
+- [ ] Ticket layout from a rules function that renders a plain-text model (tested); options `kitchen.consolidate_identical_lines`, `kitchen.one_ticket_per_item`, `kitchen.use_kitchen_names`
+- [ ] VOID tickets print strike-through "(VOID)" lines on the affected station
+- [ ] Typecheck/lint passes
+
+### US-038: KDS web screen
+**Description:** As a cook, I want a tablet screen of live tickets that I can bump per item or per ticket, with timers.
+
+**Acceptance Criteria:**
+- [ ] Hub serves `/kds?station=<id>` as a web page (React) on the LAN; opens in any browser or in a WebView from the mobile app's "Dapur" entry; login by a kitchen user's PIN, permission `kitchen.view`
+- [ ] Live updates over WebSocket subscription; falls back to 3 s polling
+- [ ] Ticket card: order no, table/type, elapsed timer, course, lines with modifiers/notes/seat; colours turn at `kitchen.warn_seconds_1` and `kitchen.warn_seconds_2`; sound on new ticket and on void
+- [ ] Item tap toggles line done; ticket auto-completes when all lines done; "Bump" completes the ticket; "Recall" restores the last bumped ticket on this station within `kitchen.recall_window_minutes`
+- [ ] "All day" panel counts pending quantity per item across tickets
+- [ ] Voided lines shown struck through with "(VOID)" for 60 s
+- [ ] Station in mode `both` prints and displays; in `kds` mode with `print_when_kds_offline`, the hub prints a ticket when no KDS client for that station has been seen for 30 s
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-039: Ready and served states back to the floor
+**Description:** As a waiter, I want to know when a table's food is ready so that I can run it.
+
+**Acceptance Criteria:**
+- [ ] Bumping a ticket marks its order lines `ready`; the mobile table card and order screen show a "Siap" badge and count; waiter taps "Served" per line or per order to set `served`
+- [ ] Optional expo mode: setting `kitchen.expo_station_id`; when set, tickets become `ready` only after expo bumps
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### Phase 5 — Payments & cash
+
+### US-040: Tenders configuration
+**Description:** As an owner, I want to define the payment methods each outlet accepts (Tunai, EDC BCA, QRIS, GoPay, Transfer) so that the cashier picks from my list.
+
+**Acceptance Criteria:**
+- [ ] Table `tenders(id, outlet_id, name, kind cash|card|qris|ewallet|transfer|other, requires_reference bool, required_fields text[], opens_drawer bool, counts_in_drawer bool, active, sort)`; seeded per outlet with Tunai (cash) and QRIS
+- [ ] `required_fields` is a subset of `reference`, `approval_code`, `card_last4`, `card_type` (debit|credit), `acquirer` (e.g. BCA, Mandiri); an EDC tender seeds with approval code, last 4 and acquirer required
+- [ ] `kind=cash` is the only tender subject to cash rounding; `counts_in_drawer` decides inclusion in expected cash
+- [ ] No surcharge field on purpose (QRIS/card surcharging is prohibited)
+- [ ] Typecheck/lint passes
+
+### US-041: Take payment, split tender and cash rounding
+**Description:** As a cashier, I want to take one or more payments against an order, with change for cash and a reference number for non-cash, and have cash rounded per outlet policy.
+
+**Acceptance Criteria:**
+- [ ] Table `payments(id uuid client, order_id, tender_id, amount, tendered, change, reference, approval_code, card_last4, card_type, acquirer, status captured|voided, taken_by, shift_id, created_at, voided_at, void_reason, voided_by)`
+- [ ] `payment.take({id, orderId, tenderId, amount, tendered?, reference?, approvalCode?, cardLast4?, cardType?, acquirer?, expectedVersion})`: rejects amount > remaining due (`BAD_REQUEST`), requires an open shift when `shifts.required_to_sell`, requires every field in the tender's `required_fields` (`BAD_REQUEST` naming the missing field)
+- [ ] Rules function `cashRounding(due, step, mode)` with settings `rounding.cash_step` (0/50/100/500/1000, default 100) and `rounding.mode` (`nearest` default, `down` always rounds down, `up` always rounds up); applied only to the cash portion; tests for each mode
+- [ ] Every rounding is proven by an append-only row `cash_roundings(id uuid, order_id, payment_id, due_before int, due_after int, amount int, step, mode, created_by, created_at)` written in the same transaction as the cash payment; the order's rounding total equals the sum of its rows; a payment void writes a reversing row, never deletes
+- [ ] Rounding shows as its own line "Pembulatan" on the receipt and in reports, sourced from `cash_roundings`
+- [ ] Fast-cash buttons (exact, next 10k/20k/50k/100k) and a change display
+- [ ] When payments reach the total the order becomes `paid`, `closed_at` set, table freed, `bill_no` assigned (US-027); partial payments leave it open with "Sisa Rp X"
+- [ ] Repeating `payment.take` with the same id returns the stored payment (double tap safe); test
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-042: Bill, receipt and drawer
+**Description:** As a cashier, I want to print a pre-payment bill and a receipt, reprint either, and open the cash drawer.
+
+**Acceptance Criteria:**
+- [ ] Receipt renderer (rules function, tested) outputs: outlet name/address/phone, optional NPWP, bill no, order no, business date and time, cashier, table/pax or order type, lines with qty/price/modifiers, discounts, subtotal, service charge line, tax lines per type with rate, rounding line, total, each payment with tender name and reference, change, "Harga sudah termasuk pajak" or "Harga belum termasuk pajak dan biaya layanan" per settings, footer text, reprint marker "SALINAN" on reprints
+- [ ] Bill (tagihan) prints the same without payments and marks the table `billed`
+- [ ] Settings `receipt.auto_print_on_payment`, `receipt.copies`, `receipt.header`, `receipt.footer`, `receipt.show_tax_breakdown`, `receipt.paper_width`
+- [ ] Cash drawer kick sent through the receipt printer when the tender `opens_drawer`; "No sale" open guarded by `drawer.no_sale` and logged as a drawer entry
+- [ ] Reprint guarded by `payment.reprint` and logged
+- [ ] Typecheck/lint passes
+
+### US-043: Refund and payment void
+**Description:** As a manager, I want to void a payment taken by mistake before the shift closes, or refund a paid bill in full or in part, with reason and approval.
+
+**Acceptance Criteria:**
+- [ ] `payment.void({paymentId, reason})` allowed only while the payment's shift is open; sets `voided_at`, order returns to open with remaining due
+- [ ] `refund.create({id, orderId, lineIds?|amount, tenderId, reason, note})` inserts `refunds(id, order_id, payment_id nullable, amount, tender_id, reason, note, by, approved_by, created_at)`; never edits the original payment; order status stays `paid` with `refunded_total`
+- [ ] Permissions `payment.void`, `payment.refund`; override flow supported; both appear in the corrections report and reduce expected cash when the tender is cash
+- [ ] Refund receipt printed
+- [ ] Typecheck/lint passes
+
+### US-044: Reopen a paid order
+**Description:** As a manager, I want to reopen a paid bill to fix a mistake, with the original payments kept and audited.
+
+**Acceptance Criteria:**
+- [ ] `order.reopen({orderId, reason})` guarded by `order.reopen`; allowed only within `orders.reopen_window_hours` (setting, default 24) and while the business day is not closed
+- [ ] Reopened order status `open`, payments stay captured, adding lines increases due; removing sent lines requires void; closing again with due ≤ 0 marks paid, negative due requires a refund row
+- [ ] Audit row with before/after totals
+- [ ] Typecheck/lint passes
+
+### US-045: Shifts and drawer entries
+**Description:** As a cashier, I want to open a shift with a starting float, record pay-ins and pay-outs, and close with a counted amount.
+
+**Acceptance Criteria:**
+- [ ] Tables `shifts(id, outlet_id, device_id, opened_by, opened_at, opening_float, closed_by, closed_at, expected_cash, counted_cash, variance, notes, status open|closed)`, `drawer_entries(id, shift_id, kind pay_in|pay_out|no_sale, amount, reason, by, created_at)`
+- [ ] One open shift per device; `shifts.required_to_sell` blocks payments without one (`PRECONDITION_FAILED` "Buka shift dulu.")
+- [ ] Expected cash = float + cash payments − cash refunds − cash voids + pay-ins − pay-outs (rules function, tests)
+- [ ] Close: counted by denomination or total; `shift.close_blind` hides expected until after entry; variance stored; `shifts.block_close_with_open_orders` (setting) refuses close while orders opened in this shift are unpaid
+- [ ] A variance whose absolute value exceeds `shifts.variance_approval_threshold` (setting, default Rp 20.000) needs an approver with `shift.approve_variance` through the override flow (US-010); cashier and approver are both stored on the shift
+- [ ] X report: print or view a mid-shift report (same figures as the close report, marked "X — shift belum ditutup") at any time without closing, guarded by `shift.view_expected`
+- [ ] Shift report printed on close: sales by tender, discounts, voids, refunds, expected vs counted
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-046: Business day close and Z report
+**Description:** As a manager, I want to close the business day and get a Z report so that daily totals are frozen.
+
+**Acceptance Criteria:**
+- [ ] `day.close(outletId, businessDate)` requires all shifts closed and no open orders for that date; writes `day_closes(outlet_id, business_date, closed_by, closed_at, totals jsonb)`
+- [ ] Z report: gross sales, discounts, net, service charge, tax per type, rounding, total collected per tender, refunds, voids/comps counts and amounts, order count, pax, average per order, cash variance across shifts
+- [ ] Reports of a closed day are immutable; late payments after close go to the current business date and are flagged
+- [ ] Setting `business_day.auto_close_at` (time) optionally auto-closes if the conditions hold
+- [ ] Typecheck/lint passes
+
+### US-047: Desktop payment and cashier screens
+**Description:** As a cashier, I want the desktop to show open orders, tables, and a payment screen tuned for speed.
+
+**Acceptance Criteria:**
+- [ ] Left: open orders list / table map toggle; centre: order detail; right: actions (Bill, Bayar, Diskon, Void, Pindah, Split)
+- [ ] Quick-service mode: "Pesanan baru" opens a takeaway order with the menu grid, cart and Bayar on one screen, no table step; a cash sale of plain items is done in ≤ 3 taps after adding items
+- [ ] Payment dialog: tender buttons, numeric pad, fast-cash, fields from the tender's `required_fields`, running "Sisa", change; Enter confirms
+- [ ] Keyboard shortcuts for tender selection and confirm
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-091: Customer display
+**Description:** As a customer at the counter, I want a second screen facing me that shows my order and total so that I can check it before paying.
+
+**Acceptance Criteria:**
+- [ ] Desktop setting (device-level) enables a customer display window on a chosen monitor, full screen
+- [ ] Shows outlet name/logo, current order lines with qty and price, discounts, service charge, tax, rounding, total, and after payment the tendered amount and change; idle screen shows the outlet name
+- [ ] Updates within 1 s of any cart change; totals come from the same pricing function as the receipt
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### Phase 6 — Sync & devices
+
+### US-048: Device registration
+**Description:** As an owner, I want each desktop and tablet registered to an outlet so that the hub and the cloud know which devices may connect and sync.
+
+**Acceptance Criteria:**
+- [ ] Table `devices(id, outlet_id, kind desktop|mobile|kds, name, registered_by, registered_at, last_seen_at, revoked_at)`; mobiles and client desktops register with the hub; the hub desktop registers with the cloud by owner/manager login when the sync service is enabled and receives a device token (long-lived, revocable) used for sync
+- [ ] No licence, edition or outlet-count enforcement anywhere (honour system): no expiry, no grace period, no admin lock, no refused backoffice login
+- [ ] Revoking a device stops its token and forces re-registration
+- [ ] Typecheck/lint passes
+
+### US-049: Background sync service and push (outlet events to cloud)
+**Description:** As the hub, I push every transactional and master-data event to the cloud in order so that the cloud holds a complete copy of the outlet.
+
+**Acceptance Criteria:**
+- [ ] Sync runs in a background service on the hub PC, a separate process from the API and the Electron window; it can be enabled, disabled and restarted from the sync panel; when it is not running nothing syncs and selling is unaffected (Terminal edition)
+- [ ] On every start and on every offline → online transition the service pushes all pending local events first, and pulls (US-050) only after the push has caught up
+- [ ] `sync.push({deviceToken, events[] (≤500, ascending seq)})` on the cloud: inserts each event by id (duplicate ids are acknowledged, not re-applied), applies the payload to cloud tables in seq order inside one transaction per batch, records `received_at`, returns `ackSeq`
+- [ ] The service pushes every `sync.interval_seconds` (default 15) and immediately after payment or shift close; marks `synced_at` up to `ackSeq`
+- [ ] A rejected event (schema mismatch, unknown entity) is stored in `sync_rejections` on both sides with the error, skipped, and surfaced in the sync panel; it never blocks later events
+- [ ] Cloud never mutates transactional rows except through events; cloud-side reports read the applied tables
+- [ ] Tests: idempotent re-push, out-of-order batch refused, rejection isolation
+- [ ] Typecheck/lint passes
+
+### US-050: Sync pull (master data to outlet)
+**Description:** As the hub, I pull catalogue, settings, users and roles from the cloud so that edits made in the backoffice reach the outlet.
+
+**Acceptance Criteria:**
+- [ ] Cloud keeps `change_feed(seq, outlet_id nullable, entity_type, entity_id, op upsert|delete, payload, created_at)` written by every master-data mutation
+- [ ] `sync.pull({deviceToken, cursor})` returns changes for this outlet (company-wide + outlet-specific) after `cursor`, ≤1000 per call; hub applies them by id and advances the cursor atomically
+- [ ] Master-data classes: categories, items, variants, modifier groups/options, combos, outlet overrides, menu schedules, settings, users (including the argon2 hash, see Technical), roles, permissions, overrides, kitchen stations, tenders, floors/tables, discount/void reasons, promotions, customers
+- [ ] A record edited on both the desktop and the cloud since the last sync is resolved last-write-wins by `updated_at`; the losing version is written to `sync_conflicts(id, entity_type, entity_id, winner, loser jsonb, resolved_at)` and listed in the sync panel and the backoffice sync monitor (US-093); rules function with tests
+- [ ] Applying a change invalidates the settings cache and broadcasts `menu.changed` to LAN clients
+- [ ] Pull runs on start, every `sync.interval_seconds`, and on demand ("Sinkronkan sekarang")
+- [ ] Typecheck/lint passes
+
+### US-051: Sync status panel
+**Description:** As a cashier, I want to see whether the outlet is in sync so that I trust the numbers in the backoffice.
+
+**Acceptance Criteria:**
+- [ ] Top-bar indicator: green "Tersinkron", amber "N belum terkirim", red "Gagal: <reason>" with last success time
+- [ ] Top-bar shows grey "Sinkronisasi mati" when the sync service is not running
+- [ ] Sync panel: service status with start/stop, pending events count, last push/pull time and cursor, rejection list with payload preview and "Kirim ulang", conflict list (LWW losers), "Sinkronkan sekarang" button
+- [ ] Shift close prints the pending-events count on the shift report; device deregistration refused while pending > 0 (`PRECONDITION_FAILED` "Masih ada data belum terkirim.")
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-052: Master-data edits on the desktop are local-first
+**Description:** As an owner, I want the desktop's admin screens to save locally and work offline, and the sync service to carry my edits to the cloud, so that the outlet never depends on the internet.
+
+**Acceptance Criteria:**
+- [ ] The desktop renderer has one tRPC client, to the hub; admin and POS screens both write locally and show "Tersimpan" at once
+- [ ] Every master-data mutation on the hub writes an event (`master.upserted` / `master.deleted` with entity type, id, `updated_at`, payload) in the same transaction, pushed by the sync service like transactional events
+- [ ] The cloud applies desktop master-data events with the same LWW rule as pull (US-050), so both sides converge; the loser is kept in `sync_conflicts`
+- [ ] Owned only locally and never pulled over: item availability (US-018), table status, printer assignments, device settings
+- [ ] Test: desktop and cloud edit the same item price while offline; after push-then-pull both hold the later edit and one conflict row exists
+- [ ] Typecheck/lint passes
+
+### US-053: Bootstrap and restore
+**Description:** As an owner, I want a new or reinstalled desktop to load the outlet's data from the cloud so that a broken PC is not a lost outlet.
+
+**Acceptance Criteria:**
+- [ ] Enabling sync on a desktop that already has local data (Terminal → Cloud upgrade): registration binds the local company and outlet to the cloud, then the service pushes all local history and master data before its first pull, so nothing local is lost
+- [ ] Registration of an empty desktop downloads a snapshot (all master data + open transactional state: open orders, open shifts, today's tickets, reservations, availability) and sets the pull cursor
+- [ ] Restore mode additionally pulls closed transactional history for the last `sync.restore_days` (default 90) for local reports
+- [ ] Two hub desktops for one outlet are refused at registration ("Outlet sudah punya hub aktif, cabut dulu.") — one hub per outlet is a v1 ceiling; extra desktops join as hub clients (US-092)
+- [ ] Nightly local backup: `pg_dump` to the app data dir, keep 7, path shown in settings
+- [ ] Typecheck/lint passes
+
+### US-054: Mobile resilience on a flaky LAN
+**Description:** As a waiter, I want a brief Wi-Fi drop not to lose or duplicate my order.
+
+**Acceptance Criteria:**
+- [ ] Mobile keeps the last menu and floor in local storage and shows them read-only with a "Hub offline" banner when the hub is unreachable
+- [ ] Mutations carry client ids; the client retries with the same id and `expectedVersion` up to 3 times with backoff; a `CONFLICT` triggers refetch and shows the diff
+- [ ] An order screen left open during a drop resumes its cart; pending lines are held locally until "Kirim" succeeds and show a "Belum terkirim" chip
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-092: Second desktop as a hub client
+**Description:** As an outlet with two cashier counters, I want a second desktop that works against the main desktop's API so that both counters share one set of orders.
+
+**Acceptance Criteria:**
+- [ ] Desktop first-run offers "Desktop utama (hub)" or "Desktop kasir tambahan"; a client desktop finds the hub like mobile does (mDNS / QR / manual IP, US-003) and never starts its own API, database or sync service
+- [ ] The client desktop has the full cashier UI (orders, payments, shifts, reports for its outlet); its shift, drawer and printers are its own (device-level settings)
+- [ ] When the hub is unreachable the client shows the same "Hub offline" behaviour as mobile (US-054)
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### Phase 7 — Backoffice
+
+### US-055: Backoffice login and outlet switcher
+**Description:** As an owner or HQ staff, I want to log in to the backoffice and switch between my outlets.
+
+**Acceptance Criteria:**
+- [ ] Username/password login against the cloud; refresh token handling identical to desktop; no PIN
+- [ ] Outlet switcher in the header lists outlets the user belongs to (all for global roles); every page is scoped to the selected outlet or "Semua outlet" where supported
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-056: Outlet management
+**Description:** As an owner, I want to create outlets and set their identity, timezone and business-day cutoff.
+
+**Acceptance Criteria:**
+- [ ] List, create, edit, deactivate outlets; no outlet-count limit
+- [ ] Device list per outlet with last seen, revoke
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-057: Users, roles and overrides
+**Description:** As an owner, I want to add staff, assign a role per outlet, reset passwords and PINs, and grant or revoke single permissions.
+
+**Acceptance Criteria:**
+- [ ] Users list with search; create user (username unique company-wide, name, phone, initial password), deactivate; per-outlet membership and role
+- [ ] Role editor: duplicate a base role, tick permissions by group, rename; Owner locked
+- [ ] Per-user override editor showing effective permissions with the source (role / grant / revoke) of each
+- [ ] Reset password and clear PIN (user sets a new PIN on next mobile login)
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-058: Central menu management
+**Description:** As an owner, I want to manage the menu once and set per-outlet prices and availability.
+
+**Acceptance Criteria:**
+- [ ] Same capabilities as US-020 plus: outlet matrix view (item × outlet: price, enabled), bulk price update by category or percentage, image upload to cloud storage, CSV import/export of items
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-059: Outlet settings UI
+**Description:** As an owner, I want one settings page per outlet covering every key in Appendix A.
+
+**Acceptance Criteria:**
+- [ ] Grouped form generated from the settings schema (labels, help text, validation) so that a new key needs no UI change
+- [ ] Tax & service charge group shows a live example receipt calculation for a sample bill using US-025
+- [ ] "Copy settings from outlet…" action
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-060: Kitchen stations, tenders and reasons UI
+**Description:** As a manager, I want to configure stations, tenders, discount and void reasons per outlet.
+
+**Acceptance Criteria:**
+- [ ] CRUD screens for kitchen stations (mode, fallback), tenders (kind, reference required, drawer), discount reasons, void reasons; sort by drag
+- [ ] Printer devices themselves are configured on the desktop (local hardware); station → printer mapping is local too
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-061: Transaction export for regional tax reporting
+**Description:** As an owner in Jakarta, I want a per-transaction export so that the Bapenda agent (E-TRAPT) or my accountant gets every bill.
+
+**Acceptance Criteria:**
+- [ ] Export CSV per outlet and date range: bill no, order no, business date, calendar date/time, order type, subtotal, discount, service charge, tax per type, rounding, total, tender(s), reference, cashier, status (paid/refunded/void)
+- [ ] Available on the desktop (local data) and the backoffice (cloud data); both produce identical rows for a synced range (test with a fixture)
+- [ ] Read-only SQL view `v_tax_transactions` on both databases with the same columns for agent integration
+- [ ] Permission `report.export`
+- [ ] Typecheck/lint passes
+
+### US-062: Cross-outlet dashboard
+**Description:** As an owner, I want today's numbers across outlets on one screen.
+
+**Acceptance Criteria:**
+- [ ] Cards per outlet: sales today, orders, average bill, open orders, sync lag (minutes since last push), last shift status
+- [ ] Date picker and comparison to the same weekday last week
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-093: Backoffice sync monitor
+**Description:** As an owner or admin, I want to see each outlet's sync health and conflicts so that I catch problems before the numbers are wrong.
+
+**Acceptance Criteria:**
+- [ ] Per outlet: hub device, sync service last seen, last successful push and pull, pending count reported by the hub, rejected events, clock skew flag (`received_at − created_at` > 5 min)
+- [ ] Conflict list from `sync_conflicts` (entity, both versions, winner, time) with "Tandai selesai"; resolving never rewrites the winner, it only records `resolved_at`
+- [ ] Permission `sync.manage`
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### Phase 8 — Reservations & waitlist
+
+### US-063: Reservations
+**Description:** As a host, I want to record a reservation with name, phone, party size, time and table so that the table is held.
+
+**Acceptance Criteria:**
+- [ ] Table `reservations(id, outlet_id, customer_name, phone, pax, starts_at, duration_minutes, table_ids[], status booked|seated|no_show|cancelled|closed, notes, source phone|walk_in|whatsapp, created_by, created_at, updated_at, seated_order_id, cancel_reason)`
+- [ ] Overlap check per table: a booking overlapping another booking on the same table returns `CONFLICT` "Meja sudah dipesan jam itu." (rules function, tests, honours `reservations.turn_minutes` default duration and `reservations.hold_before_minutes`)
+- [ ] Table shows `reserved` from `starts_at − hold_before_minutes` until seated or `starts_at + no_show_after_minutes`
+- [ ] Reservations are owned by the hub: written from the desktop and mobile only, with client ids and last-write-wins by `updated_at` between devices (the loser is logged in `sync_conflicts`); the cloud receives a read-only copy and the backoffice cannot create or edit them
+- [ ] Typecheck/lint passes
+
+### US-064: Seat, no-show, cancel
+**Description:** As a host, I want to seat a reservation into an order, mark a no-show, or cancel with a reason.
+
+**Acceptance Criteria:**
+- [ ] "Seat" opens (or creates) the dine-in order on the reserved tables with pax and customer name, sets `seated`
+- [ ] No-show and cancel require a reason; a `closed` status is set when the seated order is paid
+- [ ] Seating a table that has an open order asks to merge into it or pick another table
+- [ ] Permission `reservation.manage`
+- [ ] Typecheck/lint passes
+
+### US-065: Reservation screens
+**Description:** As a host on mobile or desktop, I want today's reservations as a timeline and a list with quick actions.
+
+**Acceptance Criteria:**
+- [ ] Day view grouped by hour with status colours; create/edit sheet; search by name/phone; upcoming badge on the table map
+- [ ] "Kirim WhatsApp" opens `wa.me/<phone>?text=<template>` with the booking details (setting `reservations.whatsapp_template`)
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-066: Walk-in waitlist
+**Description:** As a host, I want a queue of waiting walk-ins with a quoted wait so that I can seat them in order.
+
+**Acceptance Criteria:**
+- [ ] Table `waitlist(id, outlet_id, name, phone, pax, quoted_minutes, status waiting|notified|seated|left, created_at, seated_at)`; queue number per business date
+- [ ] Actions: notify (wa.me link), seat (same as US-064), left; average actual wait shown for the last 10 seated
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-094: Reservation deposits
+**Description:** As a host, I want to take a deposit (uang muka) when booking so that large parties commit, and have it count toward the bill.
+
+**Acceptance Criteria:**
+- [ ] A deposit is a payment row (client id, any tender, `required_fields` apply) with `reservation_id` and no order yet, taken in an open shift and counted in that shift's expected cash when cash
+- [ ] Seating the reservation (US-064) attaches its deposits to the order; they reduce the remaining due and print as "Uang muka" on the bill and receipt
+- [ ] No-show or cancel: the deposit is either forfeited (reason, permission `reservation.manage`, reported as other income) or refunded through a refund row (US-043); never deleted
+- [ ] Deposit shown on the reservation card and in the payments report
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### Phase 9 — Reports
+
+Every report runs on the desktop against local data (its own outlet) and in the backoffice against cloud data (any outlet or all). Both use the same query module and a shared fixture test proving identical output for the same rows. All reports filter by business date range and show the calendar month for tax. Backoffice reports carry a freshness stamp per outlet ("Data s/d 14:32") from the last applied push, and list outlets that still have pending data.
+
+### US-067: Sales summary
+**Description:** As an owner, I want a sales summary by day and order type so that I know how the outlet performed.
+
+**Acceptance Criteria:**
+- [ ] Gross, discounts, net, service charge, tax per type, rounding, total, refunds, order count, pax, average bill, by day; by order type; export CSV
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-068: Item and category sales
+**Description:** As an owner, I want sales per item and category so that I know what sells.
+
+**Acceptance Criteria:**
+- [ ] Quantity and net sales per item/variant/modifier and per category; comps shown separately; sort and search; export CSV
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-069: Payments and cash
+**Description:** As a manager, I want collected amounts per tender and cash variance per shift so that I can reconcile the drawer.
+
+**Acceptance Criteria:**
+- [ ] Collected per tender, refunds per tender, cash variance per shift, pay-in/out list, no-sale count
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-070: Tax report
+**Description:** As an owner, I want a monthly tax report so that I can file the PBJT return.
+
+**Acceptance Criteria:**
+- [ ] Per calendar month and per business date: taxable base per tax type, service charge base, tax amount, exempt sales; matches the sum of bills in US-061 for the same range (test)
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-071: Corrections report
+**Description:** As an owner, I want every correction listed with actor and approver so that I can spot abuse.
+
+**Acceptance Criteria:**
+- [ ] Every void, comp, discount, price override, refund, payment void, reopen, cancelled order: time, order, amount, reason, actor, approver; filters by kind and user
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-072: Hourly, staff and table reports
+**Description:** As a manager, I want hourly, staff and table reports so that I can plan staffing and seating.
+
+**Acceptance Criteria:**
+- [ ] Sales and orders per hour of the business day; per waiter (orders opened) and per cashier (payments taken); table turnover and average duration per table
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-073: Shift and day reports reprint
+**Description:** As a manager, I want to view and reprint past shift and Z reports.
+
+**Acceptance Criteria:**
+- [ ] Past shift and Z reports viewable and reprintable from both apps; optional daily email of the Z report from the cloud (`reports.daily_email_to`)
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### Phase 10 — Inventory
+
+Stock is a per-outlet ledger. Every movement is an append-only `stock_ledger` row with a client id, written by the hub (sales depletion, waste, local adjustments, receiving on site) or the cloud (purchase orders, transfers, backoffice adjustments). Both sides sync their rows to each other; on-hand = sum of the ledger, so there are no conflicts.
+
+### US-074: Ingredients and units
+**Description:** As an owner, I want ingredients with units and costs so that recipes can be costed.
+
+**Acceptance Criteria:**
+- [ ] Tables `ingredients(id, company_id, name, base_unit, purchase_unit, conversion_factor, cost_per_base_unit, par_level, active)`, `stock_on_hand` materialised per outlet
+- [ ] Unit conversion rules function with tests (e.g. 1 karton = 24 botol = 24 × 330 ml)
+- [ ] Typecheck/lint passes
+
+### US-075: Recipes
+**Description:** As an owner, I want recipes per item, variant and modifier so that sales deplete stock.
+
+**Acceptance Criteria:**
+- [ ] `recipes(target_type item|variant|modifier_option, target_id, ingredient_id, qty_base_unit)`; an item may also be a finished good tracked directly (`items.track_stock`)
+- [ ] Recipe cost roll-up shown in the item editor
+- [ ] Typecheck/lint passes
+
+### US-076: Stock ledger and auto depletion
+**Description:** As a developer, I need an append-only stock ledger that sales deplete automatically.
+
+**Acceptance Criteria:**
+- [ ] `stock_ledger(id uuid, outlet_id, ingredient_id, qty_delta, kind sale|void_return|waste|adjustment|receive|transfer_in|transfer_out|count, ref_type, ref_id, reason, by, created_at)`
+- [ ] Sending lines depletes per recipe; voiding an unmade line returns stock, comps do not; combos deplete components
+- [ ] Negative stock allowed but flagged (setting `inventory.allow_negative`)
+- [ ] Tests: depletion math, void return
+- [ ] Typecheck/lint passes
+
+### US-077: Adjustments and waste
+**Description:** As a manager, I want to record waste and manual adjustments with reasons.
+
+**Acceptance Criteria:**
+- [ ] Desktop and backoffice screens to record waste (reason list `inventory.waste_reasons`, optional photo note) and manual adjustments; permission `inventory.adjust`
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-078: Stock opname (count)
+**Description:** As a manager, I want to count stock and post the variance.
+
+**Acceptance Criteria:**
+- [ ] `stock_counts(id, outlet_id, status draft|posted, started_by, posted_by, posted_at)` with lines (expected, counted, variance); posting writes ledger rows of kind `count`; partial counts by category allowed
+- [ ] Variance report per count
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-079: Suppliers, purchase orders, receiving
+**Description:** As an owner, I want suppliers and purchase orders with receiving so that stock and cost stay current.
+
+**Acceptance Criteria:**
+- [ ] `suppliers`, `purchase_orders(status draft|sent|partial|received|cancelled)`, `purchase_order_lines(qty ordered, qty received, unit cost)`; receiving on the desktop or backoffice writes `receive` ledger rows and updates cost (moving average)
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-080: Transfers between outlets
+**Description:** As an owner, I want to move stock between outlets and see what is in transit.
+
+**Acceptance Criteria:**
+- [ ] `stock_transfers(from_outlet, to_outlet, status draft|sent|received)`; sending writes `transfer_out` rows at the source, receiving writes `transfer_in` at the destination; in-transit quantity visible
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-081: Low-stock alerts, COGS and variance
+**Description:** As an owner, I want low-stock alerts and COGS/variance reports.
+
+**Acceptance Criteria:**
+- [ ] Ingredients under par listed on the desktop home and backoffice dashboard; optional daily email
+- [ ] COGS per item and gross margin report from recipe cost at sale time; theoretical vs actual usage between two counts
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### Phase 11 — Promotions & customers
+
+### US-082: Automatic promotion rules
+**Description:** As an owner, I want automatic promotions by item, category, quantity, time and order type.
+
+**Acceptance Criteria:**
+- [ ] `promotions(id, name, outlet_ids[], kind item_percent|item_amount|bill_percent|bill_amount|buy_x_get_y, targets, min_qty, min_subtotal, days, start_time, end_time, valid_from, valid_to, order_types, stackable, priority, active)`
+- [ ] Rules function `applyPromotions(order, promotions, now)` produces discount rows tagged with the promotion id, deterministic order by priority, non-stackable stops; tests
+- [ ] Applied automatically on every order recompute; shown as named discount lines on the receipt
+- [ ] Typecheck/lint passes
+
+### US-083: Price lists (happy hour, order type)
+**Description:** As an owner, I want time- and channel-based price lists such as happy hour.
+
+**Acceptance Criteria:**
+- [ ] `price_lists(id, outlet_id, name, order_types, days, start_time, end_time, priority)`, `price_list_items(price_list_id, item_id, variant_id, price)`; the active price list overrides the outlet price at add-line time and is snapshotted
+- [ ] Typecheck/lint passes
+
+### US-084: Vouchers
+**Description:** As an owner, I want voucher codes tied to promotions with usage limits.
+
+**Acceptance Criteria:**
+- [ ] `vouchers(code unique, promotion_id, max_uses, uses, valid_to, per_customer_limit)`; redeem at payment; redemption recorded and synced; offline redemption allowed with a soft limit, reconciled on sync (over-redemption reported, not blocked)
+- [ ] Verify in browser using dev-browser skill
+- [ ] Typecheck/lint passes
+
+### US-085: Customers with consent
+**Description:** As an owner, I want customer records with explicit consent and deletion support so that I comply with UU PDP.
+
+**Acceptance Criteria:**
+- [ ] `customers(id, company_id, name, phone unique, email, birthday, consent_marketing bool, consent_at, notes, deleted_at)`; creation requires explicit consent tick with the privacy notice text from `customers.privacy_notice`
+- [ ] "Hapus data pelanggan" anonymises the row (name/phone/email replaced) within the app and logs the request; order history keeps the anonymised id
+- [ ] "Ekspor data pelanggan" produces a file of everything stored about one customer (profile, consent, orders, loyalty ledger) for a data-subject request, guarded by `customer.manage` and logged
+- [ ] Phone numbers print masked on receipts and kitchen tickets (`0812-xxxx-3456`)
+- [ ] Retention setting `customers.retention_months` with a scheduled anonymisation job in the cloud
+- [ ] Typecheck/lint passes
+
+### US-086: Attach customer to order
+**Description:** As a cashier or waiter, I want to attach a customer to an order.
+
+**Acceptance Criteria:**
+- [ ] Search by phone/name on desktop and mobile; new customer in two fields; customer name on kitchen ticket and receipt
+- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [ ] Typecheck/lint passes
+
+### US-087: Loyalty points
+**Description:** As an owner, I want loyalty points earned and redeemed at checkout.
+
+**Acceptance Criteria:**
+- [ ] Settings `loyalty.enabled`, `loyalty.earn_per_rupiah`, `loyalty.redeem_value_per_point`, `loyalty.min_redeem_points`; `loyalty_ledger(id, customer_id, order_id, points_delta, kind earn|redeem|adjust|expire, created_at)` append-only, synced
+- [ ] Earn on paid orders (net after discount); redeem as a payment-like discount row at checkout; balance = ledger sum; offline redeem allowed against the last synced balance
+- [ ] Typecheck/lint passes
+
+## 6. Functional requirements
+
+Platform
+- FR-1: One API codebase runs in `cloud` or `local` mode; the mode decides which routers are mounted (US-001).
+- FR-2: The desktop app must start and serve orders with no network interface connected.
+- FR-3: Mobile devices connect only to the outlet hub over LAN; they never call the cloud.
+- FR-4: Every outlet-level rule listed in Appendix A is stored as data, validated by a schema, editable at runtime, versioned and audited.
+- FR-5: Money is stored and computed as integer rupiah; floats are forbidden in schema and in the pricing code.
+- FR-6: All transactional entities use client-generated UUIDs; repeating any transactional mutation with the same id is a no-op returning the first result.
+- FR-7: Every order mutation carries `expectedVersion`; a mismatch returns `CONFLICT` and the client refetches.
+
+Auth and access
+- FR-8: Password login issues a 15-minute JWT and a rotating refresh token; the refresh token is stored hashed.
+- FR-9: Mobile profiles are created only after a password login; later switches use a 6-digit PIN; parked profiles cannot refresh without the PIN.
+- FR-10: `UNAUTHORIZED` ends the client session; `FORBIDDEN` never does; a wrong PIN is `UNAUTHORIZED` with `reason: 'INVALID_PIN'` and is the one 401 clients ignore.
+- FR-11: Permissions are checked by name; effective permissions = role grants + user grants − user revokes; overrides can be global or per outlet.
+- FR-12: Any refused overridable action can be completed by an approver's PIN entered on the same screen; actor and approver are both recorded.
+- FR-13: The Owner role is global, uneditable and not assignable per outlet.
+
+Menu
+- FR-14: Items have a tax type (`pbjt`, `ppn`, `none`) and a service-charge flag; variants, modifier groups with min/max/required, and combos are supported.
+- FR-15: Price and enabled state can be overridden per outlet; availability (sold out, countdown) is owned by the hub and works offline.
+- FR-16: Sending a sold-out or off-schedule item is refused with `PRECONDITION_FAILED` and the menu refreshes.
+
+Orders
+- FR-17: Order lines snapshot name, variant, modifiers, unit price, tax type and rate, service-charge flag and station at add time.
+- FR-18: The pricing pipeline is line → line discount → bill discount (proportional) → subtotal → service charge → tax per type → cash rounding → total, rounding half-up to the rupiah at each step, in one tested pure function shared by server and clients.
+- FR-19: Inclusive and exclusive modes for tax and service charge are independent settings; tax base after or before discount is a setting; service charge inclusion in the tax base is a setting.
+- FR-20: Order numbers are gapless per outlet per business date; bill numbers are gapless per outlet and never reset.
+- FR-21: Business date = timestamp shifted by the outlet cutoff in the outlet timezone; all reports, shifts and numbering use it; tax reports also group by calendar month.
+- FR-22: Sent lines are never edited or deleted; corrections are void or comp rows with reason, actor and approver.
+- FR-23: Orders can be transferred, merged and split (items, seats, equal, amount) with totals that reconcile to the rupiah.
+- FR-24: Courses can be held and fired; a sent line's course is fixed.
+
+Kitchen
+- FR-25: Each station is `print`, `kds` or `both`; a `kds` station may fall back to printing when no KDS client has been seen for 30 s.
+- FR-26: KDS supports item bump, ticket bump, recall, two-threshold timers, all-day counts and void marking, over WebSocket with polling fallback.
+- FR-27: Print jobs are persisted, retried and reprintable.
+
+Payments and cash
+- FR-28: Tenders are configured per outlet with their required fields; only cash is rounded (nearest/down/up, default nearest Rp 100); every rounding is an append-only `cash_roundings` row and a visible receipt line; no surcharges.
+- FR-29: Split tender is supported; a payment cannot exceed the remaining due; duplicate payment ids are ignored.
+- FR-30: Payment void is allowed only in the open shift; refunds are separate rows; reopening a paid order is gated, time-limited and audited.
+- FR-31: Shifts have a float, pay-in/out entries, expected vs counted cash, optional blind count; the business day can be closed only with all shifts closed and no open orders, producing an immutable Z report.
+- FR-32: Receipts show every line of the pricing pipeline, each payment, the tax-inclusive/exclusive note, and are marked on reprint.
+
+Sync
+- FR-33: Transactional data flows outlet → cloud as ordered, idempotent events; the cloud never edits it.
+- FR-34: Sync is done by a background service on the hub PC; without it nothing syncs and the outlet works fully. On start and on reconnect it pushes pending local events first, then pulls.
+- FR-35: Master data is edited on both the desktop (locally, offline) and the backoffice; the same record edited on both sides resolves last-write-wins by `updated_at` with the loser kept in `sync_conflicts`. Owned only locally: availability, table status, printer mapping, device settings.
+- FR-36: Reservations are written only on the desktop and mobile (last-write-wins between devices); the cloud holds a read-only copy. Stock ledger, loyalty ledger and voucher redemptions are append-only and may be written on both sides.
+- FR-37: A rejected event never blocks later events and is visible in the sync panel; pending event count is visible at all times; device deregistration is refused with pending events.
+- FR-38: No licence enforcement (honour system): nothing expires, locks or counts outlets.
+
+Backoffice
+- FR-39: The backoffice manages outlets, devices, users, roles, overrides, menu, settings, stations, tenders, reasons, promotions, inventory, customers and reports; it never takes orders or payments.
+- FR-40: A per-transaction export and a read-only SQL view exist on both databases with identical columns.
+
+Reservations, reports, inventory, promotions
+- FR-41: Reservations detect table overlap, hold tables before the start, and seat into an order.
+- FR-42: Every report runs identically on local and cloud data from a shared query module.
+- FR-43: Stock is an append-only per-outlet ledger; sending lines depletes by recipe; counts, waste, receiving and transfers are ledger rows.
+- FR-44: Promotions apply automatically by priority; price lists override prices by time and order type; vouchers redeem offline with reconciliation.
+- FR-45: Customer records require consent, support anonymisation on request and a retention job.
+
+## 7. Non-goals (out of scope for this PRD)
+
+- QR self-order and digital menu for guests (staff-operated only for now; the menu API and order model must not block it: order `source` column reserved).
+- Delivery aggregator integrations (GoFood, GrabFood, ShopeeFood).
+- Payment gateway integration (dynamic QRIS, card, e-wallet APIs, online refunds). Non-cash tenders are recorded manually with a reference number.
+- Tips (none, neither separate nor inside service charge); house accounts / corporate credit.
+- Regional tapping-box adapters beyond the CSV export and SQL view.
+- Accounting, payroll, attendance beyond login records.
+- Barcode scanner, weighing scale.
+- Two hubs in one outlet, or a mobile device acting as hub (a second desktop joins as a hub client, US-092).
+- Hotel restaurants: the Permenaker 7/2016 service-charge distribution report and any PMS integration.
+- macOS desktop builds (Windows only for now).
+- Licence enforcement of any kind.
+- Deferred for later: PKP mode (NPWP serial receipts, PPN lump-sum export), WhatsApp/hosted/email e-receipts, per-cashier shift mode, MDR and settlement reconciliation, draft/publish menu, menu quick-note chips, loyalty tiers and per-purpose consent, regulatory appendix and glossary.
+- Multi-currency, multi-language beyond Indonesian UI copy with English code.
+- Marketplace of third-party integrations / public API.
+
+## 8. Design considerations
+
+- UI copy Indonesian; code, identifiers and commit messages English.
+- Touch-first on desktop and mobile: 48 dp minimum targets, one-tap add for plain items, no blocking spinners on the order path, optimistic updates reconciled on `CONFLICT`.
+- Every error message states the next action.
+- Status colours consistent across apps: free grey, seated green, warn-1 amber, warn-2 red, billed blue, reserved purple.
+- KDS is high contrast, readable at 2 m, no hover-only affordances.
+- Settings forms are generated from the schema so that adding a key does not need a UI change.
+- Shared UI packages: web components for desktop and backoffice; RN mirrors for mobile.
+
+## 9. Technical considerations
+
+Stack (current monorepo, plus the pieces still missing)
+- Monorepo: Turborepo + pnpm. API: NestJS 11 + `nestjs-trpc` + Drizzle on node-postgres + Passport JWT + argon2 (all Zod in decorators inline). Mobile: Expo + expo-router + NativeWind. Desktop: electron-vite + React. Backoffice: Vite + React. Contract: generated `AppRouter` in `packages/api-contract` with shared runtime (token provider, refresh link, rules).
+- **Missing, to add:** Postgres on the outlet PC via Docker (shipped `docker compose` file) or a manual Windows install, never bundled; API packaged as a child process of Electron main; the background sync service as a separate process (Windows first; macOS is not a target for now); mDNS advertise (`bonjour-service`) on desktop and `react-native-zeroconf` on mobile via an Expo config plugin (dev build); tRPC WebSocket subscriptions for LAN realtime (`ws` adapter) with polling fallback; ESC/POS printing (`node-thermal-printer` or `escpos` over TCP 9100 and USB) in Electron main; a `packages/pos-rules` package holding pricing, rounding, business-date, split, recipe and promotion rules shared by API and all clients; the KDS page served by the hub from the desktop renderer build; `pg_dump` bundled for backups; cloud object storage for item images; e-mail sender for daily reports.
+- Two Postgres clusters in dev (`cloud` on 5432, `local` on 5434) already exist; run the API twice to exercise sync over real HTTP.
+
+Architecture
+- Desktop = hub: local Postgres (Docker or manual) → Electron main starts API (`local`) on `0.0.0.0:3333` → renderer and LAN clients. The renderer talks only to the hub. A separate background sync service talks to the cloud.
+- Second desktop = hub client, same as mobile: no API, database or sync service of its own.
+- Cloud = API (`cloud`) + managed Postgres + backoffice static site. Sync receiver and change feed live here.
+- Mobile = thin client of the hub; local storage only for profiles/PINs, cached menu/floor, and unsent carts.
+- Data ownership (see FR-33 to FR-36): transactional → hub-owned, cloud copy; master → edited on both sides, LWW with loser logged; ledgers → append both sides; reservations → hub-owned, cloud read-only.
+- Users on the hub: created locally or pulled from the cloud including the argon2 password hash so that password login works offline. Hash sync is acceptable because the hub already holds all outlet data; hub disk should be encrypted (deployment note).
+- LAN transport is plain HTTP in v1 (see Open Questions); JWTs are short-lived; hub port must not be exposed beyond the outlet LAN.
+- Realtime: hub broadcasts `order.changed`, `table.changed`, `ticket.changed`, `menu.changed`, `availability.changed` over WebSocket; every client also refetches on reconnect.
+- Business date computed on the hub; cloud stores both `created_at` and `business_date` from the event and never recomputes it.
+- Testing: rules packages unit-tested without DB; DB tests on the `_test` database with truncation between cases; a sync integration test runs two API processes against two databases.
+
+Sync protocol (summary; details in Appendix C)
+- Push first: on start and on reconnect the sync service drains pending events before pulling.
+- Push: hub sends events in `seq` order, batches ≤500, cloud acks the highest applied `seq`; duplicates acknowledged; rejections isolated.
+- Pull: cloud change feed with a per-device cursor; applied by id with LWW on `updated_at`; deletes carried as tombstones.
+- Ordering guarantees: within an outlet, events are applied in hub `seq` order, so parent rows always precede children.
+- Clock: hub time is authoritative for business dates; cloud records skew when `received_at − created_at` exceeds 5 minutes and shows it in the device list.
+
+Performance
+- Menu of 1,000 items with 200 modifiers loads on mobile in < 1 s from the hub on Wi-Fi.
+- Order mutations round-trip on LAN in < 150 ms p95; KDS receives a new ticket within 1 s.
+- Hub handles 10 mobile clients + 3 KDS screens on a mid-range PC.
+
+## 10. Success metrics
+
+- 0 duplicate payments or orders in a retry/double-tap test suite and in production audit logs.
+- Sales continue with the WAN unplugged for a full business day in an end-to-end test; 100% of events reach the cloud after reconnect with counts matching.
+- Backoffice Z-report total equals the desktop Z-report total for every closed business day (automated reconciliation check).
+- Pricing engine fixtures match hand-computed receipts including Jakarta's after-discount, service-charge-in-base rule.
+- Median time to add an item to an order on mobile < 2 taps; payment for a cash sale < 3 taps.
+- Tax report for a month matches the per-transaction export sum to the rupiah.
+- Manager override recorded with approver on 100% of overridden actions.
+
+## 11. Open questions
+
+1. LAN transport security: plain HTTP on a dedicated outlet SSID for v1 (current decision), or self-signed TLS pinned via the pairing QR before the first pilot?
+2. Should service charge be excluded from the tax base by default outside Jakarta, or default to included everywhere with a per-outlet switch (current proposal: included, switchable)?
+3. Should comped lines deplete inventory (proposal: yes) and count in item sales (proposal: yes, flagged)?
+4. Backoffice users editing the menu while an outlet is offline: accept that the outlet sees the change only on reconnect (proposal: yes, with "last pulled" shown in the backoffice item matrix)?
+5. Daily Z report e-mail from the cloud only, or also WhatsApp via a third-party gateway later?
+
+## 12. Decisions (2026-09-30)
+
+Settled by the owner when the earlier spec was merged into this PRD. Do not reopen without the owner.
+
+- **Licensing:** none. Honour system; no expiry, grace period, admin lock or outlet limit.
+- **Topology:** mobile always connects to the desktop over the LAN. The desktop is local-first for everything, admin included. A background sync service syncs with the cloud; without it there is no cloud sync. On reconnect the service pushes local changes first, then pulls; master data edited on both sides resolves last-write-wins with the loser logged.
+- **Database on the desktop:** Postgres via Docker or manual install; not embedded.
+- **Reservations:** written on the desktop and mobile only, last-write-wins; backoffice read-only.
+- **Pricing defaults:** exclusive prices; cash rounding nearest Rp 100 (modes nearest, always down, always up), every rounding stored as proof in `cash_roundings`.
+- **Roles:** base roles include Supervisor and Accountant.
+- **Desktop login:** username and password only, never a PIN.
+- **Stock:** deducted at send only.
+- **In scope:** reservation deposits, customer display, second desktop as a hub client, order search, park/recall takeaway, card fields on tenders, variance approval, X report, backoffice sync monitor, report freshness stamp, customer data export and phone masking, LAN/USB/Bluetooth/serial printers.
+- **Out of scope:** tips, self-pickup as its own type (takeaway covers it), hotel-restaurant rules, macOS.
+- **Kept from this PRD as written:** LAN plain HTTP for v1, QR/mDNS pairing, cloud snapshot restore, outlet-only settings without effective dates, `tax_type` model, permission names, phase order, default timers and retention.
+
+## Appendix A — Outlet settings catalogue (all runtime-editable)
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `identity.receipt_name` | string | outlet name | printed header |
+| `identity.address`, `identity.phone`, `identity.npwp` | string | "" | |
+| `locale.timezone` | IANA tz | Asia/Jakarta | business date |
+| `business_day.cutoff_time` | HH:mm | 04:00 | service after midnight belongs to previous date |
+| `business_day.auto_close_at` | HH:mm or null | null | |
+| `tax.rates` | map type→percent | `{pbjt: 10, ppn: 11}` | per item `tax_type` |
+| `tax.inclusive` | bool | false | prices exclude tax (exclusive by default) |
+| `tax.base_after_discount` | bool | true | Jakarta rule |
+| `tax.base_includes_service_charge` | bool | true | |
+| `tax.exempt` | bool | false | outlet under regional threshold; tax lines omitted |
+| `service_charge.rate` | percent | 0 | |
+| `service_charge.order_types` | list | `[dine_in]` | |
+| `service_charge.inclusive` | bool | false | |
+| `service_charge.taxable` | bool | true | |
+| `rounding.cash_step` | 0/50/100/500/1000 | 100 | cash only |
+| `rounding.mode` | nearest/down/up | nearest | down = always round down, up = always round up; each rounding stored in `cash_roundings` |
+| `orders.types_enabled` | list | all three | |
+| `orders.default_type` | enum | dine_in | |
+| `orders.require_table_for_dine_in` | bool | true | |
+| `orders.require_pax` | bool | false | |
+| `orders.number_format` | string | `{type_prefix}{seq:03}` | |
+| `orders.type_prefixes` | map | `{dine_in: "", takeaway: "T", delivery: "D"}` | |
+| `orders.reopen_window_hours` | int | 24 | |
+| `orders.max_line_amount` | int | 10.000.000 | open price cap |
+| `discounts.reasons` | list | Promo, Komplain, Karyawan, Lainnya | |
+| `discounts.max_percent_by_role` | map role→percent | Cashier 10, Manager 100 | above → approval |
+| `voids.reasons` | list | Salah input, Tamu batal, Dapur habis, Lainnya | |
+| `shifts.required_to_sell` | bool | true | |
+| `shifts.default_float` | int | 0 | |
+| `shifts.blind_count` | bool | false | |
+| `shifts.block_close_with_open_orders` | bool | true | |
+| `shifts.variance_approval_threshold` | int | 20.000 | abs variance above → approver |
+| `receipt.paper_width` | 58/80 | 80 | |
+| `receipt.auto_print_on_payment` | bool | true | |
+| `receipt.copies` | int | 1 | |
+| `receipt.header`, `receipt.footer` | text | "" | |
+| `receipt.show_tax_breakdown` | bool | true | |
+| `receipt.inclusive_note` | string | "Harga sudah termasuk pajak" | printed when `tax.inclusive`; otherwise "Harga belum termasuk pajak dan biaya layanan" |
+| `kitchen.default_station_id` | id | first station | |
+| `kitchen.consolidate_identical_lines` | bool | true | |
+| `kitchen.one_ticket_per_item` | bool | false | |
+| `kitchen.use_kitchen_names` | bool | true | |
+| `kitchen.warn_seconds_1`, `kitchen.warn_seconds_2` | int | 300, 600 | |
+| `kitchen.recall_window_minutes` | int | 10 | |
+| `kitchen.expo_station_id` | id or null | null | |
+| `tables.warn_minutes_1`, `tables.warn_minutes_2` | int | 60, 90 | |
+| `reservations.turn_minutes` | int | 90 | |
+| `reservations.hold_before_minutes` | int | 15 | |
+| `reservations.no_show_after_minutes` | int | 20 | |
+| `reservations.whatsapp_template` | text | template | |
+| `security.pin_length` | int | 6 | |
+| `security.pin_idle_lock_seconds` | int | 120 | mobile |
+| `security.desktop_lock_seconds` | int | 0 | |
+| `sync.interval_seconds` | int | 15 | |
+| `sync.restore_days` | int | 90 | |
+| `inventory.allow_negative` | bool | true | |
+| `inventory.waste_reasons` | list | Basi, Jatuh, Salah masak, Lainnya | |
+| `loyalty.enabled`, `loyalty.earn_per_rupiah`, `loyalty.redeem_value_per_point`, `loyalty.min_redeem_points` | | off | |
+| `customers.privacy_notice`, `customers.retention_months` | | text, 24 | |
+| `reports.daily_email_to` | list | [] | cloud |
+
+## Appendix B — Permission catalogue and base roles
+
+Groups and names:
+- order: `order.create`, `order.edit_others`, `order.send`, `order.void_sent`, `order.comp`, `order.discount_line`, `order.discount_bill`, `order.price_override`, `order.transfer`, `order.merge`, `order.split`, `order.reopen`, `order.cancel`
+- payment: `payment.take`, `payment.void`, `payment.refund`, `payment.reprint`
+- shift/drawer: `shift.open`, `shift.close`, `shift.close_blind`, `shift.view_expected`, `shift.approve_variance`, `drawer.pay_in_out`, `drawer.no_sale`, `day.close`
+- menu: `menu.view`, `menu.manage`, `menu.sold_out`, `menu.price`
+- table: `table.use`, `table.manage`
+- kitchen: `kitchen.view`, `kitchen.bump`
+- reservation: `reservation.view`, `reservation.manage`
+- inventory: `inventory.view`, `inventory.adjust`, `inventory.count`, `inventory.receive`, `inventory.transfer`
+- customer: `customer.view`, `customer.manage`
+- report: `report.view_sales`, `report.view_shift`, `report.view_audit`, `report.export`
+- admin: `staff.manage`, `role.manage`, `permission.override`, `settings.manage`, `outlet.manage`, `device.manage`, `sync.manage`, `approval.grant`
+
+Base roles (editable except Owner):
+- **Owner** (global): everything.
+- **Manager**: everything except `role.manage`, `permission.override`, `outlet.manage`.
+- **Supervisor**: everything Cashier has, plus `order.void_sent`, `order.comp`, `order.cancel`, `order.edit_others`, `order.transfer`, `order.merge`, `order.split`, `payment.void`, `shift.view_expected`, `shift.approve_variance`, `drawer.no_sale`, `kitchen.view`, `report.view_sales`, `approval.grant`.
+- **Cashier**: `order.*` except `void_sent`, `comp`, `price_override`, `reopen`, `cancel`, `edit_others`; `order.discount_line`, `order.discount_bill` within cap; `payment.take`, `payment.reprint`; `shift.open`, `shift.close`, `drawer.pay_in_out`; `menu.view`, `menu.sold_out`; `table.use`; `reservation.view`, `reservation.manage`; `customer.view`, `customer.manage`; `report.view_shift`.
+- **Waiter**: `order.create`, `order.send`, `order.transfer`, `order.split`, `order.merge`; `menu.view`, `menu.sold_out`; `table.use`; `reservation.view`, `reservation.manage`; `customer.view`.
+- **Kitchen**: `kitchen.view`, `kitchen.bump`, `menu.view`, `menu.sold_out`.
+- **Accountant** (read-only): `menu.view`, `inventory.view`, `customer.view`, `report.view_sales`, `report.view_shift`, `report.view_audit`, `report.export`.
+
+## Appendix C — Sync protocol details
+
+Event types (payload = full entity row after the change, plus `version`): `order.created`, `order.updated`, `order_line.added`, `order_line.updated`, `order_line.voided`, `order_line.comped`, `order.discount_added`, `order.discount_voided`, `order.split`, `order.merged`, `order.cancelled`, `order.reopened`, `payment.taken`, `payment.voided`, `cash_rounding.recorded`, `refund.created`, `shift.opened`, `drawer.entry`, `shift.closed`, `day.closed`, `ticket.created`, `ticket.updated`, `availability.changed`, `table_session.changed`, `reservation.upserted`, `waitlist.upserted`, `stock_ledger.appended`, `stock_count.posted`, `loyalty_ledger.appended`, `voucher.redeemed`, `audit.logged`, `master.upserted`, `master.deleted` (desktop master-data edits, US-052).
+
+Push request: `{deviceToken, outletId, events: [{id, seq, type, entityId, payload, actorUserId, createdAt}]}`; response `{ackSeq, rejected: [{id, error}]}`. Cloud requires `events[0].seq == lastAckSeq + 1` else `PRECONDITION_FAILED` with the expected seq (hub resends from there).
+
+Pull request: `{deviceToken, cursor}`; response `{changes: [{seq, entityType, entityId, op, payload}], nextCursor, hasMore}`.
+
+Order: on start and on reconnect the service pushes until nothing is pending, then pulls.
+
+Hub apply rules (pull): master by id, LWW on `updated_at` against any unsynced or newer local edit, loser written to `sync_conflicts`; locally owned classes (availability, table status, printers, device settings) and reservations are never pulled over; tombstone sets `deleted_at`.
+
+Cloud apply rules (push): transactional upsert by id, ignore if stored `version` ≥ incoming; ledgers insert-ignore by id; `master.*` events LWW on `updated_at`, loser written to `sync_conflicts`; reservations stored as a read-only copy.
+
+Failure handling: network error → retry with backoff (5 s → 5 min); 4xx schema error → rejection row; 401 device token → sync stops, panel shows "Perangkat perlu didaftarkan ulang", selling continues.
+
+## Appendix D — Receipt example (exclusive tax, service charge, cash rounding)
+
+```
+WARUNG CONTOH
+Jl. Contoh No. 1, Jakarta  |  021-000000
+NPWP 00.000.000.0-000.000
+Bill  000123          Order D-007
+Tgl   30/09/2026 19:42   Kasir: Sari
+Meja  12  (3 pax)
+---------------------------------------
+2x Nasi Goreng           50.000  100.000
+   + Telur                          0
+Diskon 10% (Promo)               -10.000
+---------------------------------------
+Subtotal                          90.000
+Biaya layanan 5%                   4.500
+PBJT 10%                           9.450
+Pembulatan                            50
+TOTAL                            104.000
+Tunai                            150.000
+Kembali                           46.000
+---------------------------------------
+Harga belum termasuk pajak dan biaya layanan
+Terima kasih
+```
