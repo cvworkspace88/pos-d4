@@ -103,7 +103,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As an owner on the Terminal edition, I want to set up my business on the desktop with no cloud account so that the outlet can sell on day one.
 
 **Acceptance Criteria:**
-- [ ] When the local database has no company, the desktop shows a setup wizard: business name, first outlet (name, address, timezone, cutoff), owner username, password and PIN
+- [ ] When the local database has no outlet, the desktop shows a setup wizard: business name (global setting `business.name`), first outlet (name, address, timezone, cutoff), owner username, password and PIN
 - [ ] The wizard seeds roles, permissions and default settings locally; no activation key or licence check (honour system)
 - [ ] Enabling cloud sync later is done in the sync service (US-053), never by re-running the wizard
 - [ ] Verify in browser using dev-browser skill
@@ -125,6 +125,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 
 **Acceptance Criteria:**
 - [ ] Table `outlet_settings(outlet_id, key, value jsonb, version, updated_by, updated_at)`; unique `(outlet_id, key)`
+- [ ] Global settings (one set per deployment, no outlet): `business.name` from the setup wizard, and any rule that is not outlet-specific (PPN rate, idle timeout). Same schema, `get`/`set` and audit rules as outlet settings, without an `outletId`
 - [ ] A typed settings schema (Zod) lists every key from Appendix A with type, default and validation; unknown keys rejected
 - [ ] `settings.get(outletId)` returns the full resolved object (defaults merged with stored values) in one query; `settings.set(outletId, key, value)` validates against the schema, bumps version, writes an audit row
 - [ ] Reads are cached in-process and invalidated on write and on sync pull
@@ -227,10 +228,10 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As an owner, I want a menu of categories and items with images and descriptions.
 
 **Acceptance Criteria:**
-- [ ] Tables `categories(id, company_id, name, sort, color, kitchen_station_id nullable, active, deleted_at)`, `items(id, company_id, category_id, name, kitchen_name, sku, description, image_url, base_price int, tax_type pbjt|ppn|none, service_charge_applies bool, kitchen_station_id nullable, sold_by unit|weight, sort, active, deleted_at)`
+- [ ] Tables `categories(id, name, sort, color, kitchen_station_id nullable, active, deleted_at)`, `items(id, category_id, name, kitchen_name, sku, description, image_url, base_price int, tax_type pbjt|ppn|none, service_charge_applies bool, kitchen_station_id nullable, sold_by unit|weight, sort, active, deleted_at)`
 - [ ] Item kitchen station defaults to its category's station
 - [ ] Soft delete only (`deleted_at`); an item with historical order lines can never be hard-deleted
-- [ ] Name unique per company among live items (`CONFLICT` "Nama sudah dipakai.")
+- [ ] Name unique among live items (`CONFLICT` "Nama sudah dipakai.")
 - [ ] `menu.list(outletId)` returns the full menu resolved for that outlet in one call (categories → items → variants → modifier groups, outlet price and availability applied)
 - [ ] Typecheck/lint passes
 
@@ -653,7 +654,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 
 **Acceptance Criteria:**
 - [ ] Cloud keeps `change_feed(seq, outlet_id nullable, entity_type, entity_id, op upsert|delete, payload, created_at)` written by every master-data mutation
-- [ ] `sync.pull({deviceToken, cursor})` returns changes for this outlet (company-wide + outlet-specific) after `cursor`, ≤1000 per call; hub applies them by id and advances the cursor atomically
+- [ ] `sync.pull({deviceToken, cursor})` returns changes for this outlet (global + outlet-specific) after `cursor`, ≤1000 per call; hub applies them by id and advances the cursor atomically
 - [ ] Master-data classes: categories, items, variants, modifier groups/options, combos, outlet overrides, menu schedules, settings, users (including the argon2 hash, see Technical), roles, permissions, overrides, kitchen stations, tenders, floors/tables, discount/void reasons, promotions, customers
 - [ ] A record edited on both the desktop and the cloud since the last sync is resolved last-write-wins by `updated_at`; the losing version is written to `sync_conflicts(id, entity_type, entity_id, winner, loser jsonb, resolved_at)` and listed in the sync panel and the backoffice sync monitor (US-093); rules function with tests
 - [ ] Applying a change invalidates the settings cache and broadcasts `menu.changed` to LAN clients
@@ -686,7 +687,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As an owner, I want a new or reinstalled desktop to load the outlet's data from the cloud so that a broken PC is not a lost outlet.
 
 **Acceptance Criteria:**
-- [ ] Enabling sync on a desktop that already has local data (Terminal → Cloud upgrade): registration binds the local company and outlet to the cloud, then the service pushes all local history and master data before its first pull, so nothing local is lost
+- [ ] Enabling sync on a desktop that already has local data (Terminal → Cloud upgrade): registration binds the local outlet to the cloud, then the service pushes all local history and master data before its first pull, so nothing local is lost
 - [ ] Registration of an empty desktop downloads a snapshot (all master data + open transactional state: open orders, open shifts, today's tickets, reservations, availability) and sets the pull cursor
 - [ ] Restore mode additionally pulls closed transactional history for the last `sync.restore_days` (default 90) for local reports
 - [ ] Two hub desktops for one outlet are refused at registration ("Outlet sudah punya hub aktif, cabut dulu.") — one hub per outlet is a v1 ceiling; extra desktops join as hub clients (US-092)
@@ -737,7 +738,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As an owner, I want to add staff, assign a role per outlet, reset passwords and PINs, and grant or revoke single permissions.
 
 **Acceptance Criteria:**
-- [ ] Users list with search; create user (username unique company-wide, name, phone, initial password), deactivate; per-outlet membership and role
+- [ ] Users list with search; create user (username unique (global), name, phone, initial password), deactivate; per-outlet membership and role
 - [ ] Role editor: duplicate a base role, tick permissions by group, rename; Owner locked
 - [ ] Per-user override editor showing effective permissions with the source (role / grant / revoke) of each
 - [ ] Reset password and clear PIN (user sets a new PIN on next mobile login)
@@ -919,7 +920,7 @@ Stock is a per-outlet ledger. Every movement is an append-only `stock_ledger` ro
 **Description:** As an owner, I want ingredients with units and costs so that recipes can be costed.
 
 **Acceptance Criteria:**
-- [ ] Tables `ingredients(id, company_id, name, base_unit, purchase_unit, conversion_factor, cost_per_base_unit, par_level, active)`, `stock_on_hand` materialised per outlet
+- [ ] Tables `ingredients(id, name, base_unit, purchase_unit, conversion_factor, cost_per_base_unit, par_level, active)`, `stock_on_hand` materialised per outlet
 - [ ] Unit conversion rules function with tests (e.g. 1 karton = 24 botol = 24 × 330 ml)
 - [ ] Typecheck/lint passes
 
@@ -1013,7 +1014,7 @@ Stock is a per-outlet ledger. Every movement is an append-only `stock_ledger` ro
 **Description:** As an owner, I want customer records with explicit consent and deletion support so that I comply with UU PDP.
 
 **Acceptance Criteria:**
-- [ ] `customers(id, company_id, name, phone unique, email, birthday, consent_marketing bool, consent_at, notes, deleted_at)`; creation requires explicit consent tick with the privacy notice text from `customers.privacy_notice`
+- [ ] `customers(id, name, phone unique, email, birthday, consent_marketing bool, consent_at, notes, deleted_at)`; creation requires explicit consent tick with the privacy notice text from `customers.privacy_notice`
 - [ ] "Hapus data pelanggan" anonymises the row (name/phone/email replaced) within the app and logs the request; order history keeps the anonymised id
 - [ ] "Ekspor data pelanggan" produces a file of everything stored about one customer (profile, consent, orders, loyalty ledger) for a data-subject request, guarded by `customer.manage` and logged
 - [ ] Phone numbers print masked on receipts and kitchen tickets (`0812-xxxx-3456`)
@@ -1182,6 +1183,7 @@ Performance
 Settled by the owner when the earlier spec was merged into this PRD. Do not reopen without the owner.
 
 - **Licensing:** none. Honour system; no expiry, grace period, admin lock or outlet limit.
+- **Tenancy:** one business per deployment — one app, one database, one company. No `companies` table and no `company_id` column anywhere. Master data without an `outlet_id` (menu, ingredients, customers, users) is global to the deployment; business-level values (business name) are global settings, not outlet settings.
 - **Topology:** mobile always connects to the desktop over the LAN. The desktop is local-first for everything, admin included. A background sync service syncs with the cloud; without it there is no cloud sync. On reconnect the service pushes local changes first, then pulls; master data edited on both sides resolves last-write-wins with the loser logged.
 - **Database on the desktop:** Postgres via Docker or manual install; not embedded.
 - **Reservations:** written on the desktop and mobile only, last-write-wins; backoffice read-only.
@@ -1194,6 +1196,8 @@ Settled by the owner when the earlier spec was merged into this PRD. Do not reop
 - **Kept from this PRD as written:** LAN plain HTTP for v1, QR/mDNS pairing, cloud snapshot restore, outlet-only settings without effective dates, `tax_type` model, permission names, phase order, default timers and retention.
 
 ## Appendix A — Outlet settings catalogue (all runtime-editable)
+
+Global settings (one set per deployment, see US-004): `business.name` (string, from the setup wizard). Everything below is per outlet.
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
