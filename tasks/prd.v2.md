@@ -34,7 +34,7 @@ Problem solved: Indonesian competitors (Moka, Majoo, Pawoon, Olsera, ESB, iSelle
 
 Sources: vendor help centers and pricing pages (Moka, Majoo, Pawoon, Olsera, ESB, iSeller, Qasir, Kasir Pintar, Nutapos, Toast, Square for Restaurants, Lightspeed K-Series, Loyverse, Odoo, Clover, Revel, SpotOn), Bapenda Jakarta, DDTC, Bank Indonesia, Kemnaker, Permendag 35/2013, UU 1/2022, UU 27/2022, PP 33/2026. Full notes were gathered on 2026-09-30.
 
-**What Indonesian competitors ship (baseline we must match):** tables with move/split/merge, modifiers and combos, QRIS + EDC tenders, inclusive/exclusive tax toggle with tax base before/after discount (Moka), scheduled promos and price lists (dine-in vs online: Kasir Pintar, ESB, Majoo), recipe/ingredient inventory with stock opname and transfers (Pro tiers), staff PIN and shift close with drawer reconciliation (iSeller), KDS on any device including Android TV (Majoo Prime), table turn-time colours with two warning thresholds (ESB, Majoo), customer order display with queue number (Majoo), reservation + queue display (ESB Book/Lounge, Olsera), loyalty points and vouchers, GoFood/GrabFood integrations, QR self-order.
+**What Indonesian competitors ship (baseline we must match):** tables with move/split/merge, modifiers and combos, QRIS + EDC tenders, inclusive/exclusive tax toggle with tax base before/after discount (Moka; we fix the base after discount, US-025), scheduled promos and price lists (dine-in vs online: Kasir Pintar, ESB, Majoo), recipe/ingredient inventory with stock opname and transfers (Pro tiers), staff PIN and shift close with drawer reconciliation (iSeller), KDS on any device including Android TV (Majoo Prime), table turn-time colours with two warning thresholds (ESB, Majoo), customer order display with queue number (Majoo), reservation + queue display (ESB Book/Lounge, Olsera), loyalty points and vouchers, GoFood/GrabFood integrations, QR self-order.
 
 **Gaps we exploit:** no local-only or hub topology (Majoo's LAN master/client is Rp999k/month), no course hold/fire anywhere, no in-POS waste log, no per-item tax type except Qasir Pro, tips not separated from service charge, sales-only reports without corrections/variance (Moka), data mismatch at close, employee-slot pricing.
 
@@ -42,7 +42,7 @@ Sources: vendor help centers and pricing pages (Moka, Majoo, Pawoon, Olsera, ESB
 
 **Indonesian rules that shape the design (verified 2026-09-30):**
 - Restaurant sales are subject to PBJT Makanan/Minuman (ex-PB1), max 10%, set per region; PPN does not apply to F&B. Non-food merchandise is PPN. So tax type is per item.
-- Tax base is the amount paid after discount and includes service charge (Bapenda Jakarta worked example). Small outlets under a regional monthly turnover threshold are exempt; threshold and rate are outlet settings.
+- Tax base is the amount paid after discount and includes service charge (Bapenda Jakarta worked example). Small outlets under a regional monthly turnover threshold are exempt: they set their PBJT rate to 0% (the rate is an outlet setting; the threshold is not stored).
 - Service charge percentage is not fixed by law; typically 5–10%, usually dine-in only, shown as its own receipt line.
 - Displayed prices must say whether they include tax and other fees (Permendag 35/2013). Rounding is allowed only for denominations not in circulation and must be disclosed at payment, so cash rounding is a visible line; non-cash pays exact.
 - QRIS merchant fee may not be surcharged to customers. Every major e-wallet is a QRIS issuer, so one QRIS tender covers them.
@@ -56,7 +56,7 @@ Phases are ordered so that each phase yields something usable. Phases 0–5 make
 
 | Phase | Feature area | Why here |
 | --- | --- | --- |
-| 0 | Platform: deployments (cloud/local), desktop hub on a local Postgres (Docker or manual install), first-run local setup, mobile hub discovery, outlet settings framework, auth, PIN profiles, outlets, roles/permissions/overrides, manager override, audit log, event log skeleton | Everything else depends on it |
+| 0 | Platform: deployments (cloud/local), desktop hub on a local Postgres (Docker or manual install), first-run local setup, mobile hub discovery, outlet settings, auth, PIN profiles, outlets, roles/permissions/overrides, manager override, audit log, event log skeleton | Everything else depends on it |
 | 1 | Menu & catalogue (one menu per outlet): categories, items, variants, modifier groups, combos, tax type, kitchen station, sold-out, menu schedules; desktop admin screens | Orders need a menu |
 | 2 | Floor & tables: floors, tables, capacities, editor, statuses, timers, merge | Dine-in orders need tables |
 | 3 | Orders: order lifecycle, pricing engine, order numbering, idempotency, send to kitchen, notes, seats, courses hold/fire, manual discounts, price override, void/comp with approval, transfer/merge/split, order types | The core of a POS |
@@ -72,7 +72,7 @@ Phases are ordered so that each phase yields something usable. Phases 0–5 make
 
 ## 5. User stories
 
-Story ids are sequential across phases. Each story is one focused session. "Rules function" means a pure, decorator-free function in a `*-rules.ts` file with unit tests. "Setting" means a key in the outlet settings framework of Phase 0.
+Story ids are sequential across phases. Each story is one focused session. "Rules function" means a pure, decorator-free function in a `*-rules.ts` file with unit tests. "Setting" means a column added to `outlets` (or to the global `settings` row) as in US-004 of Phase 0.
 
 ### Phase 0 — Platform
 
@@ -103,7 +103,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As an owner on the Terminal edition, I want to set up my business on the desktop with no cloud account so that the outlet can sell on day one.
 
 **Acceptance Criteria:**
-- [ ] When the local database has no outlet, the desktop shows a setup wizard: business name (global setting `business.name`), first outlet (name, address, timezone, cutoff), owner username, password and PIN
+- [ ] When the local database has no outlet, the desktop shows a setup wizard: first outlet (name, address, timezone, cutoff), owner username, password and PIN
 - [ ] The wizard seeds roles, permissions and default settings locally; no activation key or licence check (honour system)
 - [ ] Enabling cloud sync later is done in the sync service (US-053), never by re-running the wizard
 - [ ] Verify in browser using dev-browser skill
@@ -120,17 +120,18 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 - [ ] Verify in browser using dev-browser skill (Expo web) or simulator
 - [ ] Typecheck/lint passes
 
-### US-004: Outlet settings framework
+### US-004: Outlet settings
 **Description:** As an owner, I want every outlet-level rule editable at runtime so that nothing about tax, rounding or receipts is hard-coded.
 
 **Acceptance Criteria:**
-- [ ] Table `outlet_settings(outlet_id, key, value jsonb, version, updated_by, updated_at)`; unique `(outlet_id, key)`
-- [ ] Global settings (one set per deployment, no outlet): `business.name` from the setup wizard, and any rule that is not outlet-specific (PPN rate, idle timeout). Same schema, `get`/`set` and audit rules as outlet settings, without an `outletId`
-- [ ] A typed settings schema (Zod) lists every key from Appendix A with type, default and validation; unknown keys rejected
-- [ ] `settings.get(outletId)` returns the full resolved object (defaults merged with stored values) in one query; `settings.set(outletId, key, value)` validates against the schema, bumps version, writes an audit row
-- [ ] Reads are cached in-process and invalidated on write and on sync pull
-- [ ] Rules function `resolveSettings(rows)` with tests: defaults applied, invalid value rejected, version increments
-- [ ] Typecheck/lint passes
+- [x] Outlet settings are typed columns on `outlets` (one row per outlet), each with its default and a DB `CHECK` on its range; a new setting is a new column, added by the story that first reads it
+- [x] Saved through outlet mutations behind `outlet.manage` + `canActOn`: profile and timezone (`outlet.update`), taxes and service charge (`outlet.setCharges`: PBJT label/rate/inclusive, PPN rate/inclusive, NPWP, NPWPD, service name/rate/taxable/order types), business day (`outlet.setBusinessDay`: cutoff, auto close)
+- [x] Global settings live in the single `settings` row: `idle_timeout_seconds` (mobile PIN idle lock, default 120) and `desktop_lock_seconds` (default 0 = off), read by any signed-in user via `settings.get`, saved by `settings.update` (a patch) behind `settings.manage`
+- [x] Rates are integer basis points (1000 = 10%); times are local `HH:mm` in the outlet's timezone
+- [x] Backoffice edits them: outlet settings page (profile, tax & service, business day tabs) and app settings page (lock timers)
+- [x] Typecheck/lint passes
+
+Audit rows on settings writes come with US-011.
 
 ### US-005: Username/password login and sessions
 **Description:** As any staff member, I want to log in with username and password and stay logged in safely.
@@ -343,23 +344,39 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 
 ### Phase 3 — Orders
 
+### US-095: Order types per outlet
+**Description:** As an owner, I want my own list of order types — Dine In, Take Away, Delivery, and the delivery platforms I sell on (GoFood, GrabFood, ShopeeFood) — so that each one carries its own service charge, prices, payment and reports. Platform orders are typed in by the cashier; the automatic aggregator link stays Phase 12.
+
+**Acceptance Criteria:**
+- [ ] Table `order_types(id, outlet_id, name, kind dine_in|takeaway|delivery, prefix, service_charge bool, active, sort)`; name unique per outlet (`CONFLICT` "Nama tipe pesanan sudah dipakai.")
+- [ ] `kind` drives behaviour, the name is only a label: `dine_in` uses tables and pax (`orders.require_table_for_dine_in`); `takeaway` and `delivery` have no table. GoFood, GrabFood and ShopeeFood are `delivery` rows
+- [ ] Every outlet is seeded with Dine In (`dine_in`, prefix "", service charge on), Take Away (`takeaway`, "T", off) and Delivery (`delivery`, "D", off); a new outlet gets the same three
+- [ ] `service_charge` on the row replaces `outlets.service_order_types` (migration copies the column into the seeded rows, then drops it)
+- [ ] Never deleted once used: an order type with orders can only be deactivated (`active = false`); a deactivated type is hidden from the order screen and kept in reports
+- [ ] The first active type by `sort` is the default on the order screen
+- [ ] `orders.external_ref` (nullable): the platform booking code, entered on `delivery` orders, shown on the receipt and searchable (US-089)
+- [ ] `orderType.list` (active outlet, any signed-in user) and `orderType.create/update/reorder/setActive` behind `settings.manage`, scoped to the active outlet; backoffice and desktop admin screens
+- [ ] Price lists (US-083) and promotions (US-082) target order type ids; tenders (US-040) may be named as an order type's default tender; reports group by order type (US-067 sales summary, US-061 per-transaction export)
+- [ ] Typecheck/lint passes
+
 ### US-025: Pricing engine
 **Description:** As a developer, I need one pure function that turns order lines and outlet settings into every money figure so that receipts, reports and tax always agree.
 
 **Acceptance Criteria:**
 - [ ] Rules function `priceOrder(lines, discounts, settings) → {lines[], subtotal, discountTotal, serviceCharge, taxByType, rounding, total}` in integer rupiah, half-up rounding at each step
-- [ ] Pipeline order: line total (qty × unit + modifiers) → line discounts → bill discount allocated proportionally to remaining line totals → subtotal → service charge on the whole discounted subtotal, only when the order's type is in `service_charge.order_types` (default dine-in); there is no per-item service-charge flag → tax per `tax_type` on (subtotal after discount) plus service charge when `tax.base_includes_service_charge` → cash rounding (US-041) → total
-- [ ] Settings honoured: `tax.rates` per type, `tax.inclusive`, `tax.base_after_discount`, `service_charge.rate`, `service_charge.inclusive`, `service_charge.taxable`
-- [ ] Inclusive mode backs tax (and service charge when inclusive) out of the gross price so that gross stays what the menu shows: net = gross ÷ ((1 + sc) × (1 + tax)) with the applicable factors only
-- [ ] Worked examples fixed by tests: (a) exclusive: 2 × 50.000, 10% bill discount, SC 5%, PBJT 10% → subtotal 90.000, SC 4.500, tax 9.450, total 103.950; (b) inclusive tax only: 50.000 → net 45.455, tax 4.545; (c) mixed cart with one `ppn` item and one `none` item taxed separately; (d) tax base before discount when `tax.base_after_discount=false`
+- [ ] Pipeline order: line total (qty × unit + modifiers) → line discounts → bill discount allocated proportionally to remaining line totals → subtotal → service charge on the whole discounted subtotal, only when the order's type has `service_charge` on (US-095; default only Dine In); there is no per-item service-charge flag → tax per `tax_type` on (subtotal after discount) plus service charge when `service_charge.taxable`; tax is always charged after discounts → cash rounding (US-041) → total
+- [ ] Settings honoured: `tax.rates` per type, `tax.pbjt_inclusive`, `tax.ppn_inclusive`, `service_charge.rate`, the order type's `service_charge` flag, `service_charge.taxable` (service charge is always exclusive)
+- [ ] Inclusive mode backs the item's tax out of its gross price so that gross stays what the menu shows: net = gross ÷ (1 + tax); the service charge is always added on top, and taxed on top when `service_charge.taxable`
+- [ ] A tax type at 0% adds no tax (how an exempt outlet is set up)
+- [ ] Worked examples fixed by tests: (a) exclusive: 2 × 50.000, 10% bill discount, SC 5%, PBJT 10% → subtotal 90.000, SC 4.500, tax 9.450, total 103.950; (b) inclusive tax only: 50.000 → net 45.455, tax 4.545; (c) mixed cart with one `ppn` item and one `none` item taxed separately; (d) PBJT at 0% → no tax
 - [ ] Typecheck/lint passes
 
 ### US-026: Order creation and lines
-**Description:** As a waiter or cashier, I want to open an order for a table, takeaway or delivery and add items with variants, modifiers, quantity and notes.
+**Description:** As a waiter or cashier, I want to open an order of any of the outlet's order types (US-095) and add items with variants, modifiers, quantity and notes.
 
 **Acceptance Criteria:**
-- [ ] Tables `orders(id, outlet_id, business_date, order_no, type dine_in|takeaway|delivery, status open|paid|void, table_id nullable, pax, customer_id nullable, opened_by, opened_at, closed_at, notes, version, totals…)`, `order_lines(id, order_id, seq, item_id, variant_id, name_snapshot, variant_snapshot, modifiers_snapshot jsonb, unit_price_snapshot, tax_type_snapshot, tax_rate_snapshot, kitchen_station_snapshot, qty, notes, seat, course, status pending|sent|voided|comped, parent_line_id, sent_at, created_by)`
-- [ ] `order.create({id, outletId, type, tableId?, pax?})`: dine-in requires a table when `orders.require_table_for_dine_in`; a table with an open order returns that order instead of creating a second (idempotent by table)
+- [ ] Tables `orders(id, outlet_id, business_date, order_no, order_type_id, external_ref nullable, status open|paid|void, table_id nullable, pax, customer_id nullable, opened_by, opened_at, closed_at, notes, version, totals…)`, `order_lines(id, order_id, seq, item_id, variant_id, name_snapshot, variant_snapshot, modifiers_snapshot jsonb, unit_price_snapshot, tax_type_snapshot, tax_rate_snapshot, kitchen_station_snapshot, qty, notes, seat, course, status pending|sent|voided|comped, parent_line_id, sent_at, created_by)`
+- [ ] `order.create({id, outletId, orderTypeId, tableId?, pax?, externalRef?})`: an order type of kind `dine_in` requires a table when `orders.require_table_for_dine_in`; a table with an open order returns that order instead of creating a second (idempotent by table)
 - [ ] `order.addLines({orderId, lines[], expectedVersion})` snapshots name, price, modifiers, tax type/rate, station at that moment; validates modifier selection; totals recomputed with US-025 and stored
 - [ ] Every order mutation checks `expectedVersion` and returns `CONFLICT` "Pesanan berubah, muat ulang." on mismatch; clients refetch and reapply
 - [ ] Pending (unsent) lines may be edited or removed freely by the creator or anyone with `order.edit_others`
@@ -371,7 +388,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 
 **Acceptance Criteria:**
 - [ ] Rules function `businessDate(timestamp, timezone, cutoffTime)`: times before the cutoff belong to the previous date; tests including midnight and DST-free Asia/Jakarta
-- [ ] Hub assigns `order_no` from a per-outlet, per-business-date counter inside the same transaction as `order.create`, formatted by `orders.number_format` (e.g. `{type_prefix}{seq:03}` → `D-007`)
+- [ ] Hub assigns `order_no` from a per-outlet, per-business-date counter inside the same transaction as `order.create`, formatted by `orders.number_format` (e.g. `{type_prefix}{seq:03}` → `D-007`, the prefix taken from the order type, US-095)
 - [ ] Numbers are gapless; a voided order keeps its number
 - [ ] Bill number for receipts (`bill_no`) is assigned at first payment from a separate gapless per-outlet counter that never resets (for tax recaps)
 - [ ] Typecheck/lint passes
@@ -531,6 +548,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 - [ ] `required_fields` is a subset of `reference`, `approval_code`, `card_last4`, `card_type` (debit|credit), `acquirer` (e.g. BCA, Mandiri); an EDC tender seeds with approval code, last 4 and acquirer required
 - [ ] `kind=cash` is the only tender subject to cash rounding; `counts_in_drawer` decides inclusion in expected cash
 - [ ] No surcharge field on purpose (QRIS/card surcharging is prohibited)
+- [ ] Adds `order_types.default_tender_id` (nullable, US-095): a platform order type preselects its tender at payment, e.g. GoFood → tender "GoFood" (`kind=other`, no drawer, not in expected cash; the platform settles later)
 - [ ] Typecheck/lint passes
 
 ### US-041: Take payment, split tender and cash rounding
@@ -552,7 +570,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As a cashier, I want to print a pre-payment bill and a receipt, reprint either, and open the cash drawer.
 
 **Acceptance Criteria:**
-- [ ] Receipt renderer (rules function, tested) outputs: outlet name/address/phone, optional NPWP, bill no, order no, business date and time, cashier, table/pax or order type, lines with qty/price/modifiers, discounts, subtotal, service charge line, tax lines per type with rate, rounding line, total, each payment with tender name and reference, change, "Harga sudah termasuk pajak" or "Harga belum termasuk pajak dan biaya layanan" per settings, footer text, reprint marker "SALINAN" on reprints
+- [ ] Receipt renderer (rules function, tested) outputs: outlet name/address/phone, optional NPWP, bill no, order no, business date and time, cashier, table/pax or order type, lines with qty/price/modifiers, discounts, subtotal, service charge line, tax lines per type with rate (a tax type at 0% prints no line), rounding line, total, each payment with tender name and reference, change, "Harga sudah termasuk pajak" or "Harga belum termasuk pajak dan biaya layanan" per settings, footer text, reprint marker "SALINAN" on reprints
 - [ ] Bill (tagihan) prints the same without payments and marks the table `billed`
 - [ ] Settings `receipt.auto_print_on_payment`, `receipt.copies`, `receipt.header`, `receipt.footer`, `receipt.show_tax_breakdown`, `receipt.paper_width`
 - [ ] Cash drawer kick sent through the receipt printer when the tender `opens_drawer`; "No sale" open guarded by `drawer.no_sale` and logged as a drawer entry
@@ -882,7 +900,7 @@ Every report runs on the desktop against local data (its own outlet) and in the 
 **Description:** As an owner, I want a monthly tax report so that I can file the PBJT return.
 
 **Acceptance Criteria:**
-- [ ] Per calendar month and per business date: taxable base per tax type, service charge base, tax amount, exempt sales; matches the sum of bills in US-061 for the same range (test)
+- [ ] Per calendar month and per business date: taxable base per tax type, service charge base, tax amount, untaxed sales (tax type `none` or rate 0%); matches the sum of bills in US-061 for the same range (test)
 - [ ] Verify in browser using dev-browser skill
 - [ ] Typecheck/lint passes
 
@@ -988,7 +1006,7 @@ Stock is a per-outlet ledger. Every movement is an append-only `stock_ledger` ro
 **Description:** As an owner, I want automatic promotions by item, category, quantity, time and order type.
 
 **Acceptance Criteria:**
-- [ ] `promotions(id, name, outlet_ids[], kind item_percent|item_amount|bill_percent|bill_amount|buy_x_get_y, targets, min_qty, min_subtotal, days, start_time, end_time, valid_from, valid_to, order_types, stackable, priority, active)`
+- [ ] `promotions(id, name, outlet_ids[], kind item_percent|item_amount|bill_percent|bill_amount|buy_x_get_y, targets, min_qty, min_subtotal, days, start_time, end_time, valid_from, valid_to, order_type_ids, stackable, priority, active)`
 - [ ] Rules function `applyPromotions(order, promotions, now)` produces discount rows tagged with the promotion id, deterministic order by priority, non-stackable stops; tests
 - [ ] Applied automatically on every order recompute; shown as named discount lines on the receipt
 - [ ] Typecheck/lint passes
@@ -997,7 +1015,7 @@ Stock is a per-outlet ledger. Every movement is an append-only `stock_ledger` ro
 **Description:** As an owner, I want time- and channel-based price lists such as happy hour.
 
 **Acceptance Criteria:**
-- [ ] `price_lists(id, outlet_id, name, order_types, days, start_time, end_time, priority)`, `price_list_items(price_list_id, item_id, variant_id, price)`; the active price list overrides the item price at add-line time and is snapshotted
+- [ ] `price_lists(id, outlet_id, name, order_type_ids, days, start_time, end_time, priority)`, `price_list_items(price_list_id, item_id, variant_id, price)`; the active price list overrides the item price at add-line time and is snapshotted
 - [ ] Typecheck/lint passes
 
 ### US-084: Vouchers
@@ -1062,7 +1080,7 @@ Menu
 Orders
 - FR-17: Order lines snapshot name, variant, modifiers, unit price, tax type and rate and station at add time.
 - FR-18: The pricing pipeline is line → line discount → bill discount (proportional) → subtotal → service charge → tax per type → cash rounding → total, rounding half-up to the rupiah at each step, in one tested pure function shared by server and clients.
-- FR-19: Inclusive and exclusive modes for tax and service charge are independent settings; tax base after or before discount is a setting; service charge inclusion in the tax base is a setting.
+- FR-19: PBJT and PPN each have an inclusive/exclusive setting; the service charge is always exclusive; tax is always charged after discounts; service charge inclusion in the tax base is a setting (`service_charge.taxable`).
 - FR-20: Order numbers are gapless per outlet per business date; bill numbers are gapless per outlet and never reset.
 - FR-21: Business date = timestamp shifted by the outlet cutoff in the outlet timezone; all reports, shifts and numbering use it; tax reports also group by calendar month.
 - FR-22: Sent lines are never edited or deleted; corrections are void or comp rows with reason, actor and approver.
@@ -1181,9 +1199,9 @@ Performance
 Settled by the owner when the earlier spec was merged into this PRD. Do not reopen without the owner.
 
 - **Licensing:** none. Honour system; no expiry, grace period, admin lock or outlet limit.
-- **Tenancy:** one business per deployment — one app, one database, one company. No `companies` table and no `company_id` column anywhere. Master data without an `outlet_id` (ingredients, customers, users) is global to the deployment; business-level values (business name) are global settings, not outlet settings.
+- **Tenancy:** one business per deployment — one app, one database, one company. No `companies` table and no `company_id` column anywhere. Master data without an `outlet_id` (ingredients, customers, users) is global to the deployment; deployment-level values (lock timers) are global settings, not outlet settings; brand and receipt identity are per outlet.
 - **Menu per outlet (2026-10-01):** each outlet has its own menu, brand and settings — two outlets may be different brands selling different food. Categories, items, add-on groups and kitchen stations carry `outlet_id`; names are unique per outlet. Ingredients stay global (one list; stock is per outlet, US-074–US-080), so recipes of any outlet use the same ingredients. Who edits a menu is a permission (`menu.manage`, `category.edit`): the outlet Manager role by default, reassignable per user with overrides (US-009) — the client decides.
-- **Service charge per bill (2026-10-01):** service charge applies to the whole bill, decided by its order type (`service_charge.order_types`, default dine-in only; takeaway and delivery carry none). Items have no service-charge flag. Something sold without service charge, such as merchandise, is rung up as its own bill (e.g. a takeaway order), not as an exempt line on a dine-in bill.
+- **Service charge per bill (2026-10-01):** service charge applies to the whole bill, decided by its order type's `service_charge` flag (US-095; default Dine In only; takeaway, delivery and platform types carry none). Order types are per-outlet data, not a fixed list: GoFood, GrabFood and ShopeeFood are `delivery`-kind rows the owner adds. Items have no service-charge flag. Something sold without service charge, such as merchandise, is rung up as its own bill (e.g. a takeaway order), not as an exempt line on a dine-in bill.
 - **Topology:** mobile always connects to the desktop over the LAN. The desktop is local-first for everything, admin included. A background sync service syncs with the cloud; without it there is no cloud sync. On reconnect the service pushes local changes first, then pulls; master data edited on both sides resolves last-write-wins with the loser logged.
 - **Database on the desktop:** Postgres via Docker or manual install; not embedded.
 - **Reservations:** written on the desktop and mobile only, last-write-wins; backoffice read-only.
@@ -1197,32 +1215,26 @@ Settled by the owner when the earlier spec was merged into this PRD. Do not reop
 
 ## Appendix A — Outlet settings catalogue (all runtime-editable)
 
-Global settings (one set per deployment, see US-004): `business.name` (string, from the setup wizard). Everything below is per outlet.
+Global settings (one set per deployment, see US-004): `security.pin_idle_lock_seconds` (int, 120, mobile) and `security.desktop_lock_seconds` (int, 0 = off). Everything below is per outlet. Rates are stored as basis points (1000 = 10%); every screen shows and accepts percent. The PIN is always 6 digits (not a setting), and the service charge is always added on top of prices (not a setting).
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `identity.receipt_name` | string | outlet name | printed header |
-| `identity.address`, `identity.phone`, `identity.npwp` | string | "" | |
-| `locale.timezone` | IANA tz | Asia/Jakarta | business date |
+| `identity.receipt_name` | string | outlet name | printed header; deferred, decide with US-042 |
 | `business_day.cutoff_time` | HH:mm | 04:00 | service after midnight belongs to previous date |
 | `business_day.auto_close_at` | HH:mm or null | null | |
-| `tax.rates` | map type→percent | `{pbjt: 10, ppn: 11}` | per item `tax_type` |
-| `tax.inclusive` | bool | false | prices exclude tax (exclusive by default) |
-| `tax.base_after_discount` | bool | true | Jakarta rule |
-| `tax.base_includes_service_charge` | bool | true | |
-| `tax.exempt` | bool | false | outlet under regional threshold; tax lines omitted |
-| `service_charge.rate` | percent | 0 | |
-| `service_charge.order_types` | list | `[dine_in]` | |
-| `service_charge.inclusive` | bool | false | |
-| `service_charge.taxable` | bool | true | |
+| `tax.rates` | map type→basis points | `{pbjt: 1000, ppn: 1100}` | per item `tax_type`; 0 = exempt |
+| `tax.pbjt_label` | string | "PBJT" | printed on receipts (PBJT, PB1, Pajak Restoran) |
+| `tax.pbjt_inclusive` | bool | false | menu prices exclude PBJT |
+| `tax.ppn_inclusive` | bool | true | retail prices include PPN |
+| `tax.npwpd` | string | "" | regional taxpayer number for PBJT |
+| `service_charge.name` | string | "Biaya Layanan" | printed on receipts |
+| `service_charge.rate` | basis points | 0 | |
+| `service_charge.taxable` | bool | true | PBJT is charged on subtotal + service charge |
 | `rounding.cash_step` | 0/50/100/500/1000 | 100 | cash only |
 | `rounding.mode` | nearest/down/up | nearest | down = always round down, up = always round up; each rounding stored in `cash_roundings` |
-| `orders.types_enabled` | list | all three | |
-| `orders.default_type` | enum | dine_in | |
 | `orders.require_table_for_dine_in` | bool | true | |
 | `orders.require_pax` | bool | false | |
 | `orders.number_format` | string | `{type_prefix}{seq:03}` | |
-| `orders.type_prefixes` | map | `{dine_in: "", takeaway: "T", delivery: "D"}` | |
 | `orders.reopen_window_hours` | int | 24 | |
 | `orders.max_line_amount` | int | 10.000.000 | open price cap |
 | `discounts.reasons` | list | Promo, Komplain, Karyawan, Lainnya | |
@@ -1238,7 +1250,7 @@ Global settings (one set per deployment, see US-004): `business.name` (string, f
 | `receipt.copies` | int | 1 | |
 | `receipt.header`, `receipt.footer` | text | "" | |
 | `receipt.show_tax_breakdown` | bool | true | |
-| `receipt.inclusive_note` | string | "Harga sudah termasuk pajak" | printed when `tax.inclusive`; otherwise "Harga belum termasuk pajak dan biaya layanan" |
+| `receipt.inclusive_note` | string | "Harga sudah termasuk pajak" | printed when every taxed line on the bill is inclusive (`tax.pbjt_inclusive` / `tax.ppn_inclusive`); otherwise "Harga belum termasuk pajak dan biaya layanan" |
 | `kitchen.default_station_id` | id | first station | |
 | `kitchen.consolidate_identical_lines` | bool | true | |
 | `kitchen.one_ticket_per_item` | bool | false | |
@@ -1251,9 +1263,6 @@ Global settings (one set per deployment, see US-004): `business.name` (string, f
 | `reservations.hold_before_minutes` | int | 15 | |
 | `reservations.no_show_after_minutes` | int | 20 | |
 | `reservations.whatsapp_template` | text | template | |
-| `security.pin_length` | int | 6 | |
-| `security.pin_idle_lock_seconds` | int | 120 | mobile |
-| `security.desktop_lock_seconds` | int | 0 | |
 | `sync.interval_seconds` | int | 15 | |
 | `sync.restore_days` | int | 90 | |
 | `inventory.allow_negative` | bool | true | |
@@ -1261,6 +1270,8 @@ Global settings (one set per deployment, see US-004): `business.name` (string, f
 | `loyalty.enabled`, `loyalty.earn_per_rupiah`, `loyalty.redeem_value_per_point`, `loyalty.min_redeem_points` | | off | |
 | `customers.privacy_notice`, `customers.retention_months` | | text, 24 | |
 | `reports.daily_email_to` | list | [] | cloud |
+
+Address, phone, NPWP and timezone are outlet profile fields (US-008), not settings.
 
 ## Appendix B — Permission catalogue and base roles
 
