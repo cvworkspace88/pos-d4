@@ -593,14 +593,14 @@ export const auditLog = pgTable(
 export type AuditLog = typeof auditLog.$inferSelect;
 
 /**
- * The outbox (US-012): every transactional mutation writes its entity change and one event here in
+ * The sync outbox (US-012): every transactional mutation writes its entity change and one event here in
  * the same transaction. On the hub the sync service (US-049) pushes rows with no `synced_at` in
  * `seq` order; on the cloud the same table holds the events received, keeping the outlet's `seq`
  * and `id`, so a re-pushed event is recognised by its id. Only `synced_at` may change after insert:
  * a trigger in the migrations refuses every other update and every delete.
  */
-export const events = pgTable(
-  'events',
+export const syncEvents = pgTable(
+  'sync_events',
   {
     // UUID v7 (Postgres 18 `uuidv7()`), so ids sort by time. Never regenerated on the cloud.
     id: uuid('id')
@@ -613,7 +613,7 @@ export const events = pgTable(
     deviceId: text('device_id'),
     // The hub's write order. "By default", not "always": the cloud inserts the outlet's own value.
     seq: bigint('seq', { mode: 'number' }).generatedByDefaultAsIdentity().notNull(),
-    // `entity.verb`, e.g. 'order.line_added', 'master.upserted'.
+    // `entity.verb` from PRD Appendix C, e.g. 'order_line.added', 'master.upserted'.
     type: text('type').notNull(),
     entityId: uuid('entity_id').notNull(),
     payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
@@ -621,17 +621,17 @@ export const events = pgTable(
       .notNull()
       .references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    // Null = not pushed yet. `events.pendingCount` counts these.
+    // Null = not pushed yet. `sync.pendingCount` counts these.
     syncedAt: timestamp('synced_at', { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex('events_outlet_seq_uq').on(table.outletId, table.seq),
+    uniqueIndex('sync_events_outlet_seq_uq').on(table.outletId, table.seq),
     // The push scan and the pending count only ever read unsynced rows.
-    index('events_pending_idx')
+    index('sync_events_pending_idx')
       .on(table.outletId, table.seq)
       .where(sql`${table.syncedAt} IS NULL`),
-    check('events_type_format', sql`${table.type} ~ '^[a-z_]+\\.[a-z_]+$'`),
+    check('sync_events_type_format', sql`${table.type} ~ '^[a-z_]+\\.[a-z_]+$'`),
   ],
 );
 
-export type Event = typeof events.$inferSelect;
+export type SyncEvent = typeof syncEvents.$inferSelect;

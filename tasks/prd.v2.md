@@ -218,9 +218,9 @@ Audit rows on settings writes come with US-011.
 
 **Acceptance Criteria:**
 - [ ] All transactional entities (orders, lines, payments, refunds, shifts, drawer entries, kitchen tickets, table sessions, reservations, stock ledger) use client-generated UUID v7 primary keys
-- [ ] Table `events(id uuid, outlet_id, device_id, seq bigserial, type, entity_id, payload jsonb, actor_user_id, created_at, synced_at nullable)`; every transactional mutation writes its entity change and an event in one DB transaction
+- [ ] Table `sync_events(id uuid, outlet_id, device_id, seq bigserial, type, entity_id, payload jsonb, actor_user_id, created_at, synced_at nullable)`; every transactional mutation writes its entity change and an event in one DB transaction
 - [ ] Repeating a mutation with an already-stored id is a no-op that returns the stored result (idempotency), verified by a test that calls the same mutation twice
-- [ ] `events.pendingCount(outletId)` returns unsynced count
+- [ ] `sync.pendingCount` returns the unsynced count for the active outlet
 - [ ] Typecheck/lint passes
 
 ### Phase 1 — Menu & catalogue

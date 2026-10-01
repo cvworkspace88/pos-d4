@@ -124,15 +124,15 @@
     {
       "idx": 17,
       "version": "7",
-      "when": 1790845006389,
-      "tag": "0017_events",
+      "when": 1790846999656,
+      "tag": "0017_sync_events",
       "breakpoints": true
     },
     {
       "idx": 18,
       "version": "7",
-      "when": 1790845013772,
-      "tag": "0018_events_append_only",
+      "when": 1790847000494,
+      "tag": "0018_sync_events_append_only",
       "breakpoints": true
     }
   ]
