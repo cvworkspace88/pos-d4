@@ -627,9 +627,13 @@ const appRouter = t.router({
   serviceName: z.string(),
   serviceRateBp: z.number().int(),
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
   npwp: z.string().nullable(),
   npwpd: z.string().nullable(),
   ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
   active: z.boolean(),
 })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -649,9 +653,13 @@ const appRouter = t.router({
   serviceName: z.string(),
   serviceRateBp: z.number().int(),
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
   npwp: z.string().nullable(),
   npwpd: z.string().nullable(),
   ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
   active: z.boolean(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -681,9 +689,13 @@ const appRouter = t.router({
   serviceName: z.string(),
   serviceRateBp: z.number().int(),
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
   npwp: z.string().nullable(),
   npwpd: z.string().nullable(),
   ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -710,9 +722,13 @@ const appRouter = t.router({
   serviceName: z.string(),
   serviceRateBp: z.number().int(),
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
   npwp: z.string().nullable(),
   npwpd: z.string().nullable(),
   ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -740,9 +756,13 @@ const appRouter = t.router({
   serviceName: z.string(),
   serviceRateBp: z.number().int(),
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
   npwp: z.string().nullable(),
   npwpd: z.string().nullable(),
   ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -755,6 +775,7 @@ const appRouter = t.router({
       serviceName: z.string().trim().min(1).max(30),
       serviceRateBp: z.number().int().min(0).max(10000),
       servicePbjtTaxable: z.boolean(),
+      serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])).max(3),
       // Digits only — the client strips the dots and dash of the printed form.
       npwp: z
         .string()
@@ -762,6 +783,7 @@ const appRouter = t.router({
         .optional(),
       npwpd: z.string().trim().max(30).optional(),
       ppnInclusive: z.boolean(),
+      ppnRateBp: z.number().int().min(0).max(10000),
     }))
       .output(z.object({
   id: z.string(),
@@ -777,9 +799,46 @@ const appRouter = t.router({
   serviceName: z.string(),
   serviceRateBp: z.number().int(),
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
   npwp: z.string().nullable(),
   npwpd: z.string().nullable(),
   ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
+  active: z.boolean(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    setBusinessDay: publicProcedure
+      .input(z.object({
+      id: z.uuid(),
+      businessDayCutoff: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      businessDayAutoClose: z
+        .string()
+        .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+        .optional(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  city: z.string().nullable(),
+  timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+  pbjtLabel: z.string(),
+  pbjtRateBp: z.number().int(),
+  pbjtInclusive: z.boolean(),
+  serviceName: z.string(),
+  serviceRateBp: z.number().int(),
+  servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
+  npwp: z.string().nullable(),
+  npwpd: z.string().nullable(),
+  ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -799,9 +858,13 @@ const appRouter = t.router({
   serviceName: z.string(),
   serviceRateBp: z.number().int(),
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
   npwp: z.string().nullable(),
   npwpd: z.string().nullable(),
   ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
   active: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
@@ -887,15 +950,14 @@ const appRouter = t.router({
     }),
   settings: t.router({
     get: publicProcedure
-      .output(z.object({ idleTimeoutSeconds: z.number(), ppnRateBp: z.number().int() }))
+      .output(z.object({ idleTimeoutSeconds: z.number(), desktopLockSeconds: z.number().int() }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     update: publicProcedure
-      .input(z.object({ idleTimeoutSeconds: z.number().int().min(30).max(3600) }))
-      .output(z.object({ idleTimeoutSeconds: z.number(), ppnRateBp: z.number().int() }))
-      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
-    setPpnRate: publicProcedure
-      .input(z.object({ ppnRateBp: z.number().int().min(0).max(10000) }))
-      .output(z.object({ idleTimeoutSeconds: z.number(), ppnRateBp: z.number().int() }))
+      .input(z.object({
+      idleTimeoutSeconds: z.number().int().min(30).max(3600).optional(),
+      desktopLockSeconds: z.number().int().min(0).max(3600).optional(),
+    }))
+      .output(z.object({ idleTimeoutSeconds: z.number(), desktopLockSeconds: z.number().int() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     })
 });

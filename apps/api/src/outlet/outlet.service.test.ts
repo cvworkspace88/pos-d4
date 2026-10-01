@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import { seedRbac } from '../../drizzle/seed/seed-rbac';
-import { outlets, roles, users } from '../db/schema';
+import { outlets, roles, users, type OrderType } from '../db/schema';
 import { connectTestDatabase, truncateAll, type TestDatabase } from '../test/test-db';
 import { OutletService } from './outlet.service';
 
@@ -151,9 +151,11 @@ const CHARGES = {
   serviceName: 'Service',
   serviceRateBp: 550,
   servicePbjtTaxable: false,
+  serviceOrderTypes: ['dine_in', 'takeaway'] as OrderType[],
   npwp: '0123456789012345',
   npwpd: 'P.1.0001234.01.01',
   ppnInclusive: false,
+  ppnRateBp: 1200,
 };
 
 test('a new outlet starts at PBJT 10% exclusive, no service charge, in WIB', async () => {
@@ -168,6 +170,10 @@ test('a new outlet starts at PBJT 10% exclusive, no service charge, in WIB', asy
     serviceRateBp: 0,
     servicePbjtTaxable: true,
     ppnInclusive: true,
+    ppnRateBp: 1100,
+    serviceOrderTypes: ['dine_in'],
+    businessDayCutoff: '04:00',
+    businessDayAutoClose: null,
   });
 });
 
@@ -527,4 +533,23 @@ test('findUsers: username prefix, only accounts that could join this roster', as
   expect((await service.findUsers(outlet.id, 'B')).map((u) => u.username)).toEqual(['bu_di', 'buxdi']);
   // `_` is a literal, not LIKE's any-character.
   expect((await service.findUsers(outlet.id, 'bu_')).map((u) => u.username)).toEqual(['bu_di']);
+});
+
+test('setCharges stores each service-charge order type once', async () => {
+  const outlet = await anOutlet();
+  const saved = await service.setCharges(outlet.id, {
+    ...CHARGES,
+    serviceOrderTypes: ['takeaway', 'takeaway', 'dine_in'],
+  });
+  expect(saved.serviceOrderTypes).toEqual(['takeaway', 'dine_in']);
+});
+
+test('setBusinessDay saves HH:mm, and an omitted auto close clears it', async () => {
+  const outlet = await anOutlet();
+  expect(
+    await service.setBusinessDay(outlet.id, { businessDayCutoff: '05:30', businessDayAutoClose: '03:00' }),
+  ).toMatchObject({ businessDayCutoff: '05:30', businessDayAutoClose: '03:00' });
+  expect(await service.setBusinessDay(outlet.id, { businessDayCutoff: '05:30' })).toMatchObject({
+    businessDayAutoClose: null,
+  });
 });

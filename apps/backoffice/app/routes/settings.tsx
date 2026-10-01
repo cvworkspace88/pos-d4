@@ -6,6 +6,7 @@ import type { RouterOutputs } from '@repo/api-contract';
 import { Alert } from '@repo/ui/alert';
 import { Button } from '@repo/ui/button';
 import { Card } from '@repo/ui/card';
+import { Checkbox } from '@repo/ui/checkbox';
 import { Dialog } from '@repo/ui/dialog';
 import { Select } from '@repo/ui/select';
 import { Separator } from '@repo/ui/separator';
@@ -26,6 +27,12 @@ const TIMEZONES = [
   { value: 'Asia/Jakarta', label: 'WIB (Asia/Jakarta)' },
   { value: 'Asia/Makassar', label: 'WITA (Asia/Makassar)' },
   { value: 'Asia/Jayapura', label: 'WIT (Asia/Jayapura)' },
+] as const;
+
+const ORDER_TYPES = [
+  { value: 'dine_in', label: 'Makan di tempat' },
+  { value: 'takeaway', label: 'Bawa pulang' },
+  { value: 'delivery', label: 'Delivery' },
 ] as const;
 
 /** Settings for the session's active outlet — the sidebar switcher decides which one. */
@@ -69,6 +76,7 @@ export default function SettingsPage() {
             items={[
               { value: 'profile', label: 'Profil outlet', content: <ProfileForm outlet={outlet.data} /> },
               { value: 'charges', label: 'Pajak & layanan', content: <ChargesForm outlet={outlet.data} /> },
+              { value: 'day', label: 'Hari bisnis', content: <BusinessDayForm outlet={outlet.data} /> },
             ]}
           />
         )}
@@ -276,6 +284,7 @@ const chargesSchema = z.object({
     .string()
     .trim()
     .refine((s) => [0, 15, 16].includes(digits(s).length), 'NPWP harus 15 atau 16 digit.'),
+  ppnRate: percent,
   ppnInclusive: z.boolean(),
   npwpd: z.string().trim().max(30),
   pbjtLabel: z.string().trim().min(1, 'Wajib diisi.').max(30),
@@ -284,12 +293,14 @@ const chargesSchema = z.object({
   serviceName: z.string().trim().min(1, 'Wajib diisi.').max(30),
   serviceRate: percent,
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
 });
 
 type ChargesValues = z.infer<typeof chargesSchema>;
 
 const chargesValues = (o: Outlet): ChargesValues => ({
   npwp: o.npwp ?? '',
+  ppnRate: toPercent(o.ppnRateBp),
   ppnInclusive: o.ppnInclusive,
   npwpd: o.npwpd ?? '',
   pbjtLabel: o.pbjtLabel,
@@ -298,6 +309,7 @@ const chargesValues = (o: Outlet): ChargesValues => ({
   serviceName: o.serviceName,
   serviceRate: toPercent(o.serviceRateBp),
   servicePbjtTaxable: o.servicePbjtTaxable,
+  serviceOrderTypes: o.serviceOrderTypes,
 });
 
 /** A labelled switch bound to one of the form's boolean fields. */
@@ -353,6 +365,7 @@ function ChargesForm({ outlet }: { outlet: Outlet }) {
               // The server treats an omitted field as cleared, so blank must not travel as ''. Trimmed
               // here: the schema's trim only validates, it does not change what is submitted.
               npwp: digits(v.npwp) || undefined,
+              ppnRateBp: toBp(v.ppnRate),
               ppnInclusive: v.ppnInclusive,
               npwpd: v.npwpd.trim() || undefined,
               pbjtLabel: v.pbjtLabel,
@@ -361,6 +374,7 @@ function ChargesForm({ outlet }: { outlet: Outlet }) {
               serviceName: v.serviceName,
               serviceRateBp: toBp(v.serviceRate),
               servicePbjtTaxable: v.servicePbjtTaxable,
+              serviceOrderTypes: v.serviceOrderTypes,
             })
             .then((stored) => reset(chargesValues(stored)))
             .catch(() => undefined),
@@ -375,6 +389,14 @@ function ChargesForm({ outlet }: { outlet: Outlet }) {
               placeholder="0000 0000 0000 0000"
               error={errors.npwp?.message}
               {...register('npwp')}
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <TextField
+              label="Tarif PPN efektif (%)"
+              inputMode="decimal"
+              error={errors.ppnRate?.message}
+              {...register('ppnRate')}
             />
           </div>
           <FormSwitch
@@ -442,6 +464,32 @@ function ChargesForm({ outlet }: { outlet: Outlet }) {
             name="servicePbjtTaxable"
             label="Pajak dihitung atas biaya layanan (subtotal + biaya layanan)"
           />
+          <Controller
+            control={control}
+            name="serviceOrderTypes"
+            render={({ field }) => (
+              <fieldset className="flex flex-col gap-2">
+                <legend className="mb-2 text-sm text-ink-secondary">
+                  Dikenakan pada pesanan (selalu ditambahkan di atas harga)
+                </legend>
+                {ORDER_TYPES.map((t) => (
+                  <Checkbox
+                    key={t.value}
+                    label={t.label}
+                    checked={field.value.includes(t.value)}
+                    onCheckedChange={(on) =>
+                      field.onChange(
+                        // Kept in list order, so the saved value never depends on click order.
+                        ORDER_TYPES.map((o) => o.value).filter((v) =>
+                          v === t.value ? on : field.value.includes(v),
+                        ),
+                      )
+                    }
+                  />
+                ))}
+              </fieldset>
+            )}
+          />
         </section>
 
         <SaveBar
@@ -449,6 +497,80 @@ function ChargesForm({ outlet }: { outlet: Outlet }) {
           dirty={isDirty}
           saved={setCharges.isSuccess && !isDirty}
           error={setCharges.error?.message}
+        />
+      </form>
+    </Card>
+  );
+}
+
+const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// Mirrors outlet.router.ts's setBusinessDay input — the server still validates.
+const businessDaySchema = z.object({
+  cutoff: z.string().regex(hhmm, 'Format JJ:MM.'),
+  autoClose: z.string().refine((s) => s === '' || hhmm.test(s), 'Format JJ:MM.'),
+});
+
+type DayValues = z.infer<typeof businessDaySchema>;
+
+const dayValues = (o: Outlet): DayValues => ({
+  cutoff: o.businessDayCutoff,
+  autoClose: o.businessDayAutoClose ?? '',
+});
+
+function BusinessDayForm({ outlet }: { outlet: Outlet }) {
+  const trpc = useTRPC();
+  const saved = useSaved();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isDirty },
+  } = useForm<DayValues>({
+    resolver: zodResolver(businessDaySchema),
+    values: dayValues(outlet),
+    resetOptions: { keepDirtyValues: true },
+  });
+
+  const setDay = useMutation(trpc.outlet.setBusinessDay.mutationOptions({ onSuccess: saved }));
+
+  return (
+    <Card>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={handleSubmit((v) =>
+          setDay
+            .mutateAsync({
+              id: outlet.id,
+              businessDayCutoff: v.cutoff,
+              // Omitted = cleared, so blank must not travel as ''.
+              businessDayAutoClose: v.autoClose || undefined,
+            })
+            .then((stored) => reset(dayValues(stored)))
+            .catch(() => undefined),
+        )}
+      >
+        <div className="grid gap-4 sm:grid-cols-3">
+          <TextField
+            label="Pergantian hari bisnis"
+            type="time"
+            helperText="Penjualan sebelum jam ini masuk ke tanggal kemarin."
+            error={errors.cutoff?.message}
+            {...register('cutoff')}
+          />
+          <TextField
+            label="Tutup hari otomatis"
+            type="time"
+            helperText="Kosongkan bila hari ditutup manual."
+            error={errors.autoClose?.message}
+            {...register('autoClose')}
+          />
+        </div>
+        <SaveBar
+          pending={setDay.isPending}
+          dirty={isDirty}
+          saved={setDay.isSuccess && !isDirty}
+          error={setDay.error?.message}
         />
       </form>
     </Card>

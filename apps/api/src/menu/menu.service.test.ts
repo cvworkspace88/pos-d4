@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import { AddonService, type AddonGroupInput } from '../addon/addon.service';
 import { CategoryService } from '../category/category.service';
-import { kitchenStations, menuItems, menuVariants } from '../db/schema';
+import { kitchenStations, menuItems, menuVariants, outlets as outletRows } from '../db/schema';
 import { OutletService } from '../outlet/outlet.service';
 import { connectTestDatabase, truncateAll, type TestDatabase } from '../test/test-db';
 import { MenuService, type MenuItemInput } from './menu.service';
@@ -230,8 +230,10 @@ test('a category whose items are all deleted can be deleted', async () => {
   await expect(categories.delete(outletId, makananId)).resolves.toEqual({ success: true });
 });
 
-test('taxRates reads the outlet PBJT rate and the deployment PPN rate', async () => {
+test('taxRates reads both rates from the outlet', async () => {
   expect(await service.taxRates(outletId)).toEqual({ pbjtRateBp: 1000, ppnRateBp: 1100 });
+  await db.update(outletRows).set({ ppnRateBp: 1200 }).where(eq(outletRows.id, outletId));
+  expect(await service.taxRates(outletId)).toEqual({ pbjtRateBp: 1000, ppnRateBp: 1200 });
 });
 
 test('code is stored uppercase and unique among live items; blank is none; delete frees it', async () => {

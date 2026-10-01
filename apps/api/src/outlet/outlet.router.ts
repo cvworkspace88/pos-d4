@@ -9,6 +9,7 @@ import { canActOn, type Actor } from '../auth/rbac-rules';
 import {
   OutletService,
   type NewStaffInput,
+  type OutletBusinessDay,
   type OutletCharges,
   type OutletDetails,
   type OutletInput,
@@ -33,9 +34,13 @@ const outletOutput = z.object({
   serviceName: z.string(),
   serviceRateBp: z.number().int(),
   servicePbjtTaxable: z.boolean(),
+  serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])),
   npwp: z.string().nullable(),
   npwpd: z.string().nullable(),
   ppnInclusive: z.boolean(),
+  ppnRateBp: z.number().int(),
+  businessDayCutoff: z.string(),
+  businessDayAutoClose: z.string().nullable(),
   active: z.boolean(),
 });
 
@@ -149,7 +154,7 @@ export class OutletRouter {
   }
 
   /**
-   * The outlet's one tax and one service charge, saved as one form. Rates are basis points
+   * The outlet's taxes and one service charge, saved as one form. Rates are basis points
    * (1000 = 10%). Same permission and confinement as `update`.
    */
   @Mutation({
@@ -161,6 +166,7 @@ export class OutletRouter {
       serviceName: z.string().trim().min(1).max(30),
       serviceRateBp: z.number().int().min(0).max(10000),
       servicePbjtTaxable: z.boolean(),
+      serviceOrderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery'])).max(3),
       // Digits only — the client strips the dots and dash of the printed form.
       npwp: z
         .string()
@@ -168,6 +174,7 @@ export class OutletRouter {
         .optional(),
       npwpd: z.string().trim().max(30).optional(),
       ppnInclusive: z.boolean(),
+      ppnRateBp: z.number().int().min(0).max(10000),
     }),
     output: outletOutput,
   })
@@ -177,6 +184,29 @@ export class OutletRouter {
     if (!canActOn(ctx, input.id)) throw wrongOutlet();
     const { id, ...charges } = input;
     return this.service.setCharges(id, charges);
+  }
+
+  /**
+   * When the business date turns over, and optionally when the day closes itself. Local `HH:mm` in
+   * the outlet's timezone. Same permission and confinement as `update`.
+   */
+  @Mutation({
+    input: z.object({
+      id: z.uuid(),
+      businessDayCutoff: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      businessDayAutoClose: z
+        .string()
+        .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+        .optional(),
+    }),
+    output: outletOutput,
+  })
+  @UseMiddlewares(ProtectedMiddleware)
+  async setBusinessDay(@Ctx() ctx: Ctx, @Input() input: OutletBusinessDay & { id: string }) {
+    await this.rbac.require(ctx, 'outlet.manage');
+    if (!canActOn(ctx, input.id)) throw wrongOutlet();
+    const { id, ...day } = input;
+    return this.service.setBusinessDay(id, day);
   }
 
   /**

@@ -21,19 +21,18 @@ beforeEach(async () => {
   await db.delete(settings);
 });
 
-test('a fresh deployment reads the defaults: 120s idle, PPN 11% effective', async () => {
-  expect(await service.get()).toEqual({ idleTimeoutSeconds: 120, ppnRateBp: 1100 });
+test('a fresh deployment reads the defaults: 120s idle, desktop lock off', async () => {
+  expect(await service.get()).toEqual({ idleTimeoutSeconds: 120, desktopLockSeconds: 0 });
 });
 
-test('saving the PPN rate leaves the idle timeout alone, and the other way round', async () => {
+test('saving one setting leaves the other alone', async () => {
   await service.update({ idleTimeoutSeconds: 300 });
-  expect(await service.update({ ppnRateBp: 1200 })).toEqual({ idleTimeoutSeconds: 300, ppnRateBp: 1200 });
-  expect(await service.update({ idleTimeoutSeconds: 60 })).toEqual({
-    idleTimeoutSeconds: 60,
-    ppnRateBp: 1200,
+  expect(await service.update({ desktopLockSeconds: 600 })).toEqual({
+    idleTimeoutSeconds: 300,
+    desktopLockSeconds: 600,
   });
 });
 
-test('the database refuses a PPN rate over 100%', async () => {
-  await expect(service.update({ ppnRateBp: 10001 })).rejects.toThrow();
+test('the database refuses a desktop lock over an hour', async () => {
+  await expect(service.update({ desktopLockSeconds: 3601 })).rejects.toThrow();
 });

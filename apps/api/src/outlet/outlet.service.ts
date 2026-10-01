@@ -4,7 +4,7 @@ import * as argon2 from 'argon2';
 import { and, count, eq, inArray, isNotNull, isNull, like, ne, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation, violatedConstraint } from '../db/errors';
-import { outletStaff, outlets, roles, users, type Outlet } from '../db/schema';
+import { outletStaff, outlets, roles, users, type OrderType, type Outlet } from '../db/schema';
 import {
   OWNER_ROLE,
   canManageRole,
@@ -30,7 +30,7 @@ export type Timezone = 'Asia/Jakarta' | 'Asia/Makassar' | 'Asia/Jayapura';
  */
 export type OutletDetails = Omit<OutletInput, 'code'> & { city?: string; timezone: Timezone };
 
-/** What `setCharges` saves: the outlet's one tax and one service charge. Rates in basis points. */
+/** What `setCharges` saves: the outlet's taxes and one service charge. Rates in basis points. */
 export interface OutletCharges {
   pbjtLabel: string;
   pbjtRateBp: number;
@@ -38,10 +38,20 @@ export interface OutletCharges {
   serviceName: string;
   serviceRateBp: number;
   servicePbjtTaxable: boolean;
+  /** Order types that pay the service charge. Empty = none do. */
+  serviceOrderTypes: OrderType[];
   /** Omitted = cleared, like the address on `update`. */
   npwp?: string;
   npwpd?: string;
   ppnInclusive: boolean;
+  ppnRateBp: number;
+}
+
+/** What `setBusinessDay` saves. Local times as `HH:mm`, in the outlet's timezone. */
+export interface OutletBusinessDay {
+  businessDayCutoff: string;
+  /** Omitted = cleared: the day closes by hand only. */
+  businessDayAutoClose?: string;
 }
 
 export interface StaffOutput {
@@ -69,9 +79,14 @@ export const outletOutput = (o: Outlet) => ({
   serviceName: o.serviceName,
   serviceRateBp: o.serviceRateBp,
   servicePbjtTaxable: o.servicePbjtTaxable,
+  serviceOrderTypes: o.serviceOrderTypes,
   npwp: o.npwp,
   npwpd: o.npwpd,
   ppnInclusive: o.ppnInclusive,
+  ppnRateBp: o.ppnRateBp,
+  // Postgres hands `time` back as HH:mm:ss; clients read and write HH:mm.
+  businessDayCutoff: o.businessDayCutoff.slice(0, 5),
+  businessDayAutoClose: o.businessDayAutoClose?.slice(0, 5) ?? null,
   active: o.deletedAt === null,
 });
 export type OutletOutput = ReturnType<typeof outletOutput>;
@@ -183,7 +198,25 @@ export class OutletService {
     const [row] = await this.db
       .update(outlets)
       // `||`, not `??`: the router trims, so a blank-but-spaced NPWPD arrives as '' and must clear too.
-      .set({ ...charges, npwp: charges.npwp ?? null, npwpd: charges.npwpd || null })
+      .set({
+        ...charges,
+        npwp: charges.npwp ?? null,
+        npwpd: charges.npwpd || null,
+        serviceOrderTypes: [...new Set(charges.serviceOrderTypes)],
+      })
+      .where(and(eq(outlets.id, id), live))
+      .returning();
+    if (!row) throw notFound();
+    return outletOutput(row);
+  }
+
+  async setBusinessDay(id: string, day: OutletBusinessDay): Promise<OutletOutput> {
+    const [row] = await this.db
+      .update(outlets)
+      .set({
+        businessDayCutoff: day.businessDayCutoff,
+        businessDayAutoClose: day.businessDayAutoClose ?? null,
+      })
       .where(and(eq(outlets.id, id), live))
       .returning();
     if (!row) throw notFound();

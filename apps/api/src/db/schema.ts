@@ -8,6 +8,7 @@ import {
   pgTable,
   primaryKey,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -139,12 +140,13 @@ export const settings = pgTable(
     // defaults when the row does not exist yet, so nothing has to seed it.
     id: integer('id').primaryKey().default(1),
     idleTimeoutSeconds: integer('idle_timeout_seconds').notNull().default(120),
-    ppnRateBp: integer('ppn_rate_bp').notNull().default(1100),
+    // Desktop screen lock after this long idle. 0 = off: the desktop locks only by hand.
+    desktopLockSeconds: integer('desktop_lock_seconds').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     check('settings_singleton', sql`${table.id} = 1`),
-    check('settings_ppn_rate_bp', sql`${table.ppnRateBp} BETWEEN 0 AND 10000`),
+    check('settings_desktop_lock_seconds', sql`${table.desktopLockSeconds} BETWEEN 0 AND 3600`),
   ],
 );
 
@@ -212,6 +214,10 @@ export const reservations = pgTable(
 
 export type Reservation = typeof reservations.$inferSelect;
 
+/** How an order is served. The router's zod enums repeat it inline: the contract generator cannot hoist it. */
+export const ORDER_TYPES = ['dine_in', 'takeaway', 'delivery'] as const;
+export type OrderType = (typeof ORDER_TYPES)[number];
+
 export const outlets = pgTable(
   'outlets',
   {
@@ -234,6 +240,12 @@ export const outlets = pgTable(
     serviceRateBp: integer('service_rate_bp').notNull().default(0),
     // true: tax is computed on subtotal + service. false: on subtotal only.
     servicePbjtTaxable: boolean('service_pbjt_taxable').notNull().default(true),
+    // Which order types pay the service charge. It is always added on top, never included in prices.
+    serviceOrderTypes: text('service_order_types')
+      .array()
+      .$type<OrderType[]>()
+      .notNull()
+      .default(sql`ARRAY['dine_in']::text[]`),
     // Which tax a sale carries — PBJT, PPN or none — is decided per menu item, not here. The outlet
     // holds only the numbers and rates those taxes use.
     // Central taxpayer number, digits only: 16 (NIK-based) or the legacy 15. Optional.
@@ -243,6 +255,13 @@ export const outlets = pgTable(
     // true: a PPN item's price already includes PPN. Separate from `pbjt_inclusive` because retail
     // prices are conventionally shown tax-included while restaurant menus usually are not.
     ppnInclusive: boolean('ppn_inclusive').notNull().default(true),
+    // Per outlet, like PBJT: the owner sets each outlet's PPN rate. 1100 = 11%.
+    ppnRateBp: integer('ppn_rate_bp').notNull().default(1100),
+    // Local time (outlet timezone) the business date turns over: a sale at 01:30 with a 04:00
+    // cutoff belongs to the previous date.
+    businessDayCutoff: time('business_day_cutoff').notNull().default('04:00'),
+    // Local time the business day closes itself. Null = closed by hand only.
+    businessDayAutoClose: time('business_day_auto_close'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
@@ -262,6 +281,11 @@ export const outlets = pgTable(
     check('outlets_timezone', sql`${table.timezone} IN ('Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura')`),
     check('outlets_pbjt_rate_bp', sql`${table.pbjtRateBp} BETWEEN 0 AND 10000`),
     check('outlets_service_rate_bp', sql`${table.serviceRateBp} BETWEEN 0 AND 10000`),
+    check('outlets_ppn_rate_bp', sql`${table.ppnRateBp} BETWEEN 0 AND 10000`),
+    check(
+      'outlets_service_order_types',
+      sql`${table.serviceOrderTypes} <@ ARRAY['dine_in', 'takeaway', 'delivery']::text[]`,
+    ),
   ],
 );
 

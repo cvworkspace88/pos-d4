@@ -6,16 +6,16 @@ import { settings } from '../db/schema';
 export interface AppSettings {
   /** Tablets park the active session after this long without a touch. */
   idleTimeoutSeconds: number;
-  /** National PPN rate in basis points (1100 = 11%), for PPN items. */
-  ppnRateBp: number;
+  /** The desktop locks its screen after this long idle. 0 = off. */
+  desktopLockSeconds: number;
 }
 
 /** What a fresh deployment runs with until an owner saves something. Mirrors the column defaults. */
-export const DEFAULT_SETTINGS: AppSettings = { idleTimeoutSeconds: 120, ppnRateBp: 1100 };
+export const DEFAULT_SETTINGS: AppSettings = { idleTimeoutSeconds: 120, desktopLockSeconds: 0 };
 
-const toSettings = (row: { idleTimeoutSeconds: number; ppnRateBp: number }): AppSettings => ({
+const toSettings = (row: AppSettings): AppSettings => ({
   idleTimeoutSeconds: row.idleTimeoutSeconds,
-  ppnRateBp: row.ppnRateBp,
+  desktopLockSeconds: row.desktopLockSeconds,
 });
 
 @Injectable()

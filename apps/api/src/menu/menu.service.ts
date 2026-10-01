@@ -12,11 +12,9 @@ import {
   menuItems,
   menuVariants,
   outlets,
-  settings,
   type SoldBy,
   type Tax,
 } from '../db/schema';
-import { DEFAULT_SETTINGS } from '../settings/settings.service';
 import { requireStation } from './kitchen-station';
 import {
   duplicateName,
@@ -171,17 +169,13 @@ export class MenuService {
     }));
   }
 
-  /** The rates the menu form shows beside each tax: PBJT is the outlet's, PPN the deployment's. */
+  /** The rates the menu form shows beside each tax, both the outlet's own. */
   async taxRates(outletId: string): Promise<{ pbjtRateBp: number; ppnRateBp: number }> {
     const [outlet] = await this.db
-      .select({ pbjtRateBp: outlets.pbjtRateBp })
+      .select({ pbjtRateBp: outlets.pbjtRateBp, ppnRateBp: outlets.ppnRateBp })
       .from(outlets)
       .where(eq(outlets.id, outletId));
-    const [app] = await this.db.select({ ppnRateBp: settings.ppnRateBp }).from(settings);
-    return {
-      pbjtRateBp: outlet?.pbjtRateBp ?? 0,
-      ppnRateBp: app?.ppnRateBp ?? DEFAULT_SETTINGS.ppnRateBp,
-    };
+    return outlet ?? { pbjtRateBp: 0, ppnRateBp: 0 };
   }
 
   create(outletId: string, input: MenuItemInput): Promise<MenuItemOutput> {
