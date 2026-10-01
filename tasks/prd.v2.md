@@ -228,14 +228,14 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As a menu manager, I want my outlet's menu of categories and items with images and descriptions. Each outlet has its own menu: two outlets may sell entirely different food under different brands.
 
 **Acceptance Criteria:**
-- [ ] Tables `categories(id, outlet_id, name, sort, color, kitchen_station_id nullable, active, deleted_at)`, `items(id, outlet_id, category_id, name, kitchen_name, sku, description, image_url, base_price int, tax_type pbjt|ppn|none, kitchen_station_id nullable, sold_by unit|weight, sort, active, deleted_at)`; add-on groups are per outlet too
-- [ ] Every read and write is scoped to the session's active outlet (no procedure takes an outlet id from input); an item's category, station and add-on groups must belong to the same outlet, else `NOT_FOUND`
-- [ ] Item kitchen station defaults to its category's station
-- [ ] Soft delete only (`deleted_at`); an item with historical order lines can never be hard-deleted
-- [ ] Name unique among live items of the same outlet (`CONFLICT` "Nama menu sudah dipakai."; categories "Nama kategori sudah dipakai.")
-- [ ] `menu.list` returns the active outlet's full menu in one call (categories → items → variants → modifier groups, sold-out applied)
-- [ ] Guarded by `menu.view` / `menu.manage` (and `category.view` / `category.edit`); by default the outlet Manager role holds them, and per-user overrides (US-009) let the client move them to any user
-- [ ] Typecheck/lint passes
+- [x] Tables `categories(id, outlet_id, name, sort, color, kitchen_station_id nullable, active, deleted_at)`, `items(id, outlet_id, category_id, name, kitchen_name, sku, description, image_url, base_price int, tax_type pbjt|ppn|none, kitchen_station_id nullable, sold_by unit|weight, sort, active, deleted_at)`; add-on groups are per outlet too
+- [x] Every read and write is scoped to the session's active outlet (no procedure takes an outlet id from input); an item's category, station and add-on groups must belong to the same outlet, else `NOT_FOUND`
+- [x] Item kitchen station defaults to its category's station
+- [x] Soft delete only (`deleted_at`)
+- [x] Name unique among live items of the same outlet (`CONFLICT` "Nama menu sudah dipakai."; categories "Nama kategori sudah dipakai.")
+- [x] `menu.list` returns the active outlet's full menu in one call (categories → items → variants → modifier groups)
+- [x] Guarded by `menu.view` / `menu.manage` (and `category.view` / `category.edit`); by default the outlet Manager role holds them, and per-user overrides (US-009) let the client move them to any user
+- [x] Typecheck/lint passes
 
 ### US-014: Variants
 **Description:** As an owner, I want size or type variants of one item, each with its own price and SKU.
@@ -276,6 +276,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 - [ ] Sending a sold-out item is refused with `PRECONDITION_FAILED` "Habis." and the client refreshes the menu
 - [ ] POS shows a "Habis" badge and remaining count; a quick-toggle on the desktop and mobile item card guarded by `menu.sold_out`
 - [ ] Availability changes broadcast to all LAN clients within 1 s
+- [ ] `menu.list` applies availability: each item (and variant) carries its status and remaining count, so the POS shows sold-out from the one-call menu (completes US-013)
 - [ ] Verify in browser using dev-browser skill
 - [ ] Typecheck/lint passes
 
@@ -362,6 +363,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 - [ ] `order.addLines({orderId, lines[], expectedVersion})` snapshots name, price, modifiers, tax type/rate, station at that moment; validates modifier selection; totals recomputed with US-025 and stored
 - [ ] Every order mutation checks `expectedVersion` and returns `CONFLICT` "Pesanan berubah, muat ulang." on mismatch; clients refetch and reapply
 - [ ] Pending (unsent) lines may be edited or removed freely by the creator or anyone with `order.edit_others`
+- [ ] `order_lines.item_id` references `menu_items` with `ON DELETE RESTRICT`, so an item with order lines can never be hard-deleted (completes US-013)
 - [ ] Typecheck/lint passes
 
 ### US-027: Order numbering per business date
