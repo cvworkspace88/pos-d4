@@ -26,6 +26,8 @@ export interface TextFieldProps extends Omit<TextInputProps, 'className' | 'edit
   /** Shown below the field, in place of the helper text. Its presence marks the field invalid. */
   error?: string;
   helperText?: string;
+  /** Rendered inside the field, before the input (a search icon, "Rp"). */
+  prefix?: ReactNode;
   /** Rendered inside the field, after the input. */
   adornment?: ReactNode;
   disabled?: boolean;
@@ -36,6 +38,7 @@ export function TextField({
   label,
   error,
   helperText,
+  prefix,
   adornment,
   disabled,
   className,
@@ -49,6 +52,7 @@ export function TextField({
     <View className="gap-1">
       {label && <Text className="font-poppins text-sm text-ink-secondary">{label}</Text>}
       <View className={rowVariants({ invalid: Boolean(error), disabled: Boolean(disabled), className })}>
+        {prefix}
         <TextInput
           editable={!disabled}
           placeholderTextColor="#6B7280"

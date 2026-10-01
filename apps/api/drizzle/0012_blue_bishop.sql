@@ -1,0 +1,1 @@
+ALTER TABLE "menu_items" DROP COLUMN "service_charge_applies";

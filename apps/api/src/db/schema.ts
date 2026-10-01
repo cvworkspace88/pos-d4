@@ -293,6 +293,33 @@ export const outletStaff = pgTable(
 export type Outlet = typeof outlets.$inferSelect;
 export type OutletStaff = typeof outletStaff.$inferSelect;
 
+/** How an item is sold: by the piece or by weight. The router's zod enum repeats it inline: the contract generator cannot hoist it. */
+export const SOLD_BY = ['unit', 'weight'] as const;
+export type SoldBy = (typeof SOLD_BY)[number];
+
+/**
+ * Where food is made: Bar, Dapur Panas, Dessert. Per outlet, like the menu: a category or item says
+ * which of its outlet's stations makes it. Printer and KDS mode arrive with US-036. No API writes
+ * this table yet; tests insert rows directly.
+ */
+export const kitchenStations = pgTable(
+  'kitchen_stations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id),
+    name: text('name').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    // Off: retired. Kept, not deleted, because categories and items point at it.
+    active: boolean('active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('kitchen_stations_outlet_name_idx').on(table.outletId, table.name)],
+);
+
+export type KitchenStation = typeof kitchenStations.$inferSelect;
+
 export const categories = pgTable(
   'categories',
   {
@@ -303,12 +330,22 @@ export const categories = pgTable(
     name: text('name').notNull(),
     // 0-based position on the cashier screen. Gaps after a delete are harmless: lists sort by it.
     sortOrder: integer('sort_order').notNull(),
+    // Tile colour on the cashier screen, `#rrggbb`. Null: the default.
+    color: text('color'),
+    // Where this category's items are made unless an item says otherwise; a station of the same
+    // outlet. Null: the outlet's default station (Phase 4 setting `kitchen.default_station_id`).
+    kitchenStationId: uuid('kitchen_station_id').references(() => kitchenStations.id, {
+      onDelete: 'set null',
+    }),
+    // Off: hidden from the cashier screen with everything in it. Not a delete.
+    active: boolean('active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    // Soft delete: catalogue data, and products will point at it.
+    // Soft delete: catalogue data, and menu items point at it.
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [
-    // A deleted 'Minuman' can be recreated; only live names must be unique, per outlet.
+    // Each outlet has its own menu. A deleted 'Minuman' can be recreated; only live names must be
+    // unique, per outlet.
     uniqueIndex('categories_outlet_name_active_idx')
       .on(table.outletId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
@@ -335,16 +372,30 @@ export const menuItems = pgTable(
       .notNull()
       .references(() => categories.id),
     name: text('name').notNull(),
-    // Kode menu, optional. Stored uppercase; unique among live items of the outlet when present.
+    // Kode menu (the PRD's `sku`), optional. Stored uppercase; unique among live items of the outlet
+    // when present.
     code: text('code'),
-    // Rupiah, integer. Order lines will snapshot it, so editing it never rewrites a sale.
+    // Rupiah, integer (the PRD's `base_price`). Order lines will snapshot it, so editing it never
+    // rewrites a sale.
     price: integer('price').notNull(),
     // Hand-entered cost price (harga modal), rupiah. Null = not entered.
     cost: integer('cost'),
-    // Which tax a sale of this item carries; the outlet holds the rates.
+    // Which tax a sale of this item carries (the PRD's `tax_type`); the outlet holds the rates.
     tax: text('tax').$type<Tax>().notNull().default('pbjt'),
-    // Off = sold out for now; the cashier screen hides it. Not a delete.
-    available: boolean('available').notNull().default(true),
+    // Short name printed on kitchen tickets ("NasGor"). Null: the name.
+    kitchenName: text('kitchen_name'),
+    description: text('description'),
+    imageUrl: text('image_url'),
+    // Overrides the category's station; a station of the same outlet. Null: inherit.
+    kitchenStationId: uuid('kitchen_station_id').references(() => kitchenStations.id, {
+      onDelete: 'set null',
+    }),
+    soldBy: text('sold_by').$type<SoldBy>().notNull().default('unit'),
+    // Position within the category. Nothing writes it yet; lists sort by it, then name.
+    sortOrder: integer('sort_order').notNull().default(0),
+    // Off: hidden from the outlet's cashier screen. Not a delete, and not sold-out: that arrives
+    // with `item_availability` (US-018).
+    active: boolean('active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
@@ -366,6 +417,10 @@ export const menuItems = pgTable(
     check('menu_items_price', sql`${table.price} >= 0`),
     check('menu_items_cost', sql`${table.cost} >= 0`),
     check('menu_items_tax', sql`${table.tax} IN (${sql.raw(TAX_KINDS.map((t) => `'${t}'`).join(', '))})`),
+    check(
+      'menu_items_sold_by',
+      sql`${table.soldBy} IN (${sql.raw(SOLD_BY.map((s) => `'${s}'`).join(', '))})`,
+    ),
   ],
 );
 

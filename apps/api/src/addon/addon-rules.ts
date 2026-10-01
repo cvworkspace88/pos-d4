@@ -1,4 +1,5 @@
-// Duplicated from packages/api-contract/src/addon.ts's `getSelectAddonErrorMessage`, not imported: that
+// Duplicated from packages/api-contract/src/addon.ts's `getSelectAddonErrorMessage`, not imported: apps/api
+// cannot import that package at runtime.
 
 export const getSelectAddonErrorMessage = ({
   min,

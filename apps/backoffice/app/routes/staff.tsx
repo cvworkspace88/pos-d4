@@ -102,7 +102,7 @@ export default function StaffPage() {
                 aria-label="Cari staf"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                adornment={<Search className="size-4 shrink-0 text-ink-tertiary" aria-hidden />}
+                prefix={<Search className="size-4 shrink-0 text-ink-tertiary" aria-hidden />}
               />
             </div>
             <div className="w-48">

@@ -71,6 +71,27 @@
       "when": 1790581330016,
       "tag": "0009_loud_blue_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790827231653,
+      "tag": "0010_smart_wither",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790827245025,
+      "tag": "0011_typical_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790829806784,
+      "tag": "0012_blue_bishop",
+      "breakpoints": true
     }
   ]
 }

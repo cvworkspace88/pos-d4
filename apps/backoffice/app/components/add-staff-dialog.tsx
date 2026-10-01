@@ -160,7 +160,7 @@ export function AddStaff({ outletId, roster, roleItems, disabled }: AddStaffProp
           setTerm(e.target.value);
           setPicked(null);
         }}
-        adornment={<Search className="size-4 shrink-0 text-ink-tertiary" aria-hidden />}
+        prefix={<Search className="size-4 shrink-0 text-ink-tertiary" aria-hidden />}
       />
 
       {debounced && (

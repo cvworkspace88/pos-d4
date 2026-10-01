@@ -22,11 +22,13 @@ const rowVariants = cva('flex items-center gap-2 rounded-lg border px-3 py-2', {
   defaultVariants: { invalid: false, disabled: false },
 });
 
-export interface TextFieldProps extends Omit<ComponentProps<'input'>, 'className'> {
+export interface TextFieldProps extends Omit<ComponentProps<'input'>, 'className' | 'prefix'> {
   label?: ReactNode;
   /** Shown below the field, in place of the helper text. Its presence marks the field invalid. */
   error?: ReactNode;
   helperText?: ReactNode;
+  /** Rendered inside the field, before the input (a search icon, "Rp"). */
+  prefix?: ReactNode;
   /** Rendered inside the field, after the input. */
   adornment?: ReactNode;
   className?: string;
@@ -36,6 +38,7 @@ export function TextField({
   label,
   error,
   helperText,
+  prefix,
   adornment,
   id,
   disabled,
@@ -55,6 +58,7 @@ export function TextField({
         </label>
       )}
       <div className={rowVariants({ invalid: Boolean(error), disabled: Boolean(disabled), className })}>
+        {prefix}
         <input
           id={inputId}
           disabled={disabled}

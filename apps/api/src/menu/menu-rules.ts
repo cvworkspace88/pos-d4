@@ -52,3 +52,12 @@ const CONFLICTS: Record<string, string> = {
 
 /** Which message a unique violation earns, read off the index Postgres names. Null: rethrow, don't guess. */
 export const menuConflictMessage = (constraint: string): string | null => CONFLICTS[constraint] ?? null;
+
+/**
+ * Where a line of this item routes: the item's own station, else its category's. Null means the
+ * outlet's default station (Phase 4). Order lines snapshot the result at add time.
+ */
+export const effectiveStationId = (
+  item: { kitchenStationId: string | null },
+  category: { kitchenStationId: string | null },
+): string | null => item.kitchenStationId ?? category.kitchenStationId;

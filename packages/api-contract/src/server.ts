@@ -187,17 +187,50 @@ const appRouter = t.router({
   id: z.string(),
   name: z.string(),
   sortOrder: z.number().int(),
+  color: z.string().nullable(),
+  active: z.boolean(),
+  kitchenStationId: z.string().nullable(),
   // Live menu items in the category.
   itemCount: z.number().int(),
 })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     create: publicProcedure
-      .input(z.object({ name: z.string().trim().min(1).max(40) }))
-      .output(z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() }))
+      .input(z.object({
+      name: z.string().trim().min(1).max(40),
+      color: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .nullable()
+        .optional(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  color: z.string().nullable(),
+  active: z.boolean(),
+  kitchenStationId: z.string().nullable(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
-    rename: publicProcedure
-      .input(z.object({ id: z.uuid(), name: z.string().trim().min(1).max(40) }))
-      .output(z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() }))
+    update: publicProcedure
+      .input(z.object({
+      id: z.uuid(),
+      name: z.string().trim().min(1).max(40),
+      color: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .nullable(),
+      active: z.boolean(),
+      kitchenStationId: z.uuid().nullable(),
+    }))
+      .output(z.object({
+  id: z.string(),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  color: z.string().nullable(),
+  active: z.boolean(),
+  kitchenStationId: z.string().nullable(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     delete: publicProcedure
       .input(z.object({ id: z.uuid() }))
@@ -205,7 +238,14 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     reorder: publicProcedure
       .input(z.object({ ids: z.array(z.uuid()).max(200) }))
-      .output(z.array(z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() })))
+      .output(z.array(z.object({
+  id: z.string(),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  color: z.string().nullable(),
+  active: z.boolean(),
+  kitchenStationId: z.string().nullable(),
+})))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   reservation: t.router({
@@ -367,18 +407,38 @@ const appRouter = t.router({
     }),
   menu: t.router({
     list: publicProcedure
-      .output(z.array(z.object({
+      .output(z.object({
+      categories: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          sortOrder: z.number().int(),
+          color: z.string().nullable(),
+          active: z.boolean(),
+          kitchenStationId: z.string().nullable(),
+          itemCount: z.number().int(),
+        }),
+      ),
+      items: z.array(z.object({
   id: z.string(),
   categoryId: z.string(),
   categoryName: z.string(),
   code: z.string().nullable(),
   name: z.string(),
+  kitchenName: z.string().nullable(),
+  description: z.string().nullable(),
+  imageUrl: z.string().nullable(),
   // With variants: the lowest variant price, for display only.
   price: z.number().int(),
-  // Null when not entered, when the item has variants — and always null for a caller without `menu.manage`.
+  // Null when not entered, when the item has variants - and always null for a caller without `menu.manage`.
   cost: z.number().int().nullable(),
   tax: z.enum(['pbjt', 'ppn', 'none']),
-  available: z.boolean(),
+  // The item's own station (null: inherits) and the resolved one a line would route to.
+  kitchenStationId: z.string().nullable(),
+  stationId: z.string().nullable(),
+  soldBy: z.enum(['unit', 'weight']),
+  sortOrder: z.number().int(),
+  active: z.boolean(),
   variants: z.array(
     z.object({
       id: z.string(),
@@ -389,7 +449,20 @@ const appRouter = t.router({
     }),
   ),
   addonGroupIds: z.array(z.string()),
-})))
+})),
+      addonGroups: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          minSelect: z.number().int(),
+          maxSelect: z.number().int(),
+          options: z.array(
+            z.object({ id: z.string(), name: z.string(), price: z.number().int(), available: z.boolean() }),
+          ),
+          usedBy: z.number().int(),
+        }),
+      ),
+    }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     taxRates: publicProcedure
       .output(z.object({ pbjtRateBp: z.number().int(), ppnRateBp: z.number().int() }))
@@ -404,10 +477,18 @@ const appRouter = t.router({
         .regex(/^[A-Za-z0-9-]*$/)
         .nullable(),
       name: z.string().trim().min(1).max(60),
+      kitchenName: z.string().trim().min(1).max(60).nullable(),
+      description: z.string().trim().min(1).max(500).nullable(),
+      imageUrl: z
+        .url({ protocol: /^https?$/ })
+        .max(500)
+        .nullable(),
       price: z.number().int().min(0).max(100000000),
       cost: z.number().int().min(0).max(100000000).nullable(),
       tax: z.enum(['pbjt', 'ppn', 'none']),
-      available: z.boolean(),
+      kitchenStationId: z.uuid().nullable(),
+      soldBy: z.enum(['unit', 'weight']),
+      active: z.boolean(),
       variants: z
         .array(
           z.object({
@@ -427,12 +508,20 @@ const appRouter = t.router({
   categoryName: z.string(),
   code: z.string().nullable(),
   name: z.string(),
+  kitchenName: z.string().nullable(),
+  description: z.string().nullable(),
+  imageUrl: z.string().nullable(),
   // With variants: the lowest variant price, for display only.
   price: z.number().int(),
-  // Null when not entered, when the item has variants — and always null for a caller without `menu.manage`.
+  // Null when not entered, when the item has variants - and always null for a caller without `menu.manage`.
   cost: z.number().int().nullable(),
   tax: z.enum(['pbjt', 'ppn', 'none']),
-  available: z.boolean(),
+  // The item's own station (null: inherits) and the resolved one a line would route to.
+  kitchenStationId: z.string().nullable(),
+  stationId: z.string().nullable(),
+  soldBy: z.enum(['unit', 'weight']),
+  sortOrder: z.number().int(),
+  active: z.boolean(),
   variants: z.array(
     z.object({
       id: z.string(),
@@ -456,10 +545,18 @@ const appRouter = t.router({
         .regex(/^[A-Za-z0-9-]*$/)
         .nullable(),
       name: z.string().trim().min(1).max(60),
+      kitchenName: z.string().trim().min(1).max(60).nullable(),
+      description: z.string().trim().min(1).max(500).nullable(),
+      imageUrl: z
+        .url({ protocol: /^https?$/ })
+        .max(500)
+        .nullable(),
       price: z.number().int().min(0).max(100000000),
       cost: z.number().int().min(0).max(100000000).nullable(),
       tax: z.enum(['pbjt', 'ppn', 'none']),
-      available: z.boolean(),
+      kitchenStationId: z.uuid().nullable(),
+      soldBy: z.enum(['unit', 'weight']),
+      active: z.boolean(),
       variants: z
         .array(
           z.object({
@@ -479,12 +576,20 @@ const appRouter = t.router({
   categoryName: z.string(),
   code: z.string().nullable(),
   name: z.string(),
+  kitchenName: z.string().nullable(),
+  description: z.string().nullable(),
+  imageUrl: z.string().nullable(),
   // With variants: the lowest variant price, for display only.
   price: z.number().int(),
-  // Null when not entered, when the item has variants — and always null for a caller without `menu.manage`.
+  // Null when not entered, when the item has variants - and always null for a caller without `menu.manage`.
   cost: z.number().int().nullable(),
   tax: z.enum(['pbjt', 'ppn', 'none']),
-  available: z.boolean(),
+  // The item's own station (null: inherits) and the resolved one a line would route to.
+  kitchenStationId: z.string().nullable(),
+  stationId: z.string().nullable(),
+  soldBy: z.enum(['unit', 'weight']),
+  sortOrder: z.number().int(),
+  active: z.boolean(),
   variants: z.array(
     z.object({
       id: z.string(),
@@ -497,9 +602,9 @@ const appRouter = t.router({
   addonGroupIds: z.array(z.string()),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
-    setAvailable: publicProcedure
-      .input(z.object({ id: z.uuid(), available: z.boolean() }))
-      .output(z.object({ id: z.string(), available: z.boolean() }))
+    setActive: publicProcedure
+      .input(z.object({ id: z.uuid(), active: z.boolean() }))
+      .output(z.object({ id: z.string(), active: z.boolean() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     delete: publicProcedure
       .input(z.object({ id: z.uuid() }))

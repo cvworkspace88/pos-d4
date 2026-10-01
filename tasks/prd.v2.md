@@ -57,7 +57,7 @@ Phases are ordered so that each phase yields something usable. Phases 0–5 make
 | Phase | Feature area | Why here |
 | --- | --- | --- |
 | 0 | Platform: deployments (cloud/local), desktop hub on a local Postgres (Docker or manual install), first-run local setup, mobile hub discovery, outlet settings framework, auth, PIN profiles, outlets, roles/permissions/overrides, manager override, audit log, event log skeleton | Everything else depends on it |
-| 1 | Menu & catalogue: categories, items, variants, modifier groups, combos, tax type, kitchen station, per-outlet price and availability, sold-out, menu schedules; desktop admin screens | Orders need a menu |
+| 1 | Menu & catalogue (one menu per outlet): categories, items, variants, modifier groups, combos, tax type, kitchen station, sold-out, menu schedules; desktop admin screens | Orders need a menu |
 | 2 | Floor & tables: floors, tables, capacities, editor, statuses, timers, merge | Dine-in orders need tables |
 | 3 | Orders: order lifecycle, pricing engine, order numbering, idempotency, send to kitchen, notes, seats, courses hold/fire, manual discounts, price override, void/comp with approval, transfer/merge/split, order types | The core of a POS |
 | 4 | Kitchen: station printing, KDS web screen, ticket lifecycle, timers, recall, fallback printing | Orders must reach the kitchen |
@@ -225,14 +225,16 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 ### Phase 1 — Menu & catalogue
 
 ### US-013: Categories and items
-**Description:** As an owner, I want a menu of categories and items with images and descriptions.
+**Description:** As a menu manager, I want my outlet's menu of categories and items with images and descriptions. Each outlet has its own menu: two outlets may sell entirely different food under different brands.
 
 **Acceptance Criteria:**
-- [ ] Tables `categories(id, name, sort, color, kitchen_station_id nullable, active, deleted_at)`, `items(id, category_id, name, kitchen_name, sku, description, image_url, base_price int, tax_type pbjt|ppn|none, service_charge_applies bool, kitchen_station_id nullable, sold_by unit|weight, sort, active, deleted_at)`
+- [ ] Tables `categories(id, outlet_id, name, sort, color, kitchen_station_id nullable, active, deleted_at)`, `items(id, outlet_id, category_id, name, kitchen_name, sku, description, image_url, base_price int, tax_type pbjt|ppn|none, kitchen_station_id nullable, sold_by unit|weight, sort, active, deleted_at)`; add-on groups are per outlet too
+- [ ] Every read and write is scoped to the session's active outlet (no procedure takes an outlet id from input); an item's category, station and add-on groups must belong to the same outlet, else `NOT_FOUND`
 - [ ] Item kitchen station defaults to its category's station
 - [ ] Soft delete only (`deleted_at`); an item with historical order lines can never be hard-deleted
-- [ ] Name unique among live items (`CONFLICT` "Nama sudah dipakai.")
-- [ ] `menu.list(outletId)` returns the full menu resolved for that outlet in one call (categories → items → variants → modifier groups, outlet price and availability applied)
+- [ ] Name unique among live items of the same outlet (`CONFLICT` "Nama menu sudah dipakai."; categories "Nama kategori sudah dipakai.")
+- [ ] `menu.list` returns the active outlet's full menu in one call (categories → items → variants → modifier groups, sold-out applied)
+- [ ] Guarded by `menu.view` / `menu.manage` (and `category.view` / `category.edit`); by default the outlet Manager role holds them, and per-user overrides (US-009) let the client move them to any user
 - [ ] Typecheck/lint passes
 
 ### US-014: Variants
@@ -262,14 +264,8 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 - [ ] Rules function `expandCombo` with tests
 - [ ] Typecheck/lint passes
 
-### US-017: Per-outlet price and availability
-**Description:** As an owner of several outlets, I want one central menu with outlet-specific prices and on/off switches.
-
-**Acceptance Criteria:**
-- [ ] Table `outlet_item_overrides(outlet_id, item_id, variant_id nullable, price int nullable, enabled bool default true)`
-- [ ] `menu.list(outletId)` applies overrides; disabled items are omitted from POS but visible in admin
-- [ ] Bulk edit: set price for many items in one mutation
-- [ ] Typecheck/lint passes
+### US-017: Per-outlet price and availability — dropped
+**Superseded (2026-10-01):** each outlet has its own menu (US-013), so an outlet's price and on/off are the item's own `base_price` and `active`. No `outlet_item_overrides` table. Bulk price edit moves to US-058.
 
 ### US-018: Sold-out (86) and countdown
 **Description:** As a cashier, I want to mark an item sold out or set "only 12 left" so that waiters stop selling it.
@@ -296,7 +292,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As an owner on the Terminal edition, I want to manage the menu from the desktop.
 
 **Acceptance Criteria:**
-- [ ] Desktop "Menu" section: categories list, item list with search and filters, item editor (variants, modifier groups, combo groups, tax type, station, image), availability toggles, per-outlet price
+- [ ] Desktop "Menu" section: categories list, item list with search and filters, item editor (variants, modifier groups, combo groups, tax type, station, image), availability toggles; all scoped to the active outlet's menu
 - [ ] Writes go to the local hub and work with no internet; each write is recorded as a master-data event that the sync service pushes to the cloud when it runs (US-052)
 - [ ] LAN clients see the change within 1 s (`menu.changed` broadcast)
 - [ ] Verify in browser using dev-browser skill
@@ -351,7 +347,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 
 **Acceptance Criteria:**
 - [ ] Rules function `priceOrder(lines, discounts, settings) → {lines[], subtotal, discountTotal, serviceCharge, taxByType, rounding, total}` in integer rupiah, half-up rounding at each step
-- [ ] Pipeline order: line total (qty × unit + modifiers) → line discounts → bill discount allocated proportionally to remaining line totals → subtotal → service charge on the discounted subtotal of `service_charge_applies` lines (only for order types in `service_charge.order_types`) → tax per `tax_type` on (subtotal after discount) plus service charge when `tax.base_includes_service_charge` → cash rounding (US-041) → total
+- [ ] Pipeline order: line total (qty × unit + modifiers) → line discounts → bill discount allocated proportionally to remaining line totals → subtotal → service charge on the whole discounted subtotal, only when the order's type is in `service_charge.order_types` (default dine-in); there is no per-item service-charge flag → tax per `tax_type` on (subtotal after discount) plus service charge when `tax.base_includes_service_charge` → cash rounding (US-041) → total
 - [ ] Settings honoured: `tax.rates` per type, `tax.inclusive`, `tax.base_after_discount`, `service_charge.rate`, `service_charge.inclusive`, `service_charge.taxable`
 - [ ] Inclusive mode backs tax (and service charge when inclusive) out of the gross price so that gross stays what the menu shows: net = gross ÷ ((1 + sc) × (1 + tax)) with the applicable factors only
 - [ ] Worked examples fixed by tests: (a) exclusive: 2 × 50.000, 10% bill discount, SC 5%, PBJT 10% → subtotal 90.000, SC 4.500, tax 9.450, total 103.950; (b) inclusive tax only: 50.000 → net 45.455, tax 4.545; (c) mixed cart with one `ppn` item and one `none` item taxed separately; (d) tax base before discount when `tax.base_after_discount=false`
@@ -361,7 +357,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As a waiter or cashier, I want to open an order for a table, takeaway or delivery and add items with variants, modifiers, quantity and notes.
 
 **Acceptance Criteria:**
-- [ ] Tables `orders(id, outlet_id, business_date, order_no, type dine_in|takeaway|delivery, status open|paid|void, table_id nullable, pax, customer_id nullable, opened_by, opened_at, closed_at, notes, version, totals…)`, `order_lines(id, order_id, seq, item_id, variant_id, name_snapshot, variant_snapshot, modifiers_snapshot jsonb, unit_price_snapshot, tax_type_snapshot, tax_rate_snapshot, service_charge_applies_snapshot, kitchen_station_snapshot, qty, notes, seat, course, status pending|sent|voided|comped, parent_line_id, sent_at, created_by)`
+- [ ] Tables `orders(id, outlet_id, business_date, order_no, type dine_in|takeaway|delivery, status open|paid|void, table_id nullable, pax, customer_id nullable, opened_by, opened_at, closed_at, notes, version, totals…)`, `order_lines(id, order_id, seq, item_id, variant_id, name_snapshot, variant_snapshot, modifiers_snapshot jsonb, unit_price_snapshot, tax_type_snapshot, tax_rate_snapshot, kitchen_station_snapshot, qty, notes, seat, course, status pending|sent|voided|comped, parent_line_id, sent_at, created_by)`
 - [ ] `order.create({id, outletId, type, tableId?, pax?})`: dine-in requires a table when `orders.require_table_for_dine_in`; a table with an open order returns that order instead of creating a second (idempotent by table)
 - [ ] `order.addLines({orderId, lines[], expectedVersion})` snapshots name, price, modifiers, tax type/rate, station at that moment; validates modifier selection; totals recomputed with US-025 and stored
 - [ ] Every order mutation checks `expectedVersion` and returns `CONFLICT` "Pesanan berubah, muat ulang." on mismatch; clients refetch and reapply
@@ -485,7 +481,7 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As a manager, I want stations (Bar, Hot Kitchen, Dessert) with a printer and/or KDS each so that tickets go where the food is made.
 
 **Acceptance Criteria:**
-- [ ] Table `kitchen_stations(id, outlet_id, name, mode print|kds|both, printer_id nullable, print_when_kds_offline bool, sort, active)`
+- [ ] Table `kitchen_stations(id, outlet_id, name, mode print|kds|both, printer_id nullable, print_when_kds_offline bool, sort, active)`, per outlet like the menu (US-013); a category or item may point only at a station of its own outlet
 - [ ] Sending an order creates one `kitchen_tickets(id, order_id, station_id, course, status new|in_progress|done|recalled, created_at, bumped_at, bumped_by)` per station per send, with `kitchen_ticket_lines(ticket_id, line_id, qty, status)`
 - [ ] Lines with no station go to the setting `kitchen.default_station_id`
 - [ ] Typecheck/lint passes
@@ -745,11 +741,11 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 - [ ] Verify in browser using dev-browser skill
 - [ ] Typecheck/lint passes
 
-### US-058: Central menu management
-**Description:** As an owner, I want to manage the menu once and set per-outlet prices and availability.
+### US-058: Menu management across outlets
+**Description:** As an owner, I want to manage each outlet's menu from the backoffice and reuse work between outlets.
 
 **Acceptance Criteria:**
-- [ ] Same capabilities as US-020 plus: outlet matrix view (item × outlet: price, enabled), bulk price update by category or percentage, image upload to cloud storage, CSV import/export of items
+- [ ] Same capabilities as US-020 for the outlet picked in the outlet switcher, plus: copy a menu (categories, items, variants, add-on groups) from one outlet to another as new rows, bulk price update by category or percentage, image upload to cloud storage, CSV import/export of items per outlet
 - [ ] Verify in browser using dev-browser skill
 - [ ] Typecheck/lint passes
 
@@ -999,7 +995,7 @@ Stock is a per-outlet ledger. Every movement is an append-only `stock_ledger` ro
 **Description:** As an owner, I want time- and channel-based price lists such as happy hour.
 
 **Acceptance Criteria:**
-- [ ] `price_lists(id, outlet_id, name, order_types, days, start_time, end_time, priority)`, `price_list_items(price_list_id, item_id, variant_id, price)`; the active price list overrides the outlet price at add-line time and is snapshotted
+- [ ] `price_lists(id, outlet_id, name, order_types, days, start_time, end_time, priority)`, `price_list_items(price_list_id, item_id, variant_id, price)`; the active price list overrides the item price at add-line time and is snapshotted
 - [ ] Typecheck/lint passes
 
 ### US-084: Vouchers
@@ -1057,12 +1053,12 @@ Auth and access
 - FR-13: The Owner role is global, uneditable and not assignable per outlet.
 
 Menu
-- FR-14: Items have a tax type (`pbjt`, `ppn`, `none`) and a service-charge flag; variants, modifier groups with min/max/required, and combos are supported.
+- FR-14: Items have a tax type (`pbjt`, `ppn`, `none`); service charge is per bill, not per item; variants, modifier groups with min/max/required, and combos are supported.
 - FR-15: Price and enabled state can be overridden per outlet; availability (sold out, countdown) is owned by the hub and works offline.
 - FR-16: Sending a sold-out or off-schedule item is refused with `PRECONDITION_FAILED` and the menu refreshes.
 
 Orders
-- FR-17: Order lines snapshot name, variant, modifiers, unit price, tax type and rate, service-charge flag and station at add time.
+- FR-17: Order lines snapshot name, variant, modifiers, unit price, tax type and rate and station at add time.
 - FR-18: The pricing pipeline is line → line discount → bill discount (proportional) → subtotal → service charge → tax per type → cash rounding → total, rounding half-up to the rupiah at each step, in one tested pure function shared by server and clients.
 - FR-19: Inclusive and exclusive modes for tax and service charge are independent settings; tax base after or before discount is a setting; service charge inclusion in the tax base is a setting.
 - FR-20: Order numbers are gapless per outlet per business date; bill numbers are gapless per outlet and never reset.
@@ -1175,7 +1171,7 @@ Performance
 1. LAN transport security: plain HTTP on a dedicated outlet SSID for v1 (current decision), or self-signed TLS pinned via the pairing QR before the first pilot?
 2. Should service charge be excluded from the tax base by default outside Jakarta, or default to included everywhere with a per-outlet switch (current proposal: included, switchable)?
 3. Should comped lines deplete inventory (proposal: yes) and count in item sales (proposal: yes, flagged)?
-4. Backoffice users editing the menu while an outlet is offline: accept that the outlet sees the change only on reconnect (proposal: yes, with "last pulled" shown in the backoffice item matrix)?
+4. Backoffice users editing the menu while an outlet is offline: accept that the outlet sees the change only on reconnect (proposal: yes, with "last pulled" shown in the backoffice menu page)?
 5. Daily Z report e-mail from the cloud only, or also WhatsApp via a third-party gateway later?
 
 ## 12. Decisions (2026-09-30)
@@ -1183,7 +1179,9 @@ Performance
 Settled by the owner when the earlier spec was merged into this PRD. Do not reopen without the owner.
 
 - **Licensing:** none. Honour system; no expiry, grace period, admin lock or outlet limit.
-- **Tenancy:** one business per deployment — one app, one database, one company. No `companies` table and no `company_id` column anywhere. Master data without an `outlet_id` (menu, ingredients, customers, users) is global to the deployment; business-level values (business name) are global settings, not outlet settings.
+- **Tenancy:** one business per deployment — one app, one database, one company. No `companies` table and no `company_id` column anywhere. Master data without an `outlet_id` (ingredients, customers, users) is global to the deployment; business-level values (business name) are global settings, not outlet settings.
+- **Menu per outlet (2026-10-01):** each outlet has its own menu, brand and settings — two outlets may be different brands selling different food. Categories, items, add-on groups and kitchen stations carry `outlet_id`; names are unique per outlet. Ingredients stay global (one list; stock is per outlet, US-074–US-080), so recipes of any outlet use the same ingredients. Who edits a menu is a permission (`menu.manage`, `category.edit`): the outlet Manager role by default, reassignable per user with overrides (US-009) — the client decides.
+- **Service charge per bill (2026-10-01):** service charge applies to the whole bill, decided by its order type (`service_charge.order_types`, default dine-in only; takeaway and delivery carry none). Items have no service-charge flag. Something sold without service charge, such as merchandise, is rung up as its own bill (e.g. a takeaway order), not as an exempt line on a dine-in bill.
 - **Topology:** mobile always connects to the desktop over the LAN. The desktop is local-first for everything, admin included. A background sync service syncs with the cloud; without it there is no cloud sync. On reconnect the service pushes local changes first, then pulls; master data edited on both sides resolves last-write-wins with the loser logged.
 - **Database on the desktop:** Postgres via Docker or manual install; not embedded.
 - **Reservations:** written on the desktop and mobile only, last-write-wins; backoffice read-only.

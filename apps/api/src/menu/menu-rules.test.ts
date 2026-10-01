@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import {
   duplicateName,
+  effectiveStationId,
   forViewer,
   hasDuplicateId,
   menuConflictMessage,
@@ -59,4 +60,10 @@ test('menuConflictMessage maps each unique index, and nothing else', () => {
 test('hasDuplicateId flags one id sent twice; new rows without an id never count', () => {
   expect(hasDuplicateId([{ id: 'a' }, { id: 'b' }, {}, {}])).toBe(false);
   expect(hasDuplicateId([{ id: 'a' }, { id: 'a' }])).toBe(true);
+});
+
+test('effectiveStationId is the item’s own station, else the category’s, else null', () => {
+  expect(effectiveStationId({ kitchenStationId: 'bar' }, { kitchenStationId: 'kitchen' })).toBe('bar');
+  expect(effectiveStationId({ kitchenStationId: null }, { kitchenStationId: 'kitchen' })).toBe('kitchen');
+  expect(effectiveStationId({ kitchenStationId: null }, { kitchenStationId: null })).toBeNull();
 });

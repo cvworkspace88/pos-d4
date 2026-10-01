@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import { AddonService, type AddonGroupInput } from '../addon/addon.service';
 import { CategoryService } from '../category/category.service';
-import { menuItems, menuVariants } from '../db/schema';
+import { kitchenStations, menuItems, menuVariants } from '../db/schema';
 import { OutletService } from '../outlet/outlet.service';
 import { connectTestDatabase, truncateAll, type TestDatabase } from '../test/test-db';
 import { MenuService, type MenuItemInput } from './menu.service';
@@ -11,17 +11,17 @@ let db: TestDatabase;
 let close: () => Promise<void>;
 let service: MenuService;
 let categories: CategoryService;
-let outlets: OutletService;
 let addons: AddonService;
+let outlets: OutletService;
 let outletId: string;
 let makananId: string;
 
 beforeAll(async () => {
   ({ db, close } = await connectTestDatabase());
-  service = new MenuService(db);
   categories = new CategoryService(db);
-  outlets = new OutletService(db);
   addons = new AddonService(db);
+  outlets = new OutletService(db);
+  service = new MenuService(db, categories, addons);
 });
 
 afterAll(async () => {
@@ -38,10 +38,15 @@ const item = (over: Partial<MenuItemInput> = {}): MenuItemInput => ({
   categoryId: makananId,
   code: null,
   name: 'Nasi Goreng',
+  kitchenName: null,
+  description: null,
+  imageUrl: null,
   price: 35000,
   cost: 12000,
   tax: 'pbjt',
-  available: true,
+  kitchenStationId: null,
+  soldBy: 'unit',
+  active: true,
   variants: [],
   addonGroupIds: [],
   ...over,
@@ -54,19 +59,46 @@ const group = (name: string): AddonGroupInput => ({
   options: [{ name: 'Ya', price: 0, available: true }],
 });
 
-test('create returns the item with its category name, and list shows it', async () => {
+/** No station API yet (US-036): tests seed the table directly. */
+const station = async (name: string, active = true, at = outletId): Promise<string> =>
+  (
+    await db
+      .insert(kitchenStations)
+      .values({ outletId: at, name, active })
+      .returning({ id: kitchenStations.id })
+  )[0]!.id;
+
+const names = async () => (await service.items(outletId)).map((m) => m.name);
+
+test("create returns the item with its category name and defaults; list carries the outlet's whole menu", async () => {
   const created = await service.create(outletId, item());
-  expect(created).toMatchObject({ name: 'Nasi Goreng', categoryName: 'Makanan', price: 35000, cost: 12000 });
-  expect(await service.list(outletId)).toEqual([created]);
+  expect(created).toMatchObject({
+    name: 'Nasi Goreng',
+    categoryName: 'Makanan',
+    price: 35000,
+    cost: 12000,
+    kitchenName: null,
+    soldBy: 'unit',
+    sortOrder: 0,
+    active: true,
+    stationId: null,
+  });
+  const menu = await service.list(outletId);
+  expect(menu.items).toEqual([created]);
+  expect(menu.categories).toMatchObject([{ id: makananId, name: 'Makanan', itemCount: 1 }]);
+  expect(menu.addonGroups).toEqual([]);
 });
 
-test('list follows the category order, then the name', async () => {
+test('items follow the category order, then the item order, then the name', async () => {
   const minuman = (await categories.create(outletId, 'Minuman')).id;
   await service.create(outletId, item({ name: 'Es Teh', categoryId: minuman }));
   await service.create(outletId, item({ name: 'Mie Ayam' }));
-  await service.create(outletId, item({ name: 'Ayam Geprek' }));
+  const geprek = await service.create(outletId, item({ name: 'Ayam Geprek' }));
   await categories.reorder(outletId, [minuman, makananId]);
-  expect((await service.list(outletId)).map((m) => m.name)).toEqual(['Es Teh', 'Ayam Geprek', 'Mie Ayam']);
+  expect(await names()).toEqual(['Es Teh', 'Ayam Geprek', 'Mie Ayam']);
+  // sort_order has no writer yet; prove the ORDER BY honours it anyway.
+  await db.update(menuItems).set({ sortOrder: 5 }).where(eq(menuItems.id, geprek.id));
+  expect(await names()).toEqual(['Es Teh', 'Mie Ayam', 'Ayam Geprek']);
 });
 
 test('a duplicate live name at the same outlet is a CONFLICT', async () => {
@@ -77,34 +109,98 @@ test('a duplicate live name at the same outlet is a CONFLICT', async () => {
   });
 });
 
-test('update saves every field; an omitted cost is cleared', async () => {
-  const created = await service.create(outletId, item());
-  const saved = await service.update(outletId, created.id, item({ price: 38000, cost: null, tax: 'none' }));
-  expect(saved).toMatchObject({ price: 38000, cost: null, tax: 'none' });
-});
-
-test('setAvailable flips only the sold-out switch', async () => {
-  const created = await service.create(outletId, item());
-  expect(await service.setAvailable(outletId, created.id, false)).toEqual({
-    id: created.id,
-    available: false,
-  });
-  expect(await service.list(outletId)).toEqual([{ ...created, available: false }]);
-});
-
-test("another outlet's item is NOT_FOUND, and its category cannot be used", async () => {
+test("each outlet has its own menu; another outlet's item and category cannot be used", async () => {
   const other = (await outlets.create({ name: 'Uptown', code: 'UP' })).id;
   const theirCategory = (await categories.create(other, 'Makanan')).id;
-  const theirs = await service.create(other, item({ categoryId: theirCategory }));
+  // Same name and code at another outlet is no conflict.
+  const theirs = await service.create(other, item({ categoryId: theirCategory, code: 'NG-01' }));
+  await service.create(outletId, item({ code: 'NG-01' }));
 
-  expect(await service.list(outletId)).toEqual([]);
-  await expect(service.update(outletId, theirs.id, item())).rejects.toMatchObject({
-    code: 'NOT_FOUND',
-    message: 'Menu tidak ditemukan.',
+  expect((await service.list(other)).items.map((m) => m.id)).toEqual([theirs.id]);
+  expect((await service.list(outletId)).categories.map((c) => c.id)).toEqual([makananId]);
+  const notFound = { code: 'NOT_FOUND', message: 'Menu tidak ditemukan.' };
+  await expect(service.update(outletId, theirs.id, item({ name: 'Lain' }))).rejects.toMatchObject(notFound);
+  await expect(service.setActive(outletId, theirs.id, false)).rejects.toMatchObject(notFound);
+  await expect(service.delete(outletId, theirs.id)).rejects.toMatchObject(notFound);
+  await expect(
+    service.create(outletId, item({ name: 'Lain', categoryId: theirCategory })),
+  ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'Kategori tidak ditemukan.' });
+  expect((await service.items(other))[0]).toMatchObject({ id: theirs.id, active: true });
+});
+
+test('update saves every field; an omitted cost is cleared', async () => {
+  const created = await service.create(outletId, item());
+  const saved = await service.update(
+    outletId,
+    created.id,
+    item({
+      price: 38000,
+      cost: null,
+      tax: 'none',
+      kitchenName: 'NasGor',
+      description: 'Nasi goreng kampung dengan telur mata sapi.',
+      imageUrl: 'https://cdn.example.com/nasgor.jpg',
+      soldBy: 'weight',
+      active: false,
+    }),
+  );
+  expect(saved).toMatchObject({
+    price: 38000,
+    cost: null,
+    tax: 'none',
+    kitchenName: 'NasGor',
+    description: 'Nasi goreng kampung dengan telur mata sapi.',
+    imageUrl: 'https://cdn.example.com/nasgor.jpg',
+    soldBy: 'weight',
+    active: false,
   });
-  await expect(service.setAvailable(outletId, theirs.id, false)).rejects.toMatchObject({ code: 'NOT_FOUND' });
-  await expect(service.delete(outletId, theirs.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
-  await expect(service.create(outletId, item({ categoryId: theirCategory }))).rejects.toMatchObject({
+  expect((await service.items(outletId))[0]).toEqual(saved);
+});
+
+test('an item inherits its category’s station; its own station wins', async () => {
+  const kitchen = await station('Dapur');
+  const bar = await station('Bar');
+  await categories.update(outletId, makananId, {
+    name: 'Makanan',
+    color: null,
+    active: true,
+    kitchenStationId: kitchen,
+  });
+  const inherited = await service.create(outletId, item());
+  expect(inherited).toMatchObject({ kitchenStationId: null, stationId: kitchen });
+  const own = await service.create(outletId, item({ name: 'Es Kopi', kitchenStationId: bar }));
+  expect(own).toMatchObject({ kitchenStationId: bar, stationId: bar });
+  // Name order within the category: Es Kopi, Nasi Goreng.
+  expect((await service.items(outletId)).map((m) => m.stationId)).toEqual([bar, kitchen]);
+});
+
+test("an unknown, retired or another outlet's station is NOT_FOUND, and nothing is written", async () => {
+  const other = (await outlets.create({ name: 'Uptown', code: 'UP' })).id;
+  const retired = await station('Grill', false);
+  const theirs = await station('Bar', true, other);
+  const notFound = { code: 'NOT_FOUND', message: 'Stasiun dapur tidak ditemukan.' };
+  for (const kitchenStationId of [retired, theirs, '00000000-0000-0000-0000-000000000000'])
+    await expect(service.create(outletId, item({ kitchenStationId }))).rejects.toMatchObject(notFound);
+  expect(await service.items(outletId)).toEqual([]);
+});
+
+test('setActive flips only the on/off switch', async () => {
+  const created = await service.create(outletId, item());
+  expect(await service.setActive(outletId, created.id, false)).toEqual({ id: created.id, active: false });
+  expect(await service.items(outletId)).toEqual([{ ...created, active: false }]);
+});
+
+test('a deleted item is NOT_FOUND for update, setActive and delete; a deleted category cannot be used', async () => {
+  const created = await service.create(outletId, item());
+  await service.delete(outletId, created.id);
+  const notFound = { code: 'NOT_FOUND', message: 'Menu tidak ditemukan.' };
+  await expect(service.update(outletId, created.id, item())).rejects.toMatchObject(notFound);
+  await expect(service.setActive(outletId, created.id, false)).rejects.toMatchObject(notFound);
+  await expect(service.delete(outletId, created.id)).rejects.toMatchObject(notFound);
+
+  const gone = (await categories.create(outletId, 'Sementara')).id;
+  await categories.delete(outletId, gone);
+  await expect(service.create(outletId, item({ name: 'Lain', categoryId: gone }))).rejects.toMatchObject({
     code: 'NOT_FOUND',
     message: 'Kategori tidak ditemukan.',
   });
@@ -122,10 +218,9 @@ test('a category holding live items refuses to be deleted', async () => {
 test('delete is soft: the row stays, the item leaves the list, and its name can be reused', async () => {
   const created = await service.create(outletId, item());
   await service.delete(outletId, created.id);
-  expect(await service.list(outletId)).toEqual([]);
+  expect(await service.items(outletId)).toEqual([]);
   const [row] = await db.select().from(menuItems).where(eq(menuItems.id, created.id));
   expect(row?.deletedAt).toBeInstanceOf(Date);
-  await expect(service.delete(outletId, created.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
   await service.create(outletId, item());
 });
 
@@ -167,7 +262,7 @@ test('with variants the item price is the lowest and its cost is null', async ()
   );
   expect(created).toMatchObject({ price: 25000, cost: null });
   expect(created.variants.map((v) => v.name)).toEqual(['Large', 'Regular']);
-  expect(await service.list(outletId)).toEqual([created]);
+  expect(await service.items(outletId)).toEqual([created]);
 });
 
 test('a variant edit keeps ids, inserts new rows and soft-deletes the ones left out', async () => {
@@ -233,18 +328,22 @@ test('add-on links keep the order sent, drop repeats, and are replaced on edit',
   const created = await service.create(outletId, item({ addonGroupIds: [topping.id, pedas.id, topping.id] }));
   expect(created.addonGroupIds).toEqual([topping.id, pedas.id]);
   expect((await addons.list(outletId)).map((g) => g.usedBy)).toEqual([1, 1]);
+  expect((await service.list(outletId)).addonGroups.map((g) => g.name)).toEqual(['Level Pedas', 'Topping']);
 
   const saved = await service.update(outletId, created.id, item({ addonGroupIds: [pedas.id] }));
   expect(saved.addonGroupIds).toEqual([pedas.id]);
 });
 
-test("another outlet's add-on group is NOT_FOUND", async () => {
+test("a deleted or another outlet's add-on group is NOT_FOUND", async () => {
   const other = (await outlets.create({ name: 'Uptown', code: 'UP' })).id;
   const theirs = await addons.create(other, group('Level Pedas'));
-  await expect(service.create(outletId, item({ addonGroupIds: [theirs.id] }))).rejects.toMatchObject({
-    code: 'NOT_FOUND',
-    message: 'Add-on tidak ditemukan.',
-  });
+  const gone = await addons.create(outletId, group('Topping'));
+  await addons.delete(outletId, gone.id);
+  for (const id of [theirs.id, gone.id])
+    await expect(service.create(outletId, item({ addonGroupIds: [id] }))).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Add-on tidak ditemukan.',
+    });
 });
 
 test('deleting a group unlinks it; a deleted item no longer counts toward usedBy', async () => {
@@ -255,7 +354,7 @@ test('deleting a group unlinks it; a deleted item no longer counts toward usedBy
   expect((await addons.list(outletId))[0]?.usedBy).toBe(1);
 
   await addons.delete(outletId, pedas.id);
-  expect((await service.list(outletId)).map((m) => m.addonGroupIds)).toEqual([[]]);
+  expect((await service.items(outletId)).map((m) => m.addonGroupIds)).toEqual([[]]);
 });
 
 test('a rename chain in one save works: Regular→Large and Large→Jumbo', async () => {
@@ -301,7 +400,7 @@ test('one variant id sent twice is BAD_REQUEST, and nothing is written', async (
     code: 'BAD_REQUEST',
     message: 'Varian terkirim dua kali. Muat ulang lalu simpan lagi.',
   });
-  expect((await service.list(outletId))[0]?.variants).toMatchObject([{ id: regular!.id, name: 'Regular' }]);
+  expect((await service.items(outletId))[0]?.variants).toMatchObject([{ id: regular!.id, name: 'Regular' }]);
 });
 
 test('category list counts each category’s live menu items', async () => {

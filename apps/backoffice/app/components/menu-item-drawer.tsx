@@ -11,10 +11,11 @@ import { RadioGroup } from '@repo/ui/radio';
 import { Switch } from '@repo/ui/switch';
 import { TextField } from '@repo/ui/text-field';
 
-export type MenuItem = RouterOutputs['menu']['list'][number];
+export type MenuItem = RouterOutputs['menu']['list']['items'][number];
 export type MenuItemFields = RouterInputs['menu']['create'];
-export type AddonGroup = RouterOutputs['addon']['list'][number];
+export type AddonGroup = RouterOutputs['menu']['list']['addonGroups'][number];
 type Tax = MenuItem['tax'];
+type SoldBy = MenuItem['soldBy'];
 
 const TAXES: { value: Tax; label: string }[] = [
   { value: 'pbjt', label: 'PBJT' },
@@ -22,15 +23,26 @@ const TAXES: { value: Tax; label: string }[] = [
   { value: 'none', label: 'Tidak ada pajak' },
 ];
 
+const SOLD_BY: { value: SoldBy; label: string; description: string }[] = [
+  { value: 'unit', label: 'Per porsi', description: 'Harga per poris/item' },
+  { value: 'weight', label: 'Per berat', description: 'Harga per berat, diinput manual di kasir' },
+];
+
 type VariantDraft = { id?: string; name: string; price: string; cost: string; available: boolean };
 type Draft = {
   code: string;
   name: string;
+  kitchenName: string;
+  description: string;
+  imageUrl: string;
   categoryId: string;
   price: string;
   cost: string;
   tax: Tax;
-  available: boolean;
+  soldBy: SoldBy;
+  active: boolean;
+  // No station picker until the stations screen (US-036); an edit keeps whatever the item has.
+  kitchenStationId: string | null;
   variants: VariantDraft[];
   addonGroupIds: string[];
 };
@@ -43,23 +55,33 @@ const toDraft = (target: MenuItem | 'new', categories: ComboboxItem[]): Draft =>
     ? {
         code: '',
         name: '',
+        kitchenName: '',
+        description: '',
+        imageUrl: '',
         categoryId: categories[0]?.value ?? '',
         price: '',
         cost: '',
         tax: 'pbjt',
-        available: true,
+        soldBy: 'unit',
+        active: true,
+        kitchenStationId: null,
         variants: [],
         addonGroupIds: [],
       }
     : {
         code: target.code ?? '',
         name: target.name,
+        kitchenName: target.kitchenName ?? '',
+        description: target.description ?? '',
+        imageUrl: target.imageUrl ?? '',
         categoryId: target.categoryId,
         // With variants the item price is derived; the plain fields start empty if switched back.
         price: target.variants.length ? '' : String(target.price),
         cost: target.variants.length ? '' : money(target.cost),
         tax: target.tax,
-        available: target.available,
+        soldBy: target.soldBy,
+        active: target.active,
+        kitchenStationId: target.kitchenStationId,
         variants: target.variants.map((v) => ({
           id: v.id,
           name: v.name,
@@ -150,7 +172,13 @@ export function MenuItemDrawer({
     ? variants.length > 0 &&
       variants.every((v) => v.name.trim() && v.parsedPrice.value !== null && !v.parsedCost.error)
     : price.value !== null && !cost.error;
-  const valid = draft.name.trim() && draft.categoryId && pricesValid;
+  // type="url" does nothing outside a <form>, so check here; the server also pins http(s).
+  const imageUrl = draft.imageUrl.trim();
+  const imageUrlError =
+    imageUrl && !(URL.canParse(imageUrl) && /^https?:$/.test(new URL(imageUrl).protocol))
+      ? 'Masukkan alamat lengkap yang diawali https://.'
+      : undefined;
+  const valid = draft.name.trim() && draft.categoryId && pricesValid && !imageUrlError;
 
   const setVariant = (i: number, patch: Partial<VariantDraft>) =>
     setDraft({ ...draft, variants: draft.variants.map((v, j) => (j === i ? { ...v, ...patch } : v)) });
@@ -165,12 +193,17 @@ export function MenuItemDrawer({
     onSave({
       code: draft.code.trim() || null,
       name: draft.name.trim(),
+      kitchenName: draft.kitchenName.trim() || null,
+      description: draft.description.trim() || null,
+      imageUrl: draft.imageUrl.trim() || null,
       categoryId: draft.categoryId,
       // With variants the server derives price (lowest variant) and clears cost; 0 is a placeholder.
       price: hasVariants ? 0 : price.value!,
       cost: hasVariants ? null : cost.value,
       tax: draft.tax,
-      available: draft.available,
+      kitchenStationId: draft.kitchenStationId,
+      soldBy: draft.soldBy,
+      active: draft.active,
       variants: hasVariants
         ? variants.map((v) => ({
             id: v.id,
@@ -223,6 +256,13 @@ export function MenuItemDrawer({
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </div>
+          <TextField
+            label="Nama dapur"
+            helperText="Opsional. Nama singkat di tiket dapur, misalnya “NasGor”."
+            maxLength={60}
+            value={draft.kitchenName}
+            onChange={(e) => setDraft({ ...draft, kitchenName: e.target.value })}
+          />
           <Combobox
             searchable
             label="Kategori"
@@ -232,6 +272,22 @@ export function MenuItemDrawer({
             onValueChange={(categoryId) => setDraft({ ...draft, categoryId })}
             placeholder="Pilih kategori"
             error={categories.length ? undefined : 'Belum ada kategori. Tambahkan di halaman Kategori.'}
+          />
+          <TextField
+            label="Deskripsi"
+            helperText="Opsional. Tampil di menu digital."
+            maxLength={500}
+            value={draft.description}
+            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+          />
+          <TextField
+            label="URL gambar"
+            helperText="Opsional. Alamat https:// ke foto menu."
+            type="url"
+            maxLength={500}
+            error={imageUrlError}
+            value={draft.imageUrl}
+            onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
           />
         </Section>
 
@@ -259,6 +315,13 @@ export function MenuItemDrawer({
               onChange={(e) => setDraft({ ...draft, cost: e.target.value })}
             />
           </div>
+
+          <RadioGroup
+            aria-label="Dijual per"
+            items={SOLD_BY}
+            value={draft.soldBy}
+            onValueChange={(soldBy) => setDraft({ ...draft, soldBy: soldBy as SoldBy })}
+          />
 
           <div className="flex flex-col gap-2">
             <div>
@@ -374,7 +437,7 @@ export function MenuItemDrawer({
                 <TextField
                   aria-label="Cari add-on"
                   placeholder="Cari add-on"
-                  adornment={<Search className="size-4 text-ink-tertiary" aria-hidden />}
+                  prefix={<Search className="size-4 text-ink-tertiary" aria-hidden />}
                   value={addonQuery}
                   onChange={(e) => setAddonQuery(e.target.value)}
                 />
@@ -404,15 +467,12 @@ export function MenuItemDrawer({
           )}
         </Section>
 
-        <Section title="Ketersediaan">
+        <Section title="Status">
           <SettingRow
-            title="Tersedia di kasir"
-            description="Matikan saat menu habis."
+            title="Aktif"
+            description="Menu nonaktif tidak tampil di kasir."
             control={
-              <Switch
-                checked={draft.available}
-                onCheckedChange={(available) => setDraft({ ...draft, available })}
-              />
+              <Switch checked={draft.active} onCheckedChange={(active) => setDraft({ ...draft, active })} />
             }
           />
         </Section>

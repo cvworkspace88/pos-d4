@@ -6,22 +6,33 @@ import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
 import type { Actor } from '../auth/rbac-rules';
-import { CategoryService } from './category.service';
+import { CategoryService, type CategoryInput } from './category.service';
 
 type Ctx = Actor & { user: PublicUser };
 
 // The generator hoists these into the shared contract. Bounds are literals on purpose: it cannot
 // hoist an identifier a schema references.
-const categoryOutput = z.object({ id: z.string(), name: z.string(), sortOrder: z.number().int() });
+const categoryOutput = z.object({
+  id: z.string(),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  color: z.string().nullable(),
+  active: z.boolean(),
+  kitchenStationId: z.string().nullable(),
+});
 // Written out, not `categoryOutput.extend(...)`: the generator cannot hoist a schema built from another.
 const categoryListOutput = z.object({
   id: z.string(),
   name: z.string(),
   sortOrder: z.number().int(),
+  color: z.string().nullable(),
+  active: z.boolean(),
+  kitchenStationId: z.string().nullable(),
   // Live menu items in the category.
   itemCount: z.number().int(),
 });
 
+/** The active outlet's menu categories. Each outlet has its own menu (US-013). */
 @Router({ alias: 'category' })
 export class CategoryRouter {
   constructor(
@@ -36,21 +47,42 @@ export class CategoryRouter {
     return this.service.list(activeOutlet(ctx));
   }
 
-  @Mutation({ input: z.object({ name: z.string().trim().min(1).max(40) }), output: categoryOutput })
-  @UseMiddlewares(ProtectedMiddleware)
-  async create(@Ctx() ctx: Ctx, @Input('name') name: string) {
-    await this.rbac.require(ctx, 'category.edit');
-    return this.service.create(activeOutlet(ctx), name);
-  }
-
   @Mutation({
-    input: z.object({ id: z.uuid(), name: z.string().trim().min(1).max(40) }),
+    input: z.object({
+      name: z.string().trim().min(1).max(40),
+      color: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .nullable()
+        .optional(),
+    }),
     output: categoryOutput,
   })
   @UseMiddlewares(ProtectedMiddleware)
-  async rename(@Ctx() ctx: Ctx, @Input() input: { id: string; name: string }) {
+  async create(@Ctx() ctx: Ctx, @Input() input: { name: string; color?: string | null }) {
     await this.rbac.require(ctx, 'category.edit');
-    return this.service.rename(activeOutlet(ctx), input.id, input.name);
+    return this.service.create(activeOutlet(ctx), input.name, input.color ?? null);
+  }
+
+  // The full field set, not a patch: this is a form save.
+  @Mutation({
+    input: z.object({
+      id: z.uuid(),
+      name: z.string().trim().min(1).max(40),
+      color: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .nullable(),
+      active: z.boolean(),
+      kitchenStationId: z.uuid().nullable(),
+    }),
+    output: categoryOutput,
+  })
+  @UseMiddlewares(ProtectedMiddleware)
+  async update(@Ctx() ctx: Ctx, @Input() input: CategoryInput & { id: string }) {
+    await this.rbac.require(ctx, 'category.edit');
+    const { id, ...fields } = input;
+    return this.service.update(activeOutlet(ctx), id, fields);
   }
 
   @Mutation({ input: z.object({ id: z.uuid() }), output: z.object({ success: z.boolean() }) })

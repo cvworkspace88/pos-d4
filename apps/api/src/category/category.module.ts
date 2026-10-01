@@ -6,5 +6,7 @@ import { CategoryService } from './category.service';
 @Module({
   imports: [AuthModule],
   providers: [CategoryService, CategoryRouter],
+  // MenuService composes the whole menu, categories included.
+  exports: [CategoryService],
 })
 export class CategoryModule {}

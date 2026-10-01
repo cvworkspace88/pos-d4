@@ -4,16 +4,35 @@ import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation } from '../db/errors';
 import { categories, menuItems, type Category } from '../db/schema';
+import { requireStation } from '../menu/kitchen-station';
 import { checkReorder } from './category-rules';
 
-const categoryOutput = (c: Category) => ({ id: c.id, name: c.name, sortOrder: c.sortOrder });
+/** The full field set a form saves. `create` takes only a name (and optional colour): the rest start at their defaults. */
+export interface CategoryInput {
+  name: string;
+  /** Tile colour on the cashier screen, `#rrggbb`. Null: the default. */
+  color: string | null;
+  /** Off: hidden from the cashier screen with everything in it, without deleting anything. */
+  active: boolean;
+  /** Where this category's items are made unless an item says otherwise. Null: the outlet's default station. */
+  kitchenStationId: string | null;
+}
+
+const categoryOutput = (c: Category) => ({
+  id: c.id,
+  name: c.name,
+  sortOrder: c.sortOrder,
+  color: c.color,
+  active: c.active,
+  kitchenStationId: c.kitchenStationId,
+});
 export type CategoryOutput = ReturnType<typeof categoryOutput>;
 /** A list row also says how many live menu items sit in the category. */
 export type CategoryListOutput = CategoryOutput & { itemCount: number };
 
 const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Kategori tidak ditemukan.' });
 
-/** The only unique index on this table is the live name, so any unique violation is a duplicate name. */
+/** The only unique index on this table is the live name per outlet, so any unique violation is a duplicate name. */
 const rethrowAsConflict = (error: unknown): never => {
   if (isUniqueViolation(error))
     throw new TRPCError({ code: 'CONFLICT', message: 'Nama kategori sudah dipakai.' });
@@ -33,6 +52,9 @@ export class CategoryService {
         id: categories.id,
         name: categories.name,
         sortOrder: categories.sortOrder,
+        color: categories.color,
+        active: categories.active,
+        kitchenStationId: categories.kitchenStationId,
         itemCount: count(menuItems.id),
       })
       .from(categories)
@@ -42,14 +64,15 @@ export class CategoryService {
       .orderBy(asc(categories.sortOrder), asc(categories.createdAt));
   }
 
-  /** Appended after the last live category. */
-  async create(outletId: string, name: string): Promise<CategoryOutput> {
+  /** Appended after the outlet's last live category. */
+  async create(outletId: string, name: string, color: string | null = null): Promise<CategoryOutput> {
     try {
       const [row] = await this.db
         .insert(categories)
         .values({
           outletId,
           name,
+          color,
           sortOrder: sql`(select coalesce(max(${categories.sortOrder}) + 1, 0) from ${categories}
             where ${categories.outletId} = ${outletId} and ${categories.deletedAt} is null)`,
         })
@@ -60,15 +83,19 @@ export class CategoryService {
     }
   }
 
-  async rename(outletId: string, id: string, name: string): Promise<CategoryOutput> {
+  /** The full field set, not a patch: this is a form save. Configuration, so last write wins. */
+  async update(outletId: string, id: string, input: CategoryInput): Promise<CategoryOutput> {
     try {
-      const [row] = await this.db
-        .update(categories)
-        .set({ name })
-        .where(and(eq(categories.id, id), liveAt(outletId)))
-        .returning();
-      if (!row) throw notFound();
-      return categoryOutput(row);
+      return await this.db.transaction(async (tx) => {
+        if (input.kitchenStationId) await requireStation(tx, outletId, input.kitchenStationId);
+        const [row] = await tx
+          .update(categories)
+          .set(input)
+          .where(and(eq(categories.id, id), liveAt(outletId)))
+          .returning();
+        if (!row) throw notFound();
+        return categoryOutput(row);
+      });
     } catch (error) {
       return rethrowAsConflict(error);
     }
@@ -82,12 +109,12 @@ export class CategoryService {
    */
   async delete(outletId: string, id: string): Promise<{ success: true }> {
     await this.db.transaction(async (tx) => {
-      const [live] = await tx
+      const [row] = await tx
         .select({ id: categories.id })
         .from(categories)
         .where(and(eq(categories.id, id), liveAt(outletId)))
         .for('update');
-      if (!live) throw notFound();
+      if (!row) throw notFound();
       const [item] = await tx
         .select({ id: menuItems.id })
         .from(menuItems)
@@ -104,21 +131,21 @@ export class CategoryService {
   }
 
   /**
-   * `ids` must be every live category, once. The rows are locked first, so a delete or rename from
-   * another tablet waits for this transaction; a create isn't locked by `FOR UPDATE` and can slip in
-   * regardless — it simply lands at the end, and the next reorder fixes it.
+   * `ids` must be every live category of the outlet, once. The rows are locked first, so a delete or
+   * update from another tablet waits for this transaction; a create isn't locked by `FOR UPDATE` and
+   * can slip in regardless — it simply lands at the end, and the next reorder fixes it.
    * Same set, different order from another tablet: last write wins — this is configuration.
    */
   async reorder(outletId: string, ids: string[]): Promise<CategoryOutput[]> {
     await this.db.transaction(async (tx) => {
-      const live = await tx
+      const rows = await tx
         .select({ id: categories.id })
         .from(categories)
         .where(liveAt(outletId))
         .for('update');
       if (
         !checkReorder(
-          live.map((r) => r.id),
+          rows.map((r) => r.id),
           ids,
         )
       )

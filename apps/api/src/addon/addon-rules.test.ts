@@ -1,22 +1,23 @@
 import { expect, test } from 'vitest';
-import { addonConflictMessage, selectionError } from './addon-rules';
+import { addonConflictMessage, getSelectAddonErrorMessage } from './addon-rules';
 
 // Duplicated from packages/api-contract/src/addon.ts's own tests: apps/api cannot import that
-// package at runtime (see the comment on selectionError above, in addon-rules.ts), so this copy
-// needs its own coverage. This file keeps the local name (selectionError), not the renamed
-// api-contract export (getSelectAddonErrorMessage), since it tests apps/api's own duplicate.
+// package at runtime (see the comment at the top of addon-rules.ts), so this copy needs its own
+// coverage. It tests apps/api's own duplicate of getSelectAddonErrorMessage, not the api-contract one.
 test('a sound rule has no error', () => {
-  expect(selectionError({ min: 0, max: 3, optionCount: 2 })).toBeNull();
-  expect(selectionError({ min: 1, max: 1, optionCount: 3 })).toBeNull();
+  expect(getSelectAddonErrorMessage({ min: 0, max: 3, optionCount: 2 })).toBeNull();
+  expect(getSelectAddonErrorMessage({ min: 1, max: 1, optionCount: 3 })).toBeNull();
 });
 
 test('every broken rule is refused with its own message', () => {
-  expect(selectionError({ min: 0, max: 1, optionCount: 0 })).toBe('Tambahkan minimal satu pilihan.');
-  expect(selectionError({ min: 0, max: 0, optionCount: 2 })).toBe('Pilihan maksimum minimal 1.');
-  expect(selectionError({ min: 2, max: 1, optionCount: 3 })).toBe(
+  expect(getSelectAddonErrorMessage({ min: 0, max: 1, optionCount: 0 })).toBe(
+    'Tambahkan minimal satu pilihan.',
+  );
+  expect(getSelectAddonErrorMessage({ min: 0, max: 0, optionCount: 2 })).toBe('Pilihan maksimum minimal 1.');
+  expect(getSelectAddonErrorMessage({ min: 2, max: 1, optionCount: 3 })).toBe(
     'Pilihan minimum tidak boleh melebihi maksimum.',
   );
-  expect(selectionError({ min: 3, max: 3, optionCount: 2 })).toBe(
+  expect(getSelectAddonErrorMessage({ min: 3, max: 3, optionCount: 2 })).toBe(
     'Pilihan minimum melebihi jumlah pilihan (2).',
   );
 });

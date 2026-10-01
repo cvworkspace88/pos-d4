@@ -6,5 +6,7 @@ import { AddonService } from './addon.service';
 @Module({
   imports: [AuthModule],
   providers: [AddonService, AddonRouter],
+  // MenuService composes the whole menu, add-on groups included.
+  exports: [AddonService],
 })
 export class AddonModule {}

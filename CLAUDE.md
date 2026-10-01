@@ -34,7 +34,7 @@ Turborepo + pnpm monorepo, end-to-end typesafe from Postgres to both clients.
 - `apps/api` — NestJS 11 (pinned; `nestjs-trpc@2.13` rejects Nest 12), nestjs-trpc, Drizzle ORM on node-postgres, Passport JWT, argon2.
 - `apps/mobile` — Expo SDK 57 + expo-router, NativeWind. Shared tablet: password login once, then 6-digit PIN.
 - `apps/desktop` — electron-vite + React 19. Username + password only, no PIN, no idle lock.
-- `apps/backoffice` — Vite 8 + React 19 admin web app. Scaffold only so far: no tRPC client, no auth.
+- `apps/backoffice` — React Router 7 + React 19 admin web app (`app/routes/*`): login, outlet switcher, outlets, staff, roles, settings, categories, menu, add-ons. Always online, cloud only.
 - `packages/ui` — web components (`Button`, `Card`, `Alert`, `TextField`) shared by desktop and backoffice. Source `.tsx` exported directly, no build step; consumers must add `../../packages/ui/src/**/*.{js,ts,jsx,tsx}` to their Tailwind `content` globs. Mobile has its own RN mirrors.
 - `packages/api-contract` — the `AppRouter` type both clients import, plus the *shared runtime* pieces: `refresh.ts` (token provider), `refresh-link.ts` (401 recovery link), `floor.ts` (floor-plan geometry/rules). Also `eslint-config`, `typescript-config`, `tailwind-config`.
 
@@ -46,11 +46,11 @@ Turborepo + pnpm monorepo, end-to-end typesafe from Postgres to both clients.
 
 ### Module shape
 
-Each domain (`auth/`, `floor/`, `outlet/`, `settings/`) is three layers:
+Each domain (`auth/`, `floor/`, `outlet/`, `settings/`, `category/`, `menu/`, `addon/`) is three layers:
 
 1. `*.router.ts` — decorators, Zod validation, `@UseMiddlewares(ProtectedMiddleware)`, and `rbac.require(ctx.user.id, 'domain.action')`. Thin.
 2. `*.service.ts` — the Drizzle work, constructor-injected `DRIZZLE` handle.
-3. `*-rules.ts` — pure, decorator-free functions holding the logic worth testing (`floor-rules.ts`, `pin-policy.ts`, `refresh-window.ts`, `rbac-rules.ts`, `outlet-rules.ts`). They exist so tests can import them without Nest's DI or reflect-metadata.
+3. `*-rules.ts` — pure, decorator-free functions holding the logic worth testing (`floor-rules.ts`, `pin-policy.ts`, `refresh-window.ts`, `rbac-rules.ts`, `outlet-rules.ts`, `category-rules.ts`, `menu-rules.ts`, `addon-rules.ts`). They exist so tests can import them without Nest's DI or reflect-metadata.
 
 Permission checks are by *name* (`domain.action`), never id. Effective permissions = role grants + per-user `grant` rows − per-user `revoke` rows (`rbac-rules.ts`).
 
@@ -61,6 +61,10 @@ Access JWT (15 min) + opaque refresh token stored SHA-256-hashed in `refresh_tok
 Mobile "sign out" **parks** the session (`revoked_reason = 'parked'`) and keeps the refresh token in the client's `profiles` map; `auth.pinLogin` redeems it. Only `'rotated'` and `'pin_rotated'` reasons earn the 30s grace window in `auth.refresh` — that asymmetry is what stops a parked profile from reopening the PIN-free refresh path.
 
 A session carries an **active outlet** (`outletId` in the JWT and on the `refresh_tokens` row). Roles are per outlet (`outlet_staff.role_id`); `users.role_id` is the *global* role, owner only, needing no membership. `auth.refresh` with an `outletId` is the outlet picker — there is no `selectOutlet`. `rbac.require(ctx, permission)` reads the role for `ctx.outletId`; `canActOn(ctx, outletId)` confines a non-global user to their active outlet. Refusals are `FORBIDDEN`: `Outlet tidak ditemukan.` for an outlet you do not work at (refresh) or may not act on (`canActOn`) — same text as a real `NOT_FOUND`, but still 403 — and `Anda tidak memiliki akses.` from `rbac.require`; `setStaff` with the owner role is `BAD_REQUEST` `Owner is global.`
+
+### Menu
+
+The **menu is per outlet**: each outlet has its own menu, brand and settings (PRD v2 section 12, 2026-10-01), so `categories`, `menu_items`, `addon_groups` and `kitchen_stations` carry `outlet_id`, names are unique per outlet, and every catalogue procedure works on the session's active outlet (`activeOutlet(ctx)`, never an outlet id from input). An item's category, station and add-on groups must be of the same outlet (`NOT_FOUND` otherwise). `menu.list` returns the active outlet's `{ categories, items, addonGroups }` in one call. `menu_items.active` is the admin on/off switch; sold-out (`item_availability`, US-018) is not built yet. `kitchen_stations` has no router yet: `effectiveStationId` in `menu-rules.ts` resolves item-over-category, and US-036 adds printer/KDS. Who edits a menu is the `menu.manage`/`category.edit` permission — the outlet Manager by default, movable per user with overrides.
 
 ### Error codes are load-bearing
 
@@ -128,6 +132,7 @@ POS is judged on — apply these rules to every feature that touches them, inclu
   bundler dictates its own (mobile TS 6, api/desktop TS 5.9, backoffice TS 6 on Vite 8). Do not try to
   unify them.
 - `DEPLOYMENT` (`cloud` / `local` / `all`) in `apps/api/.env` is designed but not yet read by any code — it will decide which router modules a process exposes (`all` is for `trpc:generate` only, never for a running server).
+- **Long lists are virtualized.** Web (`packages/ui` select/combobox options, backoffice and desktop lists) uses `@tanstack/react-virtual`; mobile uses `@shopify/flash-list` instead of `FlatList`/`ScrollView` + `map`. Applies to any list that can grow unbounded (menu items, staff, add-on options, search results); short fixed lists (tax types, order types) stay plain. Neither package is installed yet — add it to the workspace that first needs it.
 
 ## Responses
 

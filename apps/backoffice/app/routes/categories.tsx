@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GripVertical, Pencil, Trash2 } from 'lucide-react';
+import { GripVertical, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { RouterOutputs } from '@repo/api-contract';
 import { Alert } from '@repo/ui/alert';
@@ -43,26 +43,39 @@ export default function CategoriesPage() {
 
   const listKey = trpc.category.list.queryKey();
   const list = useQuery(trpc.category.list.queryOptions(undefined, { enabled: !!outlet }));
-  const refetch = () => queryClient.invalidateQueries({ queryKey: listKey });
+  // The Menu drawer's category picker reads menu.list, so it goes stale with this list.
+  const refetch = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: listKey }),
+      queryClient.invalidateQueries({ queryKey: trpc.menu.list.queryKey() }),
+    ]);
 
-  const [name, setName] = useState('');
-  const [renaming, setRenaming] = useState<Category | null>(null);
-  const [newName, setNewName] = useState('');
+  const [query, setQuery] = useState('');
+  // 'new' adds a category; a row renames it. One dialog, so both flows look the same.
+  const [editing, setEditing] = useState<Category | 'new' | null>(null);
+  const [draftName, setDraftName] = useState('');
   const [removing, setRemoving] = useState<Category | null>(null);
+  const [highlighted, setHighlighted] = useState<string | null>(null);
 
   const create = useMutation(
     trpc.category.create.mutationOptions({
-      onSuccess: () => {
-        setName('');
-        void refetch();
+      onSuccess: async (saved) => {
+        setEditing(null);
+        await refetch();
+        // New categories land at the end: show the user where it went.
+        setHighlighted(saved.id);
+        document
+          .getElementById(`category-${saved.id}`)
+          ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        setTimeout(() => setHighlighted((id) => (id === saved.id ? null : id)), 2000);
       },
       onError: () => void refetch(),
     }),
   );
   const rename = useMutation(
-    trpc.category.rename.mutationOptions({
+    trpc.category.update.mutationOptions({
       onSuccess: () => {
-        setRenaming(null);
+        setEditing(null);
         void refetch();
       },
       onError: () => void refetch(),
@@ -117,39 +130,68 @@ export default function CategoriesPage() {
     reorder.mutate({ ids: arrayMove(rows, from, to).map((c) => c.id) });
   };
 
+  const openDialog = (target: Category | 'new') => {
+    create.reset();
+    rename.reset();
+    setDraftName(target === 'new' ? '' : target.name);
+    setEditing(target);
+  };
+
+  const saving = create.isPending || rename.isPending;
+  const saveError = create.error ?? rename.error;
+  const trimmed = draftName.trim();
+  const unchanged = editing !== 'new' && trimmed === editing?.name;
+  const save = () => {
+    if (!editing || !trimmed || unchanged) return;
+    if (editing === 'new') create.mutate({ name: trimmed });
+    else
+      rename.mutate({
+        id: editing.id,
+        name: trimmed,
+        // The dialog edits the name only; the rest rides along unchanged (a full-set save).
+        color: editing.color,
+        active: editing.active,
+        kitchenStationId: editing.kitchenStationId,
+      });
+  };
+
+  const q = query.trim().toLowerCase();
+  const rows = q ? (list.data ?? []).filter((c) => c.name.toLowerCase().includes(q)) : (list.data ?? []);
+  // Reordering a filtered list is ambiguous, so dragging waits for the search to be cleared.
+  const canDrag = canEdit && !q;
   const failed = list.error && !list.data;
-  const actionError = create.error ?? reorder.error;
 
   return (
     <>
       <PageHeader title="Kategori" subtitle={outlet?.name ?? 'Belum ada outlet aktif'} />
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-6">
-        {canEdit && !failed && (
-          <form
-            className="flex items-end gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (name.trim()) create.mutate({ name: name.trim() });
-            }}
-          >
+        {!failed && (
+          <div className="flex flex-wrap items-center gap-3">
             <div className="w-72">
               <TextField
-                aria-label="Nama kategori baru"
-                placeholder="Nama kategori baru"
-                maxLength={40}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                aria-label="Cari kategori"
+                placeholder="Cari kategori"
+                prefix={<Search className="size-4 text-ink-tertiary" aria-hidden />}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <Button type="submit" loading={create.isPending} disabled={!outlet || !name.trim()}>
-              Tambah kategori
-            </Button>
-          </form>
+            {canEdit && (
+              <Button size="sm" className="ml-auto" onClick={() => openDialog('new')} disabled={!outlet}>
+                <Plus className="mr-2 size-4" aria-hidden />
+                Tambah kategori
+              </Button>
+            )}
+          </div>
         )}
 
-        {actionError && (
+        {q && canEdit && list.data && list.data.length > 0 && (
+          <p className="text-xs text-ink-tertiary">Hapus pencarian untuk mengatur urutan.</p>
+        )}
+
+        {reorder.error && (
           <Alert variant="danger" role="alert">
-            {actionError.message}
+            {reorder.error.message}
           </Alert>
         )}
 
@@ -172,26 +214,32 @@ export default function CategoriesPage() {
               ))}
 
             {list.data?.length === 0 && (
-              <StateMessageLayout
-                title="Belum ada kategori"
-                description={canEdit ? 'Tambahkan kategori pertama di atas.' : undefined}
-              />
+              <StateMessageLayout title="Belum ada kategori">
+                {canEdit && (
+                  <Button size="sm" onClick={() => openDialog('new')}>
+                    <Plus className="mr-2 size-4" aria-hidden />
+                    Tambah kategori
+                  </Button>
+                )}
+              </StateMessageLayout>
             )}
 
-            {list.data && list.data.length > 0 && (
+            {list.data && list.data.length > 0 && rows.length === 0 && (
+              <StateMessageLayout title="Tidak ada kategori yang cocok." />
+            )}
+
+            {rows.length > 0 && (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                <SortableContext items={list.data.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                <SortableContext items={rows.map((c) => c.id)} strategy={verticalListSortingStrategy}>
                   <ul>
-                    {list.data.map((c) => (
+                    {rows.map((c) => (
                       <CategoryRow
                         key={c.id}
                         category={c}
                         canEdit={canEdit}
-                        onRename={() => {
-                          rename.reset();
-                          setNewName(c.name);
-                          setRenaming(c);
-                        }}
+                        canDrag={canDrag}
+                        highlighted={highlighted === c.id}
+                        onRename={() => openDialog(c)}
                         onRemove={() => {
                           remove.reset();
                           setRemoving(c);
@@ -207,36 +255,44 @@ export default function CategoriesPage() {
       </div>
 
       <Dialog
-        open={!!renaming}
-        onClose={() => setRenaming(null)}
-        blocking={rename.isPending}
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        blocking={saving}
         closeButton={false}
-        title="Ganti nama kategori"
+        title={editing === 'new' ? 'Kategori baru' : 'Ganti nama kategori'}
         footer={
-          <div className="flex w-full flex-col gap-3">
-            {rename.error && <p className="text-sm text-danger">{rename.error.message}</p>}
-            <div className="flex gap-3">
-              <Button
-                className="flex-1"
-                loading={rename.isPending}
-                disabled={!newName.trim() || newName.trim() === renaming?.name}
-                onClick={() => renaming && rename.mutate({ id: renaming.id, name: newName.trim() })}
-              >
-                Simpan
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setRenaming(null)}
-                disabled={rename.isPending}
-              >
-                Batal
-              </Button>
-            </div>
+          <div className="flex w-full gap-3">
+            <Button
+              type="submit"
+              form="category-form"
+              className="flex-1"
+              loading={saving}
+              disabled={!trimmed || unchanged}
+            >
+              Simpan
+            </Button>
+            <Button variant="outline" className="flex-1" onClick={() => setEditing(null)} disabled={saving}>
+              Batal
+            </Button>
           </div>
         }
       >
-        <TextField label="Nama" maxLength={40} value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <form
+          id="category-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+        >
+          <TextField
+            label="Nama kategori"
+            maxLength={40}
+            value={draftName}
+            // A duplicate name keeps what was typed, so the user only has to fix it.
+            error={saveError?.message}
+            onChange={(e) => setDraftName(e.target.value)}
+          />
+        </form>
       </Dialog>
 
       <Dialog
@@ -284,31 +340,39 @@ export default function CategoriesPage() {
 function CategoryRow({
   category,
   canEdit,
+  canDrag,
+  highlighted,
   onRename,
   onRemove,
 }: {
   category: Category;
   canEdit: boolean;
+  /** Off while searching: the grip stays in place so rows don't shift, but it is inert. */
+  canDrag: boolean;
+  /** Briefly marks a just-added row. */
+  highlighted: boolean;
   onRename: () => void;
   onRemove: () => void;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
-    useSortable({ id: category.id, disabled: !canEdit });
+    useSortable({ id: category.id, disabled: !canDrag });
 
   return (
     <li
       ref={setNodeRef}
+      id={`category-${category.id}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex items-center gap-3 border-b border-border-muted bg-surface px-4 py-3 text-sm last:border-0 ${
-        isDragging ? 'relative z-10 shadow-md' : ''
-      }`}
+      className={`flex items-center gap-3 border-b border-border-muted px-4 py-3 text-sm transition-colors duration-700 last:border-0 ${
+        highlighted ? 'bg-primary-lighter' : 'bg-surface'
+      } ${isDragging ? 'relative z-10 shadow-md' : ''}`}
     >
       {canEdit && (
         <button
           ref={setActivatorNodeRef}
           type="button"
           aria-label={`Geser ${category.name}`}
-          className="flex size-8 cursor-grab touch-none items-center justify-center rounded text-ink-tertiary hover:bg-primary-lighter active:cursor-grabbing"
+          disabled={!canDrag}
+          className="flex size-8 cursor-grab touch-none items-center justify-center rounded text-ink-tertiary hover:bg-primary-lighter active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
           {...attributes}
           {...listeners}
         >

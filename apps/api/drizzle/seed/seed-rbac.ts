@@ -71,12 +71,12 @@ export const PERMISSIONS: Record<string, { label: string; roles: RoleName[] }> =
 
   // Menu categories of the active outlet: their names and the order the cashier screen shows them in.
   'category.view': { label: 'Lihat kategori', roles: ['manager'] },
-  // Add, rename, delete, reorder.
+  // Add, update, delete, reorder.
   'category.edit': { label: 'Kelola kategori', roles: ['manager'] },
 
   // The active outlet's menu. The floor and counter read it to take orders; managing it is the manager's.
   'menu.view': { label: 'Lihat menu', roles: ['manager', 'cashier', 'waiter'] },
-  // Add, edit, price, tax, available.
+  // Add, edit, price, tax, active.
   'menu.manage': { label: 'Kelola menu', roles: ['manager'] },
 
   'order.view': { label: 'Lihat pesanan', roles: ['manager', 'waiter', 'cashier', 'auditor'] },

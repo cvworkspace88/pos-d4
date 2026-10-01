@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { and, asc, eq, inArray, isNull, notInArray } from 'drizzle-orm';
+import { AddonService, type AddonGroupOutput } from '../addon/addon.service';
+import { CategoryService, type CategoryListOutput } from '../category/category.service';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { conflictHandler } from '../db/errors';
 import {
@@ -11,11 +13,14 @@ import {
   menuVariants,
   outlets,
   settings,
+  type SoldBy,
   type Tax,
 } from '../db/schema';
 import { DEFAULT_SETTINGS } from '../settings/settings.service';
+import { requireStation } from './kitchen-station';
 import {
   duplicateName,
+  effectiveStationId,
   hasDuplicateId,
   menuConflictMessage,
   normalizeCode,
@@ -38,28 +43,46 @@ export interface MenuItemInput {
   categoryId: string;
   code: string | null;
   name: string;
+  /** Short name printed on kitchen tickets. Null: the name. */
+  kitchenName: string | null;
+  description: string | null;
+  imageUrl: string | null;
   price: number;
   cost: number | null;
   tax: Tax;
-  available: boolean;
+  /** Overrides the category's station; a station of the same outlet. Null: inherit. */
+  kitchenStationId: string | null;
+  soldBy: SoldBy;
+  /** Off: hidden from the outlet's cashier screen. Not a delete, not sold-out (US-018). */
+  active: boolean;
   /** The whole set. Non-empty: the item is sold as one of these, and `price`/`cost` are derived. */
   variants: VariantInput[];
-  /** In display order; repeats are dropped. */
+  /** In display order; repeats are dropped. Groups of the same outlet. */
   addonGroupIds: string[];
 }
 
 export type MenuItemOutput = Omit<MenuItemInput, 'variants'> & {
   id: string;
   categoryName: string;
+  /** Where a line routes: the item's own station, else the category's. Null: the outlet's default. */
+  stationId: string | null;
+  sortOrder: number;
   variants: Variant[];
 };
+
+/** One outlet's whole menu, as its cashier screen loads it: three flat lists, linked by id. */
+export interface MenuOutput {
+  categories: CategoryListOutput[];
+  items: MenuItemOutput[];
+  addonGroups: AddonGroupOutput[];
+}
 
 const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Menu tidak ditemukan.' });
 const categoryNotFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Kategori tidak ditemukan.' });
 const variantNotFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Varian tidak ditemukan.' });
 const addonNotFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Add-on tidak ditemukan.' });
 
-/** Maps by the index Postgres names: name, code and variant name each have their own message. */
+/** Maps by the index Postgres names: name and code each have their own message. */
 const rethrowAsConflict = conflictHandler(menuConflictMessage);
 
 /** Live menu items of one outlet. Every query goes through this, so no id crosses outlets. */
@@ -69,28 +92,49 @@ type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 @Injectable()
 export class MenuService {
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    @Inject(CategoryService) private readonly categories: CategoryService,
+    @Inject(AddonService) private readonly addons: AddonService,
+  ) {}
 
-  /** In the cashier screen's order: by category position, then name. `id` narrows to one item. */
-  async list(outletId: string, id?: string, db: Pick<Tx, 'select'> = this.db): Promise<MenuItemOutput[]> {
-    const items = await db
+  /** Everything the outlet's clients need in one round trip. Sold-out arrives with US-018. */
+  async list(outletId: string): Promise<MenuOutput> {
+    const [categoryRows, items, groups] = await Promise.all([
+      this.categories.list(outletId),
+      this.items(outletId),
+      this.addons.list(outletId),
+    ]);
+    return { categories: categoryRows, items, addonGroups: groups };
+  }
+
+  /** Live items in the cashier screen's order: category position, item position, name. `id` narrows to one. */
+  async items(outletId: string, id?: string, db: Pick<Tx, 'select'> = this.db): Promise<MenuItemOutput[]> {
+    const rows = await db
       .select({
         id: menuItems.id,
         categoryId: menuItems.categoryId,
         categoryName: categories.name,
+        categoryStationId: categories.kitchenStationId,
         code: menuItems.code,
         name: menuItems.name,
+        kitchenName: menuItems.kitchenName,
+        description: menuItems.description,
+        imageUrl: menuItems.imageUrl,
         price: menuItems.price,
         cost: menuItems.cost,
         tax: menuItems.tax,
-        available: menuItems.available,
+        kitchenStationId: menuItems.kitchenStationId,
+        soldBy: menuItems.soldBy,
+        sortOrder: menuItems.sortOrder,
+        active: menuItems.active,
       })
       .from(menuItems)
       .innerJoin(categories, eq(categories.id, menuItems.categoryId))
       .where(and(liveAt(outletId), id ? eq(menuItems.id, id) : undefined))
-      .orderBy(asc(categories.sortOrder), asc(menuItems.name));
-    if (!items.length) return [];
-    const ids = items.map((i) => i.id);
+      .orderBy(asc(categories.sortOrder), asc(menuItems.sortOrder), asc(menuItems.name));
+    if (!rows.length) return [];
+    const ids = rows.map((i) => i.id);
 
     // Independent queries: run together rather than round-trip one after the other.
     const [variants, links] = await Promise.all([
@@ -117,8 +161,9 @@ export class MenuService {
     ]);
 
     // ponytail: per-item filter is O(items × rows); group into a Map if menus reach thousands of items.
-    return items.map((item) => ({
+    return rows.map(({ categoryStationId, ...item }) => ({
       ...item,
+      stationId: effectiveStationId(item, { kitchenStationId: categoryStationId }),
       variants: variants
         .filter((v) => v.menuItemId === item.id)
         .map((v) => ({ id: v.id, name: v.name, price: v.price, cost: v.cost, available: v.available })),
@@ -148,17 +193,13 @@ export class MenuService {
     return this.save(outletId, id, input);
   }
 
-  /** The sold-out switch on its own, so flipping it cannot overwrite a price edited elsewhere. */
-  async setAvailable(
-    outletId: string,
-    id: string,
-    available: boolean,
-  ): Promise<{ id: string; available: boolean }> {
+  /** The on/off switch on its own, so flipping it cannot overwrite a price edited elsewhere. */
+  async setActive(outletId: string, id: string, active: boolean): Promise<{ id: string; active: boolean }> {
     const [row] = await this.db
       .update(menuItems)
-      .set({ available })
+      .set({ active })
       .where(and(eq(menuItems.id, id), liveAt(outletId)))
-      .returning({ id: menuItems.id, available: menuItems.available });
+      .returning({ id: menuItems.id, active: menuItems.active });
     if (!row) throw notFound();
     return row;
   }
@@ -195,6 +236,7 @@ export class MenuService {
     try {
       return await this.db.transaction(async (tx) => {
         await this.lockCategory(tx, outletId, fields.categoryId);
+        if (fields.kitchenStationId) await requireStation(tx, outletId, fields.kitchenStationId);
         const groupIds = await this.lockAddonGroups(tx, outletId, addonGroupIds);
         const [saved] = id
           ? await tx
@@ -218,7 +260,7 @@ export class MenuService {
               groupIds.map((addonGroupId, sortOrder) => ({ menuItemId: mid, addonGroupId, sortOrder })),
             );
         // Inside the transaction, so a delete landing right after commit cannot turn this save into NOT_FOUND.
-        const [item] = await this.list(outletId, mid, tx);
+        const [item] = await this.items(outletId, mid, tx);
         if (!item) throw notFound();
         return item;
       });
@@ -261,7 +303,7 @@ export class MenuService {
   }
 
   /**
-   * The category must be live at this outlet, and stay so until the write commits: `FOR SHARE`
+   * The category must be live and of this outlet, and stay so until the write commits: `FOR SHARE`
    * blocks `CategoryService.delete`, which locks the row `FOR UPDATE` before counting its items.
    */
   private async lockCategory(tx: Tx, outletId: string, categoryId: string): Promise<void> {
@@ -276,7 +318,7 @@ export class MenuService {
   }
 
   /**
-   * Every group must be live at this outlet, held `FOR SHARE` until commit: `AddonService.delete`
+   * Every group must be live and of this outlet, held `FOR SHARE` until commit: `AddonService.delete`
    * locks it `FOR UPDATE` before unlinking, so no link can land on a group being deleted.
    */
   private async lockAddonGroups(tx: Tx, outletId: string, ids: string[]): Promise<string[]> {

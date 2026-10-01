@@ -28,10 +28,7 @@ export default function MenuPage() {
 
   const listKey = trpc.menu.list.queryKey();
   const list = useQuery(trpc.menu.list.queryOptions(undefined, { enabled: !!outlet }));
-  // Only the drawer needs the full category list, and only a manager opens it.
-  const categories = useQuery(trpc.category.list.queryOptions(undefined, { enabled: !!outlet && canManage }));
   const taxRates = useQuery(trpc.menu.taxRates.queryOptions(undefined, { enabled: !!outlet && canManage }));
-  const addonGroups = useQuery(trpc.addon.list.queryOptions(undefined, { enabled: !!outlet && canManage }));
   const refetch = () => {
     void queryClient.invalidateQueries({ queryKey: listKey });
     // Add-on groups show "Dipakai di N menu"; keep that count fresh after a menu save/delete.
@@ -57,12 +54,17 @@ export default function MenuPage() {
     trpc.menu.update.mutationOptions({ onSuccess: onSaved, onError: () => void refetch() }),
   );
   // Optimistic: the switch moves at once. On failure the list is refetched, which puts it back.
-  const setAvailable = useMutation(
-    trpc.menu.setAvailable.mutationOptions({
-      onMutate: async ({ id, available }) => {
+  const setActive = useMutation(
+    trpc.menu.setActive.mutationOptions({
+      onMutate: async ({ id, active }) => {
         await queryClient.cancelQueries({ queryKey: listKey });
-        queryClient.setQueryData(listKey, (items) =>
-          items?.map((item) => (item.id === id ? { ...item, available } : item)),
+        queryClient.setQueryData(
+          listKey,
+          (menu) =>
+            menu && {
+              ...menu,
+              items: menu.items.map((item) => (item.id === id ? { ...item, active } : item)),
+            },
         );
       },
       onSettled: () => void refetch(),
@@ -88,7 +90,7 @@ export default function MenuPage() {
     editing === 'new' ? create.mutate(fields) : editing && update.mutate({ id: editing.id, ...fields });
 
   // The filter offers the categories that have items, in the list's own (cashier screen) order.
-  const items = list.data ?? [];
+  const items = list.data?.items ?? [];
   const filterItems = [
     { value: 'all', label: 'Semua kategori' },
     ...[...new Map(items.map((m) => [m.categoryId, m.categoryName]))].map(([value, label]) => ({
@@ -115,7 +117,7 @@ export default function MenuPage() {
               <TextField
                 aria-label="Cari menu"
                 placeholder="Cari nama atau kode menu"
-                adornment={<Search className="size-4 text-ink-tertiary" aria-hidden />}
+                prefix={<Search className="size-4 text-ink-tertiary" aria-hidden />}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -139,9 +141,9 @@ export default function MenuPage() {
           </div>
         )}
 
-        {setAvailable.error && (
+        {setActive.error && (
           <Alert variant="danger" role="alert">
-            {setAvailable.error.message}
+            {setActive.error.message}
           </Alert>
         )}
 
@@ -185,7 +187,7 @@ export default function MenuPage() {
                     <th className="px-4 py-3 font-semibold">Kategori</th>
                     <th className="px-4 py-3 text-right font-semibold">Harga</th>
                     {canManage && <th className="px-4 py-3 text-right font-semibold">Harga modal</th>}
-                    <th className="w-36 whitespace-nowrap px-4 py-3 font-semibold">Tersedia</th>
+                    <th className="w-36 whitespace-nowrap px-4 py-3 font-semibold">Aktif</th>
                     {canManage && <th className="px-4 py-3" />}
                   </tr>
                 </thead>
@@ -218,12 +220,12 @@ export default function MenuPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Switch
-                            aria-label={`${m.name} tersedia`}
-                            checked={m.available}
+                            aria-label={`${m.name} aktif`}
+                            checked={m.active}
                             disabled={!canManage}
-                            onCheckedChange={(available) => setAvailable.mutate({ id: m.id, available })}
+                            onCheckedChange={(active) => setActive.mutate({ id: m.id, active })}
                           />
-                          {!m.available && <Pill tone="danger">Habis</Pill>}
+                          {!m.active && <Pill tone="danger">Nonaktif</Pill>}
                         </div>
                       </td>
                       {canManage && (
@@ -262,9 +264,9 @@ export default function MenuPage() {
 
       <MenuItemDrawer
         target={editing}
-        categories={(categories.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
-        addonGroups={addonGroups.data ?? []}
-        addonGroupsLoading={addonGroups.isLoading}
+        categories={(list.data?.categories ?? []).map((c) => ({ value: c.id, label: c.name }))}
+        addonGroups={list.data?.addonGroups ?? []}
+        addonGroupsLoading={list.isLoading}
         onClose={() => setEditing(null)}
         onSave={save}
         saving={create.isPending || update.isPending}
