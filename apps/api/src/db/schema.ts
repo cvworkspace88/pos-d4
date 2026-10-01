@@ -5,6 +5,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -543,3 +544,49 @@ export const menuItemAddonGroups = pgTable(
     index('menu_item_addon_groups_group_idx').on(table.addonGroupId),
   ],
 );
+
+/**
+ * Which part of the app an audit row is about. The router's zod enum repeats it inline: the
+ * contract generator cannot hoist it. Later stories append (`role`, `approval`, `order`, `payment`…).
+ */
+export const AUDIT_MODULES = ['settings', 'outlet', 'staff', 'category', 'menu', 'addon'] as const;
+export type AuditModule = (typeof AUDIT_MODULES)[number];
+
+/**
+ * Who changed what, when, from what to what (US-011). Insert-only: a trigger in the migrations
+ * refuses UPDATE and DELETE, so not even a bug can rewrite history. Written in the same
+ * transaction as the change it records, through `audit()` in `src/audit/audit.ts`.
+ */
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Null = a deployment-wide change (app settings), visible to global roles only.
+    outletId: uuid('outlet_id').references(() => outlets.id),
+    actorUserId: uuid('actor_user_id')
+      .notNull()
+      .references(() => users.id),
+    // The manager who approved the action with their PIN (US-010). Null = no approval needed.
+    approverUserId: uuid('approver_user_id').references(() => users.id),
+    module: text('module').$type<AuditModule>().notNull(),
+    // `module.verb`, e.g. 'menu.item_update'. The CHECK keeps the prefix honest.
+    action: text('action').notNull(),
+    entityType: text('entity_type').notNull(),
+    // Null for a batch action with no single subject, e.g. a category reorder.
+    entityId: text('entity_id'),
+    reason: text('reason'),
+    // Changed fields only, secrets masked (`auditDiff`). Null before = created, null after = deleted.
+    before: jsonb('before').$type<Record<string, unknown>>(),
+    after: jsonb('after').$type<Record<string, unknown>>(),
+    // Null until devices exist (US-003/US-005).
+    deviceId: text('device_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('audit_log_outlet_created_idx').on(table.outletId, table.createdAt.desc(), table.id.desc()),
+    index('audit_log_outlet_module_idx').on(table.outletId, table.module, table.createdAt.desc()),
+    check('audit_log_action_prefix', sql`${table.action} LIKE ${table.module} || '.%'`),
+  ],
+);
+
+export type AuditLog = typeof auditLog.$inferSelect;

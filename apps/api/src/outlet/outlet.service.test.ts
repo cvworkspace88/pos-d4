@@ -2,13 +2,16 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import { seedRbac } from '../../drizzle/seed/seed-rbac';
 import { outlets, roles, users, type OrderType } from '../db/schema';
-import { connectTestDatabase, truncateAll, type TestDatabase } from '../test/test-db';
+import type { Actor } from '../auth/rbac-rules';
+import { connectTestDatabase, truncateAll, type TestDatabase, testActor } from '../test/test-db';
 import { OutletService } from './outlet.service';
 
 let db: TestDatabase;
 let close: () => Promise<void>;
 let service: OutletService;
 let roleId: Record<string, string>;
+let OWNER: Actor;
+let STAFF: Actor;
 
 beforeAll(async () => {
   ({ db, close } = await connectTestDatabase());
@@ -24,6 +27,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAll(db);
+  OWNER = await testActor(db, true);
+  STAFF = await testActor(db, false);
 });
 
 /** Staff need no role or PIN for any of this — only a live row in `users`. */
@@ -35,10 +40,7 @@ const addUser = async (username: string, deletedAt: Date | null = null) => {
   return row!;
 };
 
-const anOutlet = (name = 'Downtown', code = 'dt') => service.create({ name, code });
-
-const OWNER = { global: true };
-const STAFF = { global: false };
+const anOutlet = (name = 'Downtown', code = 'dt') => service.create({ name, code }, OWNER);
 
 const as = (userId: string, role = 'cashier') => ({ userId, roleId: roleId[role]! });
 
@@ -55,7 +57,7 @@ test('address and phone default to null rather than undefined', async () => {
 
 test('a duplicate live name is a CONFLICT naming the name', async () => {
   await anOutlet('Downtown', 'dt');
-  await expect(service.create({ name: 'Downtown', code: 'xx' })).rejects.toMatchObject({
+  await expect(service.create({ name: 'Downtown', code: 'xx' }, OWNER)).rejects.toMatchObject({
     code: 'CONFLICT',
     message: 'Nama outlet sudah dipakai.',
   });
@@ -63,7 +65,7 @@ test('a duplicate live name is a CONFLICT naming the name', async () => {
 
 test('a duplicate live code is a CONFLICT naming the code, whatever the casing', async () => {
   await anOutlet('Downtown', 'dt');
-  await expect(service.create({ name: 'Elsewhere', code: 'DT' })).rejects.toMatchObject({
+  await expect(service.create({ name: 'Elsewhere', code: 'DT' }, OWNER)).rejects.toMatchObject({
     code: 'CONFLICT',
     message: 'Kode outlet sudah dipakai.',
   });
@@ -72,8 +74,8 @@ test('a duplicate live code is a CONFLICT naming the code, whatever the casing',
 test('closing an outlet frees its name and its code', async () => {
   const outlet = await anOutlet('Airport', 'ap');
   await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
-  await service.setActive(outlet.id, false);
-  const reopened = await service.create({ name: 'Airport', code: 'ap' });
+  await service.setActive(outlet.id, false, OWNER);
+  const reopened = await service.create({ name: 'Airport', code: 'ap' }, OWNER);
   expect(reopened.id).not.toBe(outlet.id);
 });
 
@@ -81,7 +83,7 @@ test('list shows every outlet, active first, then by name', async () => {
   await anOutlet('Downtown', 'dt');
   await anOutlet('Airport', 'ap');
   const closed = await anOutlet('Warehouse', 'wh');
-  await service.setActive(closed.id, false);
+  await service.setActive(closed.id, false, OWNER);
 
   const listed = await service.list();
   expect(listed.map((o) => o.name)).toEqual(['Airport', 'Downtown', 'Warehouse']);
@@ -89,34 +91,34 @@ test('list shows every outlet, active first, then by name', async () => {
 });
 
 test('get returns one outlet, and a closed one is NOT_FOUND', async () => {
-  const outlet = await service.create({ name: 'Downtown', code: 'dt', phone: '555' });
+  const outlet = await service.create({ name: 'Downtown', code: 'dt', phone: '555' }, OWNER);
   expect(await service.get(outlet.id)).toMatchObject({ name: 'Downtown', code: 'DT', phone: '555' });
   await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
-  await service.setActive(outlet.id, false);
+  await service.setActive(outlet.id, false, OWNER);
   await expect(service.get(outlet.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
 });
 
 test('update is a form save: an omitted address clears the column', async () => {
-  const outlet = await service.create({ name: 'Downtown', code: 'dt', address: '1 Main St' });
-  const saved = await service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Jakarta' });
+  const outlet = await service.create({ name: 'Downtown', code: 'dt', address: '1 Main St' }, OWNER);
+  const saved = await service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Jakarta' }, OWNER);
   expect(saved.address).toBeNull();
 });
 
 test('update leaves the code alone — only setCode writes it', async () => {
   const outlet = await anOutlet();
-  const saved = await service.update(outlet.id, { name: 'Uptown', timezone: 'Asia/Jakarta' });
+  const saved = await service.update(outlet.id, { name: 'Uptown', timezone: 'Asia/Jakarta' }, OWNER);
   expect(saved).toMatchObject({ name: 'Uptown', code: 'DT' });
 });
 
 test('setCode stores uppercase, same as create', async () => {
   const outlet = await anOutlet();
-  expect((await service.setCode(outlet.id, 'br2')).code).toBe('BR2');
+  expect((await service.setCode(outlet.id, 'br2', OWNER)).code).toBe('BR2');
 });
 
 test('setCode onto a live code is a CONFLICT naming the code', async () => {
   const outlet = await anOutlet();
-  await service.create({ name: 'Airport', code: 'ap' });
-  await expect(service.setCode(outlet.id, 'AP')).rejects.toMatchObject({
+  await service.create({ name: 'Airport', code: 'ap' }, OWNER);
+  await expect(service.setCode(outlet.id, 'AP', OWNER)).rejects.toMatchObject({
     code: 'CONFLICT',
     message: 'Kode outlet sudah dipakai.',
   });
@@ -125,8 +127,8 @@ test('setCode onto a live code is a CONFLICT naming the code', async () => {
 test('setCode on a closed outlet is NOT_FOUND', async () => {
   const outlet = await anOutlet();
   await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
-  await service.setActive(outlet.id, false);
-  await expect(service.setCode(outlet.id, 'br2')).rejects.toMatchObject({
+  await service.setActive(outlet.id, false, OWNER);
+  await expect(service.setCode(outlet.id, 'br2', OWNER)).rejects.toMatchObject({
     code: 'NOT_FOUND',
     message: 'Outlet tidak ditemukan.',
   });
@@ -135,9 +137,9 @@ test('setCode on a closed outlet is NOT_FOUND', async () => {
 test('update of a closed outlet is NOT_FOUND, not a silent no-op', async () => {
   const outlet = await anOutlet();
   await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
-  await service.setActive(outlet.id, false);
+  await service.setActive(outlet.id, false, OWNER);
   await expect(
-    service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Jakarta' }),
+    service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Jakarta' }, OWNER),
   ).rejects.toMatchObject({
     code: 'NOT_FOUND',
     message: 'Outlet tidak ditemukan.',
@@ -179,40 +181,46 @@ test('a new outlet starts at PBJT 10% exclusive, no service charge, in WIB', asy
 
 test('update saves city and timezone, and an omitted city clears it', async () => {
   const outlet = await anOutlet();
-  const saved = await service.update(outlet.id, {
-    name: 'Downtown',
-    city: 'Denpasar',
-    timezone: 'Asia/Makassar',
-  });
+  const saved = await service.update(
+    outlet.id,
+    {
+      name: 'Downtown',
+      city: 'Denpasar',
+      timezone: 'Asia/Makassar',
+    },
+    OWNER,
+  );
   expect(saved).toMatchObject({ city: 'Denpasar', timezone: 'Asia/Makassar' });
-  expect((await service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Makassar' })).city).toBeNull();
+  expect(
+    (await service.update(outlet.id, { name: 'Downtown', timezone: 'Asia/Makassar' }, OWNER)).city,
+  ).toBeNull();
 });
 
 test('setCharges saves the tax and service charge and reads them back', async () => {
   const outlet = await anOutlet();
-  expect(await service.setCharges(outlet.id, CHARGES)).toMatchObject(CHARGES);
+  expect(await service.setCharges(outlet.id, CHARGES, OWNER)).toMatchObject(CHARGES);
   expect(await service.get(outlet.id)).toMatchObject(CHARGES);
 });
 
 test('setCharges is a form save: omitted NPWP and NPWPD clear the columns', async () => {
   const outlet = await anOutlet();
-  await service.setCharges(outlet.id, CHARGES);
+  await service.setCharges(outlet.id, CHARGES, OWNER);
   expect(
-    await service.setCharges(outlet.id, { ...CHARGES, npwp: undefined, npwpd: undefined }),
+    await service.setCharges(outlet.id, { ...CHARGES, npwp: undefined, npwpd: undefined }, OWNER),
   ).toMatchObject({ npwp: null, npwpd: null });
 });
 
 test('an NPWPD that trimmed down to nothing clears the column rather than storing an empty string', async () => {
   const outlet = await anOutlet();
-  await service.setCharges(outlet.id, CHARGES);
-  expect((await service.setCharges(outlet.id, { ...CHARGES, npwpd: '' })).npwpd).toBeNull();
+  await service.setCharges(outlet.id, CHARGES, OWNER);
+  expect((await service.setCharges(outlet.id, { ...CHARGES, npwpd: '' }, OWNER)).npwpd).toBeNull();
 });
 
 test('setCharges on a closed outlet is NOT_FOUND', async () => {
   const outlet = await anOutlet();
   await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
-  await service.setActive(outlet.id, false);
-  await expect(service.setCharges(outlet.id, CHARGES)).rejects.toMatchObject({
+  await service.setActive(outlet.id, false, OWNER);
+  await expect(service.setCharges(outlet.id, CHARGES, OWNER)).rejects.toMatchObject({
     code: 'NOT_FOUND',
     message: 'Outlet tidak ditemukan.',
   });
@@ -229,8 +237,8 @@ test('the database refuses a rate over 100% and a timezone outside Indonesia', a
 test('deactivating an outlet twice is a no-op the second time', async () => {
   const outlet = await anOutlet();
   await anOutlet('Airport', 'ap'); // the guard needs a second live outlet to allow the first close
-  expect((await service.setActive(outlet.id, false)).active).toBe(false);
-  expect((await service.setActive(outlet.id, false)).active).toBe(false);
+  expect((await service.setActive(outlet.id, false, OWNER)).active).toBe(false);
+  expect((await service.setActive(outlet.id, false, OWNER)).active).toBe(false);
 });
 
 test('setStaff writes the roster and reads it back sorted by name', async () => {
@@ -303,7 +311,7 @@ test('setStaff on a closed outlet is NOT_FOUND', async () => {
   const outlet = await anOutlet();
   const ann = await addUser('ann');
   await anOutlet('Keeper', 'kp'); // keeps one outlet live so the last-outlet guard does not fire
-  await service.setActive(outlet.id, false);
+  await service.setActive(outlet.id, false, OWNER);
   await expect(service.setStaff(outlet.id, [as(ann.id)], OWNER)).rejects.toMatchObject({ code: 'NOT_FOUND' });
 });
 
@@ -376,9 +384,9 @@ test('a fresh outlet is active', async () => {
 test('reactivating a closed outlet brings back the same row', async () => {
   const outlet = await anOutlet();
   await anOutlet('Airport', 'ap');
-  await service.setActive(outlet.id, false);
+  await service.setActive(outlet.id, false, OWNER);
 
-  const reopened = await service.setActive(outlet.id, true);
+  const reopened = await service.setActive(outlet.id, true, OWNER);
   expect(reopened).toMatchObject({ id: outlet.id, name: 'Downtown', code: 'DT', active: true });
   expect((await service.get(outlet.id)).active).toBe(true);
 });
@@ -386,10 +394,10 @@ test('reactivating a closed outlet brings back the same row', async () => {
 test('reactivating into a name another outlet took is a CONFLICT', async () => {
   const outlet = await anOutlet('Downtown', 'dt');
   await anOutlet('Airport', 'ap');
-  await service.setActive(outlet.id, false);
-  await service.create({ name: 'Downtown', code: 'dt2' });
+  await service.setActive(outlet.id, false, OWNER);
+  await service.create({ name: 'Downtown', code: 'dt2' }, OWNER);
 
-  await expect(service.setActive(outlet.id, true)).rejects.toMatchObject({
+  await expect(service.setActive(outlet.id, true, OWNER)).rejects.toMatchObject({
     code: 'CONFLICT',
     message: 'Nama outlet sudah dipakai.',
   });
@@ -398,10 +406,10 @@ test('reactivating into a name another outlet took is a CONFLICT', async () => {
 test('reactivating into a code another outlet took is a CONFLICT', async () => {
   const outlet = await anOutlet('Downtown', 'dt');
   await anOutlet('Airport', 'ap');
-  await service.setActive(outlet.id, false);
-  await service.create({ name: 'Elsewhere', code: 'dt' });
+  await service.setActive(outlet.id, false, OWNER);
+  await service.create({ name: 'Elsewhere', code: 'dt' }, OWNER);
 
-  await expect(service.setActive(outlet.id, true)).rejects.toMatchObject({
+  await expect(service.setActive(outlet.id, true, OWNER)).rejects.toMatchObject({
     code: 'CONFLICT',
     message: 'Kode outlet sudah dipakai.',
   });
@@ -409,7 +417,7 @@ test('reactivating into a code another outlet took is a CONFLICT', async () => {
 
 test('the last live outlet cannot be deactivated', async () => {
   const outlet = await anOutlet();
-  await expect(service.setActive(outlet.id, false)).rejects.toMatchObject({
+  await expect(service.setActive(outlet.id, false, OWNER)).rejects.toMatchObject({
     code: 'PRECONDITION_FAILED',
     message: 'Harus ada minimal satu outlet aktif.',
   });
@@ -419,20 +427,20 @@ test('the last live outlet cannot be deactivated', async () => {
 test('the guard counts only live outlets, so a closed one does not license closing the last', async () => {
   const first = await anOutlet('Downtown', 'dt');
   const second = await anOutlet('Airport', 'ap');
-  await service.setActive(second.id, false);
+  await service.setActive(second.id, false, OWNER);
 
-  await expect(service.setActive(first.id, false)).rejects.toMatchObject({
+  await expect(service.setActive(first.id, false, OWNER)).rejects.toMatchObject({
     code: 'PRECONDITION_FAILED',
   });
 });
 
 test('setActive on an outlet that never existed is NOT_FOUND in both directions', async () => {
   const ghost = '00000000-0000-0000-0000-000000000000';
-  await expect(service.setActive(ghost, false)).rejects.toMatchObject({
+  await expect(service.setActive(ghost, false, OWNER)).rejects.toMatchObject({
     code: 'NOT_FOUND',
     message: 'Outlet tidak ditemukan.',
   });
-  await expect(service.setActive(ghost, true)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  await expect(service.setActive(ghost, true, OWNER)).rejects.toMatchObject({ code: 'NOT_FOUND' });
 });
 
 test('the roster lists global-role users first, flagged, without a membership', async () => {
@@ -516,7 +524,8 @@ test('addStaff follows the setStaff role rules', async () => {
   });
   expect(await service.addStaff(outlet.id, newStaff('c', 'manager'), OWNER)).toHaveLength(1);
   // A refused call wrote nothing, not even the user row.
-  expect((await db.select().from(users)).map((u) => u.username)).toEqual(['c']);
+  const names = (await db.select().from(users)).map((u) => u.username);
+  expect(names.filter((n) => !n.startsWith('zz-actor'))).toEqual(['c']);
 });
 
 test('findUsers: username prefix, only accounts that could join this roster', async () => {
@@ -537,19 +546,27 @@ test('findUsers: username prefix, only accounts that could join this roster', as
 
 test('setCharges stores each service-charge order type once', async () => {
   const outlet = await anOutlet();
-  const saved = await service.setCharges(outlet.id, {
-    ...CHARGES,
-    serviceOrderTypes: ['takeaway', 'takeaway', 'dine_in'],
-  });
+  const saved = await service.setCharges(
+    outlet.id,
+    {
+      ...CHARGES,
+      serviceOrderTypes: ['takeaway', 'takeaway', 'dine_in'],
+    },
+    OWNER,
+  );
   expect(saved.serviceOrderTypes).toEqual(['takeaway', 'dine_in']);
 });
 
 test('setBusinessDay saves HH:mm, and an omitted auto close clears it', async () => {
   const outlet = await anOutlet();
   expect(
-    await service.setBusinessDay(outlet.id, { businessDayCutoff: '05:30', businessDayAutoClose: '03:00' }),
+    await service.setBusinessDay(
+      outlet.id,
+      { businessDayCutoff: '05:30', businessDayAutoClose: '03:00' },
+      OWNER,
+    ),
   ).toMatchObject({ businessDayCutoff: '05:30', businessDayAutoClose: '03:00' });
-  expect(await service.setBusinessDay(outlet.id, { businessDayCutoff: '05:30' })).toMatchObject({
+  expect(await service.setBusinessDay(outlet.id, { businessDayCutoff: '05:30' }, OWNER)).toMatchObject({
     businessDayAutoClose: null,
   });
 });

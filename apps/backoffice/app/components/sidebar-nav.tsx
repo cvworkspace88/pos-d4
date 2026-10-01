@@ -39,6 +39,8 @@ export const MENU: { label: string; items: MenuItem[] }[] = [
       { to: '/staf', label: 'Staf', permission: 'outlet.staff_assign' },
       // Every role against every permission. Read-only.
       { to: '/peran', label: 'Peran & izin', permission: 'role.view' },
+      // Who changed what at the active outlet. Read-only.
+      { to: '/log-audit', label: 'Log Audit', permission: 'report.view_audit' },
     ],
   },
 ];

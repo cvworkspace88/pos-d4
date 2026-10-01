@@ -34,6 +34,6 @@ export class SettingsRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async update(@Ctx() ctx: Actor & { user: PublicUser }, @Input() input: Partial<AppSettings>) {
     await this.rbac.require(ctx, 'settings.manage');
-    return this.settings.update(input);
+    return this.settings.update(input, ctx);
   }
 }

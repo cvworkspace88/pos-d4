@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { and, asc, count, eq, inArray, isNull, notInArray } from 'drizzle-orm';
-import { DRIZZLE, type Database } from '../db/db.module';
+import { audit } from '../audit/audit';
+import type { Actor } from '../auth/rbac-rules';
+import { DRIZZLE, type Database, type Tx } from '../db/db.module';
 import { conflictHandler } from '../db/errors';
 import { addonGroups, addonOptions, menuItemAddonGroups, menuItems } from '../db/schema';
 import { duplicateName, hasDuplicateId } from '../menu/menu-rules';
@@ -37,10 +39,17 @@ const badRequest = (message: string) => new TRPCError({ code: 'BAD_REQUEST', mes
 
 const rethrowAsConflict = conflictHandler(addonConflictMessage);
 
-type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
-
 /** Live groups of one outlet. Every query goes through this, so no id crosses outlets. */
 const liveAt = (outletId: string) => and(eq(addonGroups.outletId, outletId), isNull(addonGroups.deletedAt));
+
+/** A group as the audit log stores it: option names and prices, no ids or usage counts. */
+const snapshot = (g: AddonGroupOutput | undefined) =>
+  g && {
+    name: g.name,
+    minSelect: g.minSelect,
+    maxSelect: g.maxSelect,
+    options: g.options.map(({ name, price, available }) => ({ name, price, available })),
+  };
 
 @Injectable()
 export class AddonService {
@@ -91,17 +100,17 @@ export class AddonService {
     }));
   }
 
-  create(outletId: string, input: AddonGroupInput): Promise<AddonGroupOutput> {
-    return this.save(outletId, null, input);
+  create(actor: Actor, outletId: string, input: AddonGroupInput): Promise<AddonGroupOutput> {
+    return this.save(actor, outletId, null, input);
   }
 
   /** Configuration, not a bill: two managers saving the same group is last write wins. */
-  update(outletId: string, id: string, input: AddonGroupInput): Promise<AddonGroupOutput> {
-    return this.save(outletId, id, input);
+  update(actor: Actor, outletId: string, id: string, input: AddonGroupInput): Promise<AddonGroupOutput> {
+    return this.save(actor, outletId, id, input);
   }
 
   /** Soft-deletes the group and its options; its links go (they are config). */
-  async delete(outletId: string, id: string): Promise<{ success: true }> {
+  async delete(actor: Actor, outletId: string, id: string): Promise<{ success: true }> {
     await this.db.transaction(async (tx) => {
       // FOR UPDATE waits out a menu save holding this group FOR SHARE, so no link lands after the unlink.
       const [row] = await tx
@@ -110,6 +119,7 @@ export class AddonService {
         .where(and(eq(addonGroups.id, id), liveAt(outletId)))
         .for('update');
       if (!row) throw notFound();
+      const [before] = await this.list(outletId, id, tx);
       const now = new Date();
       await tx.delete(menuItemAddonGroups).where(eq(menuItemAddonGroups.addonGroupId, id));
       await tx
@@ -117,12 +127,25 @@ export class AddonService {
         .set({ deletedAt: now })
         .where(and(eq(addonOptions.groupId, id), isNull(addonOptions.deletedAt)));
       await tx.update(addonGroups).set({ deletedAt: now }).where(eq(addonGroups.id, id));
+      await audit(tx, actor, {
+        outletId,
+        module: 'addon',
+        action: 'addon.delete',
+        entityType: 'addon_group',
+        entityId: id,
+        before: snapshot(before),
+      });
     });
     return { success: true };
   }
 
   /** One transaction: the group row, its option set (ids kept, new inserted, left-out soft-deleted), the read-back. */
-  private async save(outletId: string, id: string | null, input: AddonGroupInput): Promise<AddonGroupOutput> {
+  private async save(
+    actor: Actor,
+    outletId: string,
+    id: string | null,
+    input: AddonGroupInput,
+  ): Promise<AddonGroupOutput> {
     const { options, ...fields } = input;
     const dup = duplicateName(options);
     if (dup) throw badRequest(`Nama pilihan "${dup}" dipakai dua kali.`);
@@ -136,6 +159,14 @@ export class AddonService {
 
     try {
       return await this.db.transaction(async (tx) => {
+        // Locked first, so `before` is what this save actually replaces.
+        if (id)
+          await tx
+            .select({ id: addonGroups.id })
+            .from(addonGroups)
+            .where(and(eq(addonGroups.id, id), liveAt(outletId)))
+            .for('update');
+        const [before] = id ? await this.list(outletId, id, tx) : [];
         const [saved] = id
           ? await tx
               .update(addonGroups)
@@ -181,6 +212,15 @@ export class AddonService {
         // Inside the transaction, so a delete landing right after commit cannot turn this save into NOT_FOUND.
         const [group] = await this.list(outletId, gid, tx);
         if (!group) throw notFound();
+        await audit(tx, actor, {
+          outletId,
+          module: 'addon',
+          action: id ? 'addon.update' : 'addon.create',
+          entityType: 'addon_group',
+          entityId: gid,
+          before: snapshot(before),
+          after: snapshot(group),
+        });
         return group;
       });
     } catch (error) {

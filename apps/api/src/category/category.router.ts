@@ -61,7 +61,7 @@ export class CategoryRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async create(@Ctx() ctx: Ctx, @Input() input: { name: string; color?: string | null }) {
     await this.rbac.require(ctx, 'category.edit');
-    return this.service.create(activeOutlet(ctx), input.name, input.color ?? null);
+    return this.service.create(ctx, activeOutlet(ctx), input.name, input.color ?? null);
   }
 
   // The full field set, not a patch: this is a form save.
@@ -82,14 +82,14 @@ export class CategoryRouter {
   async update(@Ctx() ctx: Ctx, @Input() input: CategoryInput & { id: string }) {
     await this.rbac.require(ctx, 'category.edit');
     const { id, ...fields } = input;
-    return this.service.update(activeOutlet(ctx), id, fields);
+    return this.service.update(ctx, activeOutlet(ctx), id, fields);
   }
 
   @Mutation({ input: z.object({ id: z.uuid() }), output: z.object({ success: z.boolean() }) })
   @UseMiddlewares(ProtectedMiddleware)
   async delete(@Ctx() ctx: Ctx, @Input('id') id: string) {
     await this.rbac.require(ctx, 'category.edit');
-    return this.service.delete(activeOutlet(ctx), id);
+    return this.service.delete(ctx, activeOutlet(ctx), id);
   }
 
   @Mutation({
@@ -99,6 +99,6 @@ export class CategoryRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async reorder(@Ctx() ctx: Ctx, @Input('ids') ids: string[]) {
     await this.rbac.require(ctx, 'category.edit');
-    return this.service.reorder(activeOutlet(ctx), ids);
+    return this.service.reorder(ctx, activeOutlet(ctx), ids);
   }
 }

@@ -59,7 +59,7 @@ export class AddonRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async create(@Ctx() ctx: Ctx, @Input() input: AddonGroupInput) {
     await this.rbac.require(ctx, 'menu.manage');
-    return this.service.create(activeOutlet(ctx), input);
+    return this.service.create(ctx, activeOutlet(ctx), input);
   }
 
   // The full field set, not a patch: this is a form save.
@@ -87,13 +87,13 @@ export class AddonRouter {
   async update(@Ctx() ctx: Ctx, @Input() input: AddonGroupInput & { id: string }) {
     await this.rbac.require(ctx, 'menu.manage');
     const { id, ...fields } = input;
-    return this.service.update(activeOutlet(ctx), id, fields);
+    return this.service.update(ctx, activeOutlet(ctx), id, fields);
   }
 
   @Mutation({ input: z.object({ id: z.uuid() }), output: z.object({ success: z.boolean() }) })
   @UseMiddlewares(ProtectedMiddleware)
   async delete(@Ctx() ctx: Ctx, @Input('id') id: string) {
     await this.rbac.require(ctx, 'menu.manage');
-    return this.service.delete(activeOutlet(ctx), id);
+    return this.service.delete(ctx, activeOutlet(ctx), id);
   }
 }

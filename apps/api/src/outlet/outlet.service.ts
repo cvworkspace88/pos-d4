@@ -2,7 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import * as argon2 from 'argon2';
 import { and, count, eq, inArray, isNotNull, isNull, like, ne, or, sql } from 'drizzle-orm';
-import { DRIZZLE, type Database } from '../db/db.module';
+import { audit } from '../audit/audit';
+import type { Actor } from '../auth/rbac-rules';
+import { DRIZZLE, type Database, type Tx } from '../db/db.module';
 import { isUniqueViolation, violatedConstraint } from '../db/errors';
 import { outletStaff, outlets, roles, users, type OrderType, type Outlet } from '../db/schema';
 import {
@@ -91,9 +93,6 @@ export const outletOutput = (o: Outlet) => ({
 });
 export type OutletOutput = ReturnType<typeof outletOutput>;
 
-/** The transaction handle drizzle hands to the `transaction` callback. */
-type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
-
 const live = isNull(outlets.deletedAt);
 const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Outlet tidak ditemukan.' });
 
@@ -135,6 +134,10 @@ const createRow = (input: OutletInput) => ({
   code: normalizeCode(input.code),
 });
 
+/** A roster as the audit log stores it: username → role, so the diff names who moved, not ids. */
+const rosterSnapshot = (roster: StaffOutput[]) =>
+  Object.fromEntries(roster.map((s) => [s.username, s.roleName]));
+
 @Injectable()
 export class OutletService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
@@ -152,75 +155,90 @@ export class OutletService {
     return outletOutput(await this.find(id));
   }
 
-  async create(input: OutletInput): Promise<OutletOutput> {
+  async create(input: OutletInput, actor: Actor): Promise<OutletOutput> {
     try {
-      const [row] = await this.db.insert(outlets).values(createRow(input)).returning();
-      return outletOutput(row!);
+      return await this.db.transaction(async (tx) => {
+        const [row] = await tx.insert(outlets).values(createRow(input)).returning();
+        await audit(tx, actor, {
+          outletId: row!.id,
+          module: 'outlet',
+          action: 'outlet.create',
+          entityType: 'outlet',
+          entityId: row!.id,
+          after: row,
+        });
+        return outletOutput(row!);
+      });
     } catch (error) {
       return rethrowAsConflict(error);
     }
   }
 
-  async update(id: string, input: OutletDetails): Promise<OutletOutput> {
-    try {
-      const [row] = await this.db
-        .update(outlets)
-        .set(detailsRow(input))
-        .where(and(eq(outlets.id, id), live))
-        .returning();
-      if (!row) throw notFound();
-      return outletOutput(row);
-    } catch (error) {
-      return rethrowAsConflict(error);
-    }
+  async update(id: string, input: OutletDetails, actor: Actor): Promise<OutletOutput> {
+    return this.change(id, 'outlet.update', detailsRow(input), actor);
   }
 
   /**
    * The code alone. Separate from `update` because it is printed on receipts and keys terminal
    * setup, so changing it stays a deliberate act rather than a field saved with the address.
    */
-  async setCode(id: string, code: string): Promise<OutletOutput> {
-    try {
-      const [row] = await this.db
-        .update(outlets)
-        .set({ code: normalizeCode(code) })
-        .where(and(eq(outlets.id, id), live))
-        .returning();
-      if (!row) throw notFound();
-      return outletOutput(row);
-    } catch (error) {
-      return rethrowAsConflict(error);
-    }
+  async setCode(id: string, code: string, actor: Actor): Promise<OutletOutput> {
+    return this.change(id, 'outlet.set_code', { code: normalizeCode(code) }, actor);
   }
 
   /** The tax and service charge, saved as one form. Last save wins: this is configuration, not a bill. */
-  async setCharges(id: string, charges: OutletCharges): Promise<OutletOutput> {
-    const [row] = await this.db
-      .update(outlets)
-      // `||`, not `??`: the router trims, so a blank-but-spaced NPWPD arrives as '' and must clear too.
-      .set({
-        ...charges,
-        npwp: charges.npwp ?? null,
-        npwpd: charges.npwpd || null,
-        serviceOrderTypes: [...new Set(charges.serviceOrderTypes)],
-      })
-      .where(and(eq(outlets.id, id), live))
-      .returning();
-    if (!row) throw notFound();
-    return outletOutput(row);
+  async setCharges(id: string, charges: OutletCharges, actor: Actor): Promise<OutletOutput> {
+    // `||`, not `??`: the router trims, so a blank-but-spaced NPWPD arrives as '' and must clear too.
+    const set = {
+      ...charges,
+      npwp: charges.npwp ?? null,
+      npwpd: charges.npwpd || null,
+      serviceOrderTypes: [...new Set(charges.serviceOrderTypes)],
+    };
+    return this.change(id, 'outlet.set_charges', set, actor);
   }
 
-  async setBusinessDay(id: string, day: OutletBusinessDay): Promise<OutletOutput> {
-    const [row] = await this.db
-      .update(outlets)
-      .set({
-        businessDayCutoff: day.businessDayCutoff,
-        businessDayAutoClose: day.businessDayAutoClose ?? null,
-      })
-      .where(and(eq(outlets.id, id), live))
-      .returning();
-    if (!row) throw notFound();
-    return outletOutput(row);
+  async setBusinessDay(id: string, day: OutletBusinessDay, actor: Actor): Promise<OutletOutput> {
+    const set = {
+      businessDayCutoff: day.businessDayCutoff,
+      businessDayAutoClose: day.businessDayAutoClose ?? null,
+    };
+    return this.change(id, 'outlet.set_business_day', set, actor);
+  }
+
+  /**
+   * One audited write to a live outlet: lock the row, update it, record the change, all in one
+   * transaction. Last save wins: this is configuration, not a bill.
+   */
+  private async change(
+    id: string,
+    action: `outlet.${string}`,
+    set: Partial<typeof outlets.$inferInsert>,
+    actor: Actor,
+  ): Promise<OutletOutput> {
+    try {
+      return await this.db.transaction(async (tx) => {
+        const [before] = await tx
+          .select()
+          .from(outlets)
+          .where(and(eq(outlets.id, id), live))
+          .for('update');
+        if (!before) throw notFound();
+        const [after] = await tx.update(outlets).set(set).where(eq(outlets.id, id)).returning();
+        await audit(tx, actor, {
+          outletId: id,
+          module: 'outlet',
+          action,
+          entityType: 'outlet',
+          entityId: id,
+          before,
+          after,
+        });
+        return outletOutput(after!);
+      });
+    } catch (error) {
+      return rethrowAsConflict(error);
+    }
   }
 
   /**
@@ -231,9 +249,9 @@ export class OutletService {
    * Reactivating can collide: the unique indexes are partial, so closing an outlet frees its name
    * and code for another one to take.
    */
-  async setActive(id: string, active: boolean): Promise<OutletOutput> {
+  async setActive(id: string, active: boolean, actor: Actor): Promise<OutletOutput> {
     return this.db.transaction(async (tx) => {
-      const [row] = await tx.select().from(outlets).where(eq(outlets.id, id));
+      const [row] = await tx.select().from(outlets).where(eq(outlets.id, id)).for('update');
       if (!row) throw notFound();
       if ((row.deletedAt === null) === active) return outletOutput(row);
 
@@ -256,6 +274,15 @@ export class OutletService {
           .set({ deletedAt: active ? null : new Date() })
           .where(eq(outlets.id, id))
           .returning();
+        await audit(tx, actor, {
+          outletId: id,
+          module: 'outlet',
+          action: 'outlet.set_active',
+          entityType: 'outlet',
+          entityId: id,
+          before: row,
+          after: updated,
+        });
         return outletOutput(updated!);
       } catch (error) {
         return rethrowAsConflict(error);
@@ -272,7 +299,7 @@ export class OutletService {
    * Replaces the whole roster, roles included. Set semantics keyed on the user, so calling it twice
    * with the same entries is a no-op the second time and the caller never has to diff anything.
    */
-  async setStaff(outletId: string, staff: StaffEntry[], actor: { global: boolean }): Promise<StaffOutput[]> {
+  async setStaff(outletId: string, staff: StaffEntry[], actor: Actor): Promise<StaffOutput[]> {
     return this.db.transaction(async (tx) => {
       const [outlet] = await tx
         .select({ id: outlets.id })
@@ -325,13 +352,24 @@ export class OutletService {
       if (touched.some((name) => !canManageRole(actor.global, name)))
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur manajer.' });
 
+      const before = await this.rosterOf(tx, outletId);
       if (remove.length)
         await tx
           .delete(outletStaff)
           .where(and(eq(outletStaff.outletId, outletId), inArray(outletStaff.userId, remove)));
       if (add.length) await tx.insert(outletStaff).values(add.map((s) => ({ outletId, ...s })));
 
-      return this.rosterOf(tx, outletId);
+      const after = await this.rosterOf(tx, outletId);
+      await audit(tx, actor, {
+        outletId,
+        module: 'staff',
+        action: 'staff.set_roster',
+        entityType: 'outlet',
+        entityId: outletId,
+        before: rosterSnapshot(before),
+        after: rosterSnapshot(after),
+      });
+      return after;
     });
   }
 
@@ -340,7 +378,7 @@ export class OutletService {
    * account nobody can see on any roster. Same role rules as `setStaff`. Not idempotent — a retry
    * after a lost response answers CONFLICT on the username, and the refetched roster shows the row.
    */
-  async addStaff(outletId: string, input: NewStaffInput, actor: { global: boolean }): Promise<StaffOutput[]> {
+  async addStaff(outletId: string, input: NewStaffInput, actor: Actor): Promise<StaffOutput[]> {
     // Hashed before the transaction: argon2 is deliberately slow, and a row lock should not wait on it.
     const [passwordHash, pinHash] = await Promise.all([
       argon2.hash(input.password),
@@ -373,6 +411,20 @@ export class OutletService {
           throw error;
         });
       await tx.insert(outletStaff).values({ outletId, userId: user.id, roleId: input.roleId });
+      await audit(tx, actor, {
+        outletId,
+        module: 'staff',
+        action: 'staff.add',
+        entityType: 'user',
+        entityId: user.id,
+        // The PIN is masked by `auditDiff`: the row shows one was set, never what it is.
+        after: {
+          name: input.name,
+          username: input.username.toLowerCase(),
+          role: role.name,
+          pin: input.pin ?? null,
+        },
+      });
 
       return this.rosterOf(tx, outletId);
     });

@@ -3,7 +3,9 @@ import { TRPCError } from '@trpc/server';
 import { and, asc, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import { AddonService, type AddonGroupOutput } from '../addon/addon.service';
 import { CategoryService, type CategoryListOutput } from '../category/category.service';
-import { DRIZZLE, type Database } from '../db/db.module';
+import { audit } from '../audit/audit';
+import type { Actor } from '../auth/rbac-rules';
+import { DRIZZLE, type Database, type Tx } from '../db/db.module';
 import { conflictHandler } from '../db/errors';
 import {
   addonGroups,
@@ -86,7 +88,29 @@ const rethrowAsConflict = conflictHandler(menuConflictMessage);
 /** Live menu items of one outlet. Every query goes through this, so no id crosses outlets. */
 const liveAt = (outletId: string) => and(eq(menuItems.outletId, outletId), isNull(menuItems.deletedAt));
 
-type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+/** An item as the audit log stores it: the category by name, variants without ids, no derived fields. */
+const snapshot = (item: MenuItemOutput | undefined) =>
+  item && {
+    categoryName: item.categoryName,
+    code: item.code,
+    name: item.name,
+    kitchenName: item.kitchenName,
+    description: item.description,
+    imageUrl: item.imageUrl,
+    price: item.price,
+    cost: item.cost,
+    tax: item.tax,
+    kitchenStationId: item.kitchenStationId,
+    soldBy: item.soldBy,
+    sortOrder: item.sortOrder,
+    active: item.active,
+    variants: item.variants.map(({ name, price, cost, available }) => ({ name, price, cost, available })),
+    addonGroupIds: item.addonGroupIds,
+  };
+
+/** The audit fields every menu item change shares. */
+const entry = (outletId: string, entityId: string) =>
+  ({ outletId, module: 'menu', entityType: 'menu_item', entityId }) as const;
 
 @Injectable()
 export class MenuService {
@@ -178,39 +202,72 @@ export class MenuService {
     return outlet ?? { pbjtRateBp: 0, ppnRateBp: 0 };
   }
 
-  create(outletId: string, input: MenuItemInput): Promise<MenuItemOutput> {
-    return this.save(outletId, null, input);
+  create(actor: Actor, outletId: string, input: MenuItemInput): Promise<MenuItemOutput> {
+    return this.save(actor, outletId, null, input);
   }
 
   /** Configuration, not a bill: two managers saving the same item is last write wins. */
-  update(outletId: string, id: string, input: MenuItemInput): Promise<MenuItemOutput> {
-    return this.save(outletId, id, input);
+  update(actor: Actor, outletId: string, id: string, input: MenuItemInput): Promise<MenuItemOutput> {
+    return this.save(actor, outletId, id, input);
   }
 
   /** The on/off switch on its own, so flipping it cannot overwrite a price edited elsewhere. */
-  async setActive(outletId: string, id: string, active: boolean): Promise<{ id: string; active: boolean }> {
-    const [row] = await this.db
-      .update(menuItems)
-      .set({ active })
-      .where(and(eq(menuItems.id, id), liveAt(outletId)))
-      .returning({ id: menuItems.id, active: menuItems.active });
-    if (!row) throw notFound();
-    return row;
+  async setActive(
+    actor: Actor,
+    outletId: string,
+    id: string,
+    active: boolean,
+  ): Promise<{ id: string; active: boolean }> {
+    return this.db.transaction(async (tx) => {
+      const [old] = await this.lockItem(tx, outletId, id);
+      if (!old) throw notFound();
+      const [row] = await tx
+        .update(menuItems)
+        .set({ active })
+        .where(eq(menuItems.id, id))
+        .returning({ id: menuItems.id, active: menuItems.active });
+      await audit(tx, actor, {
+        ...entry(outletId, id),
+        action: 'menu.item_set_active',
+        before: { name: old.name, active: old.active },
+        after: { name: old.name, active },
+      });
+      return row!;
+    });
   }
 
   /** Soft delete: order lines will point at it, and a deleted name can be reused. */
-  async delete(outletId: string, id: string): Promise<{ success: true }> {
-    const [row] = await this.db
-      .update(menuItems)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(menuItems.id, id), liveAt(outletId)))
-      .returning({ id: menuItems.id });
-    if (!row) throw notFound();
+  async delete(actor: Actor, outletId: string, id: string): Promise<{ success: true }> {
+    await this.db.transaction(async (tx) => {
+      const [old] = await this.lockItem(tx, outletId, id);
+      if (!old) throw notFound();
+      const [before] = await this.items(outletId, id, tx);
+      await tx.update(menuItems).set({ deletedAt: new Date() }).where(eq(menuItems.id, id));
+      await audit(tx, actor, {
+        ...entry(outletId, id),
+        action: 'menu.item_delete',
+        before: snapshot(before),
+      });
+    });
     return { success: true };
   }
 
+  /** The live item row, held `FOR UPDATE`: what an audited write reads as `before` cannot move under it. */
+  private lockItem(tx: Tx, outletId: string, id: string) {
+    return tx
+      .select({ name: menuItems.name, active: menuItems.active })
+      .from(menuItems)
+      .where(and(eq(menuItems.id, id), liveAt(outletId)))
+      .for('update');
+  }
+
   /** One transaction: the item row, then its variant set, then its add-on links, then the read-back. */
-  private async save(outletId: string, id: string | null, input: MenuItemInput): Promise<MenuItemOutput> {
+  private async save(
+    actor: Actor,
+    outletId: string,
+    id: string | null,
+    input: MenuItemInput,
+  ): Promise<MenuItemOutput> {
     const { variants, addonGroupIds, ...fields } = input;
     const dup = duplicateName(variants);
     if (dup) throw new TRPCError({ code: 'BAD_REQUEST', message: `Nama varian "${dup}" dipakai dua kali.` });
@@ -232,6 +289,8 @@ export class MenuService {
         await this.lockCategory(tx, outletId, fields.categoryId);
         if (fields.kitchenStationId) await requireStation(tx, outletId, fields.kitchenStationId);
         const groupIds = await this.lockAddonGroups(tx, outletId, addonGroupIds);
+        if (id) await this.lockItem(tx, outletId, id);
+        const [before] = id ? await this.items(outletId, id, tx) : [];
         const [saved] = id
           ? await tx
               .update(menuItems)
@@ -256,6 +315,12 @@ export class MenuService {
         // Inside the transaction, so a delete landing right after commit cannot turn this save into NOT_FOUND.
         const [item] = await this.items(outletId, mid, tx);
         if (!item) throw notFound();
+        await audit(tx, actor, {
+          ...entry(outletId, mid),
+          action: id ? 'menu.item_update' : 'menu.item_create',
+          before: snapshot(before),
+          after: snapshot(item),
+        });
         return item;
       });
     } catch (error) {

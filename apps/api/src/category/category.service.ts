@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
+import { audit } from '../audit/audit';
+import type { Actor } from '../auth/rbac-rules';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation } from '../db/errors';
 import { categories, menuItems, type Category } from '../db/schema';
@@ -42,6 +44,10 @@ const rethrowAsConflict = (error: unknown): never => {
 /** Live categories of one outlet. Every query goes through this, so no id crosses outlets. */
 const liveAt = (outletId: string) => and(eq(categories.outletId, outletId), isNull(categories.deletedAt));
 
+/** The audit fields every category change shares. */
+const entry = (outletId: string, entityId: string | null) =>
+  ({ outletId, module: 'category', entityType: 'category', entityId }) as const;
+
 @Injectable()
 export class CategoryService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
@@ -65,36 +71,53 @@ export class CategoryService {
   }
 
   /** Appended after the outlet's last live category. */
-  async create(outletId: string, name: string, color: string | null = null): Promise<CategoryOutput> {
+  async create(
+    actor: Actor,
+    outletId: string,
+    name: string,
+    color: string | null = null,
+  ): Promise<CategoryOutput> {
     try {
-      const [row] = await this.db
-        .insert(categories)
-        .values({
-          outletId,
-          name,
-          color,
-          sortOrder: sql`(select coalesce(max(${categories.sortOrder}) + 1, 0) from ${categories}
-            where ${categories.outletId} = ${outletId} and ${categories.deletedAt} is null)`,
-        })
-        .returning();
-      return categoryOutput(row!);
+      return await this.db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(categories)
+          .values({
+            outletId,
+            name,
+            color,
+            sortOrder: sql`(select coalesce(max(${categories.sortOrder}) + 1, 0) from ${categories}
+              where ${categories.outletId} = ${outletId} and ${categories.deletedAt} is null)`,
+          })
+          .returning();
+        const after = categoryOutput(row!);
+        await audit(tx, actor, { ...entry(outletId, row!.id), action: 'category.create', after });
+        return after;
+      });
     } catch (error) {
       return rethrowAsConflict(error);
     }
   }
 
   /** The full field set, not a patch: this is a form save. Configuration, so last write wins. */
-  async update(outletId: string, id: string, input: CategoryInput): Promise<CategoryOutput> {
+  async update(actor: Actor, outletId: string, id: string, input: CategoryInput): Promise<CategoryOutput> {
     try {
       return await this.db.transaction(async (tx) => {
         if (input.kitchenStationId) await requireStation(tx, outletId, input.kitchenStationId);
-        const [row] = await tx
-          .update(categories)
-          .set(input)
+        const [old] = await tx
+          .select()
+          .from(categories)
           .where(and(eq(categories.id, id), liveAt(outletId)))
-          .returning();
-        if (!row) throw notFound();
-        return categoryOutput(row);
+          .for('update');
+        if (!old) throw notFound();
+        const [row] = await tx.update(categories).set(input).where(eq(categories.id, id)).returning();
+        const after = categoryOutput(row!);
+        await audit(tx, actor, {
+          ...entry(outletId, id),
+          action: 'category.update',
+          before: categoryOutput(old),
+          after,
+        });
+        return after;
       });
     } catch (error) {
       return rethrowAsConflict(error);
@@ -107,10 +130,10 @@ export class CategoryService {
    * The row is locked first, so a menu save into this category (which holds it `FOR SHARE`) either
    * commits before the count below sees it, or waits and then finds the category gone.
    */
-  async delete(outletId: string, id: string): Promise<{ success: true }> {
+  async delete(actor: Actor, outletId: string, id: string): Promise<{ success: true }> {
     await this.db.transaction(async (tx) => {
       const [row] = await tx
-        .select({ id: categories.id })
+        .select()
         .from(categories)
         .where(and(eq(categories.id, id), liveAt(outletId)))
         .for('update');
@@ -126,6 +149,11 @@ export class CategoryService {
           message: 'Kategori masih berisi menu. Pindahkan menu ke kategori lain dulu.',
         });
       await tx.update(categories).set({ deletedAt: new Date() }).where(eq(categories.id, id));
+      await audit(tx, actor, {
+        ...entry(outletId, id),
+        action: 'category.delete',
+        before: categoryOutput(row),
+      });
     });
     return { success: true };
   }
@@ -136,12 +164,13 @@ export class CategoryService {
    * can slip in regardless — it simply lands at the end, and the next reorder fixes it.
    * Same set, different order from another tablet: last write wins — this is configuration.
    */
-  async reorder(outletId: string, ids: string[]): Promise<CategoryOutput[]> {
+  async reorder(actor: Actor, outletId: string, ids: string[]): Promise<CategoryOutput[]> {
     await this.db.transaction(async (tx) => {
       const rows = await tx
-        .select({ id: categories.id })
+        .select({ id: categories.id, name: categories.name })
         .from(categories)
         .where(liveAt(outletId))
+        .orderBy(asc(categories.sortOrder), asc(categories.createdAt))
         .for('update');
       if (
         !checkReorder(
@@ -155,6 +184,14 @@ export class CategoryService {
         });
       for (const [sortOrder, id] of ids.entries())
         await tx.update(categories).set({ sortOrder }).where(eq(categories.id, id));
+      // Names, not ids: the log reads "Kopi, Teh" → "Teh, Kopi".
+      const name = new Map(rows.map((r) => [r.id, r.name]));
+      await audit(tx, actor, {
+        ...entry(outletId, null),
+        action: 'category.reorder',
+        before: { order: rows.map((r) => r.name) },
+        after: { order: ids.map((id) => name.get(id)) },
+      });
     });
     return this.list(outletId);
   }

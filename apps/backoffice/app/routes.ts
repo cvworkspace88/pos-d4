@@ -13,6 +13,7 @@ export default [
       route('kategori', 'routes/categories.tsx'),
       route('menu', 'routes/menu.tsx'),
       route('add-on', 'routes/addons.tsx'),
+      route('log-audit', 'routes/audit.tsx'),
     ]),
   ]),
 ] satisfies RouteConfig;

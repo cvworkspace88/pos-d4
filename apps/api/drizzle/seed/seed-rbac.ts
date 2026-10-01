@@ -112,6 +112,9 @@ export const PERMISSIONS: Record<string, { label: string; roles: RoleName[] }> =
 
   // The roles & permissions page. Read-only for now; owner alone.
   'role.view': { label: 'Lihat peran & izin', roles: [] },
+
+  // Who changed what (US-011). The outlet's own log; global rows (app settings) only for a global role.
+  'report.view_audit': { label: 'Lihat log audit', roles: ['manager', 'auditor'] },
 };
 
 /** The full holder list for a permission. Owner is the only implicit holder; everyone else is listed. */

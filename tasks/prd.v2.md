@@ -137,11 +137,11 @@ Audit rows on settings writes come with US-011.
 **Description:** As any staff member, I want to log in with username and password and stay logged in safely.
 
 **Acceptance Criteria:**
-- [ ] `auth.login(username, password)` → access JWT (15 min) + opaque refresh token (SHA-256 hash stored, rotated on use, 30 s grace for the previous token to absorb concurrent refreshes)
+- [x] `auth.login(username, password)` → access JWT (15 min) + opaque refresh token (SHA-256 hash stored, rotated on use, 30 s grace for the previous token to absorb concurrent refreshes)
 - [ ] Passwords hashed with argon2id; 5 failed logins within 15 min lock the user for 15 min (`FORBIDDEN`, message says how long)
 - [ ] JWT carries `userId`, `outletId`, `roleId`, `deviceId`, `exp`
-- [ ] Any `UNAUTHORIZED` response ends the client session (store cleared, cache dropped, back to login); `FORBIDDEN` never does
-- [ ] `auth.logout` revokes the refresh token with reason `logout`
+- [x] Any `UNAUTHORIZED` response ends the client session (store cleared, cache dropped, back to login); `FORBIDDEN` never does
+- [x] `auth.logout` revokes the refresh token with reason `logout`
 - [ ] Tests: rotation, grace window, lockout, revoked token refused
 - [ ] Typecheck/lint passes
 
@@ -150,10 +150,10 @@ Audit rows on settings writes come with US-011.
 
 **Acceptance Criteria:**
 - [ ] First login on a device with username/password creates a profile on that device (name, avatar initials, outlet) and asks the user to set a PIN if none exists
-- [ ] "Sign out" parks the session (refresh token kept with reason `parked`); profile stays on the device
+- [x] "Sign out" parks the session (refresh token kept with reason `parked`); profile stays on the device
 - [ ] Profile picker screen lists parked profiles; tapping one asks for the PIN; `auth.pinLogin(profileId, pin)` redeems the parked token and issues a new session
 - [ ] Wrong PIN returns `UNAUTHORIZED` with `data.reason: 'INVALID_PIN'`; client shows "PIN salah" and does not end the session; 5 wrong PINs in 10 min park-locks the profile for 10 min
-- [ ] Parked tokens cannot be used by `auth.refresh`; only `pinLogin` redeems them
+- [x] Parked tokens cannot be used by `auth.refresh`; only `pinLogin` redeems them
 - [ ] Idle lock after `security.pin_idle_lock_seconds` (setting, default 120) returns to the profile picker
 - [ ] "Remove profile" requires the profile's PIN or a manager, revokes the parked token
 - [ ] Verify in browser using dev-browser skill (Expo web) or simulator
@@ -163,7 +163,7 @@ Audit rows on settings writes come with US-011.
 **Description:** As a cashier, I want to log in on the desktop with username and password, and lock the screen between users.
 
 **Acceptance Criteria:**
-- [ ] Desktop login screen with username/password; no PIN profiles, no idle lock
+- [x] Desktop login screen with username/password; no PIN profiles, no idle lock
 - [ ] "Lock" button and `security.desktop_lock_seconds` (setting, default 0 = off) show a lock screen requiring the same user's password
 - [ ] Current user and role shown in the top bar; "Switch user" logs out and returns to login
 - [ ] Verify in browser using dev-browser skill
@@ -176,9 +176,9 @@ Audit rows on settings writes come with US-011.
 - [ ] Tables `outlets(id, name, code, address, phone, npwp, timezone, active)`, `outlet_staff(outlet_id, user_id, role_id, active)`
 - [ ] `users.global_role_id` holds the global role (owner) that needs no membership; everyone else acts only in outlets where they have an active membership
 - [ ] Login on a device bound to outlet X refuses users without membership there: `FORBIDDEN` "Anda tidak terdaftar di outlet ini."
-- [ ] `auth.refresh({outletId})` switches active outlet for multi-outlet users (backoffice and owners)
-- [ ] `canActOn(ctx, outletId)` guard used by every query and mutation that takes an outlet id; refusal is `FORBIDDEN` "Outlet tidak ditemukan."
-- [ ] Tests: membership check, global role bypass, guard
+- [x] `auth.refresh({outletId})` switches active outlet for multi-outlet users (backoffice and owners)
+- [x] `canActOn(ctx, outletId)` guard used by every query and mutation that takes an outlet id; refusal is `FORBIDDEN` "Outlet tidak ditemukan."
+- [x] Tests: membership check, global role bypass, guard
 - [ ] Typecheck/lint passes
 
 ### US-009: Roles, permissions catalogue and per-user overrides
@@ -187,7 +187,7 @@ Audit rows on settings writes come with US-011.
 **Acceptance Criteria:**
 - [ ] Tables `roles(id, name, is_global, editable)`, `permissions(name, description, group)`, `role_permissions`, `user_permission_overrides(user_id, outlet_id nullable, permission, effect grant|revoke)`
 - [ ] Seed the permission catalogue from Appendix B and base roles Owner, Manager, Supervisor, Cashier, Waiter, Kitchen, Accountant with the grants in Appendix B
-- [ ] Rules function `effectivePermissions(roleGrants, overrides)` = role grants + grants − revokes; revoke wins over grant; tests
+- [x] Rules function `effectivePermissions(roleGrants, overrides)` = role grants + grants − revokes; revoke wins over grant; tests
 - [ ] `rbac.require(ctx, 'domain.action')` reads the role for `ctx.outletId`, applies overrides (outlet-specific first, then global); refusal is `FORBIDDEN` "Anda tidak memiliki akses." never `UNAUTHORIZED`
 - [ ] Owner role cannot be edited or deleted; Owner cannot be assigned per outlet (`BAD_REQUEST` "Owner is global.")
 - [ ] Role edits and overrides write audit rows
@@ -208,10 +208,10 @@ Audit rows on settings writes come with US-011.
 **Description:** As an owner, I want every sensitive action recorded so that disputes can be settled.
 
 **Acceptance Criteria:**
-- [ ] Table `audit_log(id uuid, outlet_id, actor_user_id, approver_user_id nullable, action, entity_type, entity_id, reason, before jsonb, after jsonb, device_id, created_at)`; insert-only, no update/delete routers
-- [ ] Helper `audit(ctx, {...})` used by settings, roles, menu, void/comp/refund/discount/price override/reopen, shift close, sync device actions
-- [ ] `audit.list(outletId, {from, to, action?, userId?})` paginated, permission `report.view_audit`
-- [ ] Typecheck/lint passes
+- [x] Table `audit_log(id uuid, outlet_id nullable, actor_user_id, approver_user_id nullable, module, action, entity_type, entity_id, reason, before jsonb, after jsonb, device_id, created_at)`; one table for every module (`module` column, `action` = `module.verb`); `before`/`after` hold only the changed fields, secrets masked; insert-only, enforced by a DB trigger, no update/delete routers
+- [x] Helper `audit(tx, actor, {...})`, written in the same transaction as the change, used by settings, outlet, staff and menu (categories, items, add-ons) now; roles (US-009), void/comp/refund/discount/price override/reopen, shift close and sync device actions call it when those stories land
+- [x] `audit.list(outletId, {fromDate, toDate, module?, userId?, cursor?})` keyset-paginated, dates in the outlet's timezone, permission `report.view_audit`; backoffice "Log Audit" page
+- [x] Typecheck/lint passes
 
 ### US-012: Event log and client ids (write model)
 **Description:** As a developer, I need every transactional write to be an idempotent, ordered event so that sync and retries are safe by construction.

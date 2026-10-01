@@ -106,7 +106,7 @@ export class OutletRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async create(@Ctx() ctx: Ctx, @Input() input: OutletInput) {
     await this.rbac.require(ctx, 'outlet.create');
-    return this.service.create(input);
+    return this.service.create(input, ctx);
   }
 
   // The full field set, not a patch: this is a form save, so an omitted address clears it. The
@@ -127,7 +127,7 @@ export class OutletRouter {
     await this.rbac.require(ctx, 'outlet.manage');
     if (!canActOn(ctx, input.id)) throw wrongOutlet();
     const { id, ...patch } = input;
-    return this.service.update(id, patch);
+    return this.service.update(id, patch, ctx);
   }
 
   /**
@@ -150,7 +150,7 @@ export class OutletRouter {
   async setCode(@Ctx() ctx: Ctx, @Input() input: { id: string; code: string }) {
     await this.rbac.require(ctx, 'outlet.manage');
     if (!canActOn(ctx, input.id)) throw wrongOutlet();
-    return this.service.setCode(input.id, input.code);
+    return this.service.setCode(input.id, input.code, ctx);
   }
 
   /**
@@ -183,7 +183,7 @@ export class OutletRouter {
     await this.rbac.require(ctx, 'outlet.manage');
     if (!canActOn(ctx, input.id)) throw wrongOutlet();
     const { id, ...charges } = input;
-    return this.service.setCharges(id, charges);
+    return this.service.setCharges(id, charges, ctx);
   }
 
   /**
@@ -206,7 +206,7 @@ export class OutletRouter {
     await this.rbac.require(ctx, 'outlet.manage');
     if (!canActOn(ctx, input.id)) throw wrongOutlet();
     const { id, ...day } = input;
-    return this.service.setBusinessDay(id, day);
+    return this.service.setBusinessDay(id, day, ctx);
   }
 
   /**
@@ -218,7 +218,7 @@ export class OutletRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async setActive(@Ctx() ctx: Ctx, @Input() input: { id: string; active: boolean }) {
     await this.rbac.require(ctx, 'outlet.delete');
-    return this.service.setActive(input.id, input.active);
+    return this.service.setActive(input.id, input.active, ctx);
   }
 
   // Behind staff_assign, not view: a cashier needs the outlet list, not the roster of who else

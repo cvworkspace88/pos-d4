@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
+import type { Actor } from '../auth/rbac-rules';
 import * as schema from '../db/schema';
 
 export type TestDatabase = NodePgDatabase<typeof schema>;
@@ -71,6 +72,23 @@ export const connectTestDatabase = async (): Promise<{
 /** Every table these tests touch, plus whatever cascades off `users`. Roles and permissions stay: they are seed data. */
 export const truncateAll = async (db: TestDatabase): Promise<void> => {
   await db.execute(
-    sql`truncate table menu_item_addon_groups, addon_options, addon_groups, menu_variants, menu_items, categories, kitchen_stations, refresh_tokens, user_permissions, outlet_staff, outlets, users restart identity cascade`,
+    sql`truncate table audit_log, menu_item_addon_groups, addon_options, addon_groups, menu_variants, menu_items, categories, kitchen_stations, refresh_tokens, user_permissions, outlet_staff, outlets, users restart identity cascade`,
   );
+};
+
+/**
+ * A caller for the services that audit their writes: a real `users` row, since the audit log points
+ * at it. No role and no membership, so it never shows up on a roster; `global` is what the services
+ * read. Create it after `truncateAll`.
+ */
+export const testActor = async (db: TestDatabase, global = true): Promise<Actor> => {
+  const [row] = await db
+    .insert(schema.users)
+    .values({
+      username: `zz-actor-${global ? 'global' : 'staff'}`,
+      name: 'Actor',
+      passwordHash: 'not-a-real-hash',
+    })
+    .returning({ id: schema.users.id });
+  return { user: { id: row!.id }, outletId: null, global };
 };

@@ -6,6 +6,8 @@ import * as schema from './schema';
 
 export const DRIZZLE = Symbol('DRIZZLE');
 export type Database = NodePgDatabase<typeof schema>;
+/** The transaction handle drizzle hands to the `transaction` callback. */
+export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 @Global()
 @Module({

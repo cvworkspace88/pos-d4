@@ -1,9 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
-import type { Database } from '../db/db.module';
+import type { Tx } from '../db/db.module';
 import { kitchenStations } from '../db/schema';
-
-type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 /**
  * A category or item may point only at a live station of its own outlet. Retired ones stay in the

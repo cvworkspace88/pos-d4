@@ -22,6 +22,7 @@
     "@repo/ui": "workspace:*",
     "@sentry/react-router": "10.75.0",
     "@tanstack/react-query": "5.102.8",
+    "@tanstack/react-virtual": "3.14.13",
     "@trpc/client": "11.18.0",
     "@trpc/tanstack-react-query": "11.18.0",
     "isbot": "^5",

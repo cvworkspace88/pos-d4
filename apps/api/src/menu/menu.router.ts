@@ -141,7 +141,7 @@ export class MenuRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async create(@Ctx() ctx: Ctx, @Input() input: MenuItemInput) {
     await this.rbac.require(ctx, 'menu.manage');
-    return this.service.create(activeOutlet(ctx), input);
+    return this.service.create(ctx, activeOutlet(ctx), input);
   }
 
   @Mutation({
@@ -186,7 +186,7 @@ export class MenuRouter {
   async update(@Ctx() ctx: Ctx, @Input() input: MenuItemInput & { id: string }) {
     await this.rbac.require(ctx, 'menu.manage');
     const { id, ...fields } = input;
-    return this.service.update(activeOutlet(ctx), id, fields);
+    return this.service.update(ctx, activeOutlet(ctx), id, fields);
   }
 
   @Mutation({
@@ -196,13 +196,13 @@ export class MenuRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async setActive(@Ctx() ctx: Ctx, @Input() input: { id: string; active: boolean }) {
     await this.rbac.require(ctx, 'menu.manage');
-    return this.service.setActive(activeOutlet(ctx), input.id, input.active);
+    return this.service.setActive(ctx, activeOutlet(ctx), input.id, input.active);
   }
 
   @Mutation({ input: z.object({ id: z.uuid() }), output: z.object({ success: z.boolean() }) })
   @UseMiddlewares(ProtectedMiddleware)
   async delete(@Ctx() ctx: Ctx, @Input('id') id: string) {
     await this.rbac.require(ctx, 'menu.manage');
-    return this.service.delete(activeOutlet(ctx), id);
+    return this.service.delete(ctx, activeOutlet(ctx), id);
   }
 }

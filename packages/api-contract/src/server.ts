@@ -90,6 +90,38 @@ const appRouter = t.router({
       .output(z.object({ success: z.boolean() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
+  audit: t.router({
+    list: publicProcedure
+      .input(z.object({
+      outletId: z.uuid(),
+      fromDate: z.iso.date(),
+      toDate: z.iso.date(),
+      module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon']).optional(),
+      userId: z.uuid().optional(),
+      cursor: z.object({ createdAt: z.string().max(40), id: z.uuid() }).optional(),
+    }))
+      .output(z.object({
+      rows: z.array(z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon']),
+  action: z.string(),
+  entityType: z.string(),
+  entityId: z.string().nullable(),
+  reason: z.string().nullable(),
+  before: z.record(z.string(), z.unknown()).nullable(),
+  after: z.record(z.string(), z.unknown()).nullable(),
+  actorName: z.string(),
+  approverName: z.string().nullable(),
+})),
+      nextCursor: z.object({ createdAt: z.string(), id: z.string() }).nullable(),
+    }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    actors: publicProcedure
+      .input(z.object({ outletId: z.uuid() }))
+      .output(z.array(z.object({ id: z.string(), name: z.string() })))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
   auth: t.router({
     register: publicProcedure
       .input(z.object({
