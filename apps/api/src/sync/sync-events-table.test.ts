@@ -34,7 +34,10 @@ const event = (type = 'order.created') => ({
 });
 
 test('ids are UUID v7 and seq follows insert order', async () => {
-  const rows = await db.insert(syncEvents).values([event(), event('order_line.added')]).returning();
+  const rows = await db
+    .insert(syncEvents)
+    .values([event(), event('order_line.added')])
+    .returning();
   expect(rows.map((r) => r.id[14])).toEqual(['7', '7']);
   expect(rows[1]!.seq).toBe(rows[0]!.seq + 1);
   expect(rows.every((r) => r.syncedAt === null)).toBe(true);

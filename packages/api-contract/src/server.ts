@@ -991,6 +991,11 @@ const appRouter = t.router({
     }))
       .output(z.object({ idleTimeoutSeconds: z.number(), desktopLockSeconds: z.number().int() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
+  sync: t.router({
+    pendingCount: publicProcedure
+      .output(z.number().int())
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     })
 });
 

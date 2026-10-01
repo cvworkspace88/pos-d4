@@ -46,13 +46,15 @@ Turborepo + pnpm monorepo, end-to-end typesafe from Postgres to both clients.
 
 ### Module shape
 
-Each domain (`auth/`, `floor/`, `outlet/`, `settings/`, `category/`, `menu/`, `addon/`, `audit/`) is three layers:
+Each domain (`auth/`, `floor/`, `outlet/`, `settings/`, `category/`, `menu/`, `addon/`, `audit/`, `sync/`) is three layers:
 
 1. `*.router.ts` — decorators, Zod validation, `@UseMiddlewares(ProtectedMiddleware)`, and `rbac.require(ctx.user.id, 'domain.action')`. Thin.
 2. `*.service.ts` — the Drizzle work, constructor-injected `DRIZZLE` handle.
 3. `*-rules.ts` — pure, decorator-free functions holding the logic worth testing (`floor-rules.ts`, `pin-policy.ts`, `refresh-window.ts`, `rbac-rules.ts`, `outlet-rules.ts`, `category-rules.ts`, `menu-rules.ts`, `addon-rules.ts`, `audit-rules.ts`). They exist so tests can import them without Nest's DI or reflect-metadata.
 
 **Audit log** (US-011): every config/catalogue mutation calls `audit(tx, actor, {...})` from `src/audit/audit.ts` inside the same transaction as its write, so the row commits or rolls back with the change. One `audit_log` table for all modules (`module` + `action` = `module.verb`); `before`/`after` keep only changed fields with secrets masked, and an unchanged save writes nothing. The table is append-only by DB trigger. New money/correction features add their module to `AUDIT_MODULES` (schema) and to the inline enum in `audit.router.ts`.
+
+**Sync events** (US-012): the outbox the hub's sync service pushes to the cloud (US-049). Every transactional create goes through `createOnce(tx, actor, table, values, { outletId, type })` from `src/sync/sync-event.ts`: the client sends the row's id, a repeat returns the stored row, and the row plus its `sync_events` row (payload = full row, type `entity.verb` per PRD Appendix C) commit together; other transactional writes call `recordSyncEvent(tx, …)` in their transaction. Only `synced_at` may change after insert (DB trigger). `sync.pendingCount` is the unsynced count for the active outlet. Not the same as `audit_log` (people-facing who/why) or the LAN `menu.changed` broadcasts.
 
 Permission checks are by *name* (`domain.action`), never id. Effective permissions = role grants + per-user `grant` rows − per-user `revoke` rows (`rbac-rules.ts`).
 

@@ -11,6 +11,7 @@ import { MenuModule } from './menu/menu.module';
 import { OutletModule } from './outlet/outlet.module';
 import { RoleModule } from './role/role.module';
 import { SettingsModule } from './settings/settings.module';
+import { SyncModule } from './sync/sync.module';
 import { AppContext } from './trpc/app.context';
 import { errorFormatter } from './trpc/error-formatter';
 
@@ -28,6 +29,7 @@ import { errorFormatter } from './trpc/error-formatter';
     MenuModule,
     AddonModule,
     AuditModule,
+    SyncModule,
   ],
   providers: [AppContext],
 })
