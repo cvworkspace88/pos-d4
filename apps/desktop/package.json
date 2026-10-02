@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@electron-toolkit/preload": "3.0.2",
-    "@electron-toolkit/utils": "4.0.0"
+    "@electron-toolkit/utils": "4.0.0",
+    "@repo/hooks": "workspace:*"
   },
   "devDependencies": {
     "@base-ui/react": "1.8.0",

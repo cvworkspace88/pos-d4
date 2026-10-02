@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
-import type { Actor } from '../auth/rbac-rules';
+import type { Actor, ApprovalInput } from '../auth/rbac-rules';
 import { TableService, type LayoutItem, type TableInput } from './table.service';
 
 type Ctx = Actor & { user: PublicUser };
@@ -94,19 +94,44 @@ export class TableRouter {
   }
 
   @Mutation({
-    input: z.object({ headId: z.string(), memberIds: z.array(z.string()).min(1).max(50) }),
+    input: z.object({
+      headId: z.string(),
+      memberIds: z.array(z.string()).min(1).max(50),
+      approval: z
+        .object({
+          approverUserId: z.uuid(),
+          pin: z.string().regex(/^\d{6}$/),
+          reason: z.string().trim().max(200).optional(),
+        })
+        .optional(),
+    }),
     output: z.array(tableOutput),
   })
   @UseMiddlewares(ProtectedMiddleware)
-  async merge(@Ctx() ctx: Ctx, @Input() input: { headId: string; memberIds: string[] }) {
-    await this.rbac.require(ctx, 'table.merge');
-    return this.service.merge(input.headId, input.memberIds);
+  async merge(
+    @Ctx() ctx: Ctx,
+    @Input() input: { headId: string; memberIds: string[]; approval?: ApprovalInput },
+  ) {
+    const approved = await this.rbac.requireOrApprove(ctx, 'table.merge', input.approval);
+    return this.service.merge(input.headId, input.memberIds, approved);
   }
 
-  @Mutation({ input: z.object({ id: z.string() }), output: z.array(tableOutput) })
+  @Mutation({
+    input: z.object({
+      id: z.string(),
+      approval: z
+        .object({
+          approverUserId: z.uuid(),
+          pin: z.string().regex(/^\d{6}$/),
+          reason: z.string().trim().max(200).optional(),
+        })
+        .optional(),
+    }),
+    output: z.array(tableOutput),
+  })
   @UseMiddlewares(ProtectedMiddleware)
-  async unmerge(@Ctx() ctx: Ctx, @Input('id') id: string) {
-    await this.rbac.require(ctx, 'table.merge');
-    return this.service.unmerge(id);
+  async unmerge(@Ctx() ctx: Ctx, @Input() input: { id: string; approval?: ApprovalInput }) {
+    const approved = await this.rbac.requireOrApprove(ctx, 'table.merge', input.approval);
+    return this.service.unmerge(input.id, approved);
   }
 }

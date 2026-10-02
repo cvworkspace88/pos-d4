@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { and, asc, eq, gte, isNull, lt } from 'drizzle-orm';
+import { auditApproval } from '../audit/audit';
+import type { Approved } from '../auth/rbac-rules';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { reservations, tables, type Reservation } from '../db/schema';
 
@@ -43,17 +45,28 @@ export class ReservationService {
     return rows.map(reservationOutput);
   }
 
-  async create(userId: string, input: ReservationInput): Promise<ReservationOutput> {
+  async create(
+    userId: string,
+    input: ReservationInput,
+    approved: Approved | null = null,
+  ): Promise<ReservationOutput> {
     await this.requireLiveTable(input.tableId);
-    const [row] = await this.db
-      .insert(reservations)
-      .values({ ...input, startsAt: new Date(input.startsAt), createdBy: userId })
-      .returning();
-    return reservationOutput(row!);
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(reservations)
+        .values({ ...input, startsAt: new Date(input.startsAt), createdBy: userId })
+        .returning();
+      if (approved) await auditApproval(tx, approved, 'reservation', row!.id);
+      return reservationOutput(row!);
+    });
   }
 
   /** Only a booked reservation changes. Seated, cancelled and no-show are terminal. */
-  async update(id: string, patch: ReservationPatch): Promise<ReservationOutput> {
+  async update(
+    id: string,
+    patch: ReservationPatch,
+    approved: Approved | null = null,
+  ): Promise<ReservationOutput> {
     const [current] = await this.db.select().from(reservations).where(eq(reservations.id, id));
     if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'Reservation not found.' });
     if (current.status !== 'booked')
@@ -65,8 +78,11 @@ export class ReservationService {
     const set = { ...rest, ...(startsAt ? { startsAt: new Date(startsAt) } : {}) };
     if (Object.values(set).every((v) => v === undefined)) return reservationOutput(current);
 
-    const [row] = await this.db.update(reservations).set(set).where(eq(reservations.id, id)).returning();
-    return reservationOutput(row!);
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.update(reservations).set(set).where(eq(reservations.id, id)).returning();
+      if (approved) await auditApproval(tx, approved, 'reservation', id);
+      return reservationOutput(row!);
+    });
   }
 
   private async requireLiveTable(tableId: string): Promise<void> {

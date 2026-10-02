@@ -126,7 +126,9 @@ export const PERMISSIONS: Record<string, { label: string; roles: RoleName[] }> =
   'device.manage': { label: 'Kelola perangkat', roles: ['manager'] },
   'sync.manage': { label: 'Kelola sinkronisasi', roles: ['manager'] },
   // Approve someone else's refused action with your PIN (US-010).
-  'approval.grant': { label: 'Beri persetujuan dengan PIN', roles: ['manager', 'supervisor'] },
+  'approval.grant': { label: 'Beri akses dengan PIN', roles: ['manager', 'supervisor'] },
+  // Lift a requester's override block early (US-010) instead of waiting out the ten minutes.
+  'approval.unblock': { label: 'Buka blokir akses', roles: ['manager'] },
 
   // The manager two are about one outlet, pinned to the session's own by `canActOn`; the
   // owner-only three are about the set of outlets. Reading your own outlet needs no permission.

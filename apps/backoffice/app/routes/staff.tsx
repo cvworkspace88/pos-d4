@@ -34,6 +34,14 @@ export default function StaffPage() {
 
   const staff = useQuery(trpc.outlet.staff.queryOptions({ outletId }, { enabled: !!outlet }));
   const roles = useQuery(trpc.outlet.roles.queryOptions());
+  const me = useQuery(trpc.auth.me.queryOptions());
+  const canUnblock = me.data?.permissions.includes('approval.unblock') ?? false;
+  const unblock = useMutation(
+    trpc.approval.unblock.mutationOptions({
+      onSuccess: () =>
+        void queryClient.invalidateQueries({ queryKey: trpc.outlet.staff.queryKey({ outletId }) }),
+    }),
+  );
 
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
@@ -146,6 +154,12 @@ export default function StaffPage() {
               </Alert>
             )}
 
+            {unblock.error && (
+              <Alert variant="danger" role="alert" className="m-4">
+                {unblock.error.message}
+              </Alert>
+            )}
+
             <table className="w-full text-sm" aria-busy={staff.isPending}>
               <thead className="border-b border-border-subtle text-left text-xs uppercase tracking-wider text-ink-tertiary">
                 <tr>
@@ -168,44 +182,73 @@ export default function StaffPage() {
                     </tr>
                   ))}
 
-                {rows?.map((m) => (
-                  <tr key={m.id} className="border-b border-border-muted last:border-0">
-                    <td className="px-4 py-3 font-medium text-ink-primary">{m.username}</td>
-                    <td className="px-4 py-3 text-ink-secondary">{m.name}</td>
-                    <td className="px-4 py-3">
-                      <Pill tone={ROLE_TONE[m.roleName]}>{roleLabel(m.roleName)}</Pill>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div
-                        className={`flex justify-end gap-2 ${manageable.has(m.roleId) ? '' : 'invisible'}`}
-                      >
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`Ubah ${m.username}`}
-                          onClick={() => {
-                            save.reset();
-                            setRoleId(m.roleId);
-                            setEditing(m);
-                          }}
-                        >
-                          <Pencil className="size-4 text-primary" aria-hidden />
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`Hapus ${m.username}`}
-                          onClick={() => {
-                            save.reset();
-                            setRemoving(m);
-                          }}
-                        >
-                          <Trash2 className="size-4 text-danger" aria-hidden />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {rows?.map((m) => {
+                  const blockedUntil =
+                    m.approvalBlockedUntil && new Date(m.approvalBlockedUntil) > new Date()
+                      ? new Date(m.approvalBlockedUntil)
+                      : null;
+                  return (
+                    <tr key={m.id} className="border-b border-border-muted last:border-0">
+                      <td className="px-4 py-3 font-medium text-ink-primary">{m.username}</td>
+                      <td className="px-4 py-3 text-ink-secondary">{m.name}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Pill tone={ROLE_TONE[m.roleName]}>{roleLabel(m.roleName)}</Pill>
+                          {blockedUntil && (
+                            <Pill tone="danger">
+                              Diblokir hingga{' '}
+                              {blockedUntil.toLocaleTimeString('id-ID', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </Pill>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          {blockedUntil && canUnblock && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              loading={unblock.isPending && unblock.variables?.userId === m.id}
+                              onClick={() => unblock.mutate({ userId: m.id })}
+                            >
+                              Buka blokir
+                            </Button>
+                          )}
+                          <div
+                            className={`flex justify-end gap-2 ${manageable.has(m.roleId) ? '' : 'invisible'}`}
+                          >
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={`Ubah ${m.username}`}
+                              onClick={() => {
+                                save.reset();
+                                setRoleId(m.roleId);
+                                setEditing(m);
+                              }}
+                            >
+                              <Pencil className="size-4 text-primary" aria-hidden />
+                            </Button>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={`Hapus ${m.username}`}
+                              onClick={() => {
+                                save.reset();
+                                setRemoving(m);
+                              }}
+                            >
+                              <Trash2 className="size-4 text-danger" aria-hidden />
+                            </Button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
 
                 {rows?.length === 0 && (
                   <tr>

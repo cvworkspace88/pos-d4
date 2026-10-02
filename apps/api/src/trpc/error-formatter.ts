@@ -4,6 +4,9 @@ import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from '@trpc/server';
 
 const logger = new Logger('trpc');
 
+/** `INVALID_PIN`: wrong digits, the session is fine. `NEEDS_APPROVAL`: a manager's PIN can lift this refusal (US-010). */
+type ReasonCode = 'INVALID_PIN' | 'NEEDS_APPROVAL';
+
 /**
  * A machine-readable discriminant for failures that deliberately share one tRPC code.
  *
@@ -14,9 +17,9 @@ const logger = new Logger('trpc');
  */
 export class Reason extends Error {
   // Declared, not a parameter property: `node --test` strips types rather than compiling them.
-  readonly reason: 'INVALID_PIN';
+  readonly reason: ReasonCode;
 
-  constructor(reason: 'INVALID_PIN') {
+  constructor(reason: ReasonCode) {
     super(reason);
     this.reason = reason;
   }

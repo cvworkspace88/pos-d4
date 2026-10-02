@@ -123,3 +123,20 @@ test('unsubscribing during the refresh cancels the retry', async () => {
 
   assert.equal(attempts.length, 1, 'the cancelled operation was not sent again');
 });
+
+const invalidPin = () =>
+  Object.assign(new Error('PIN tidak cocok.'), { data: { code: 'UNAUTHORIZED', reason: 'INVALID_PIN' } });
+
+test('a wrong PIN is not retried — the handler ran and counted it', async () => {
+  let refreshes = 0;
+  const accessToken = async () => {
+    refreshes += 1;
+    return 'fresh-token';
+  };
+
+  const { settled, attempts } = drive(accessToken, [invalidPin(), ok]);
+
+  assert.equal(((await settled).error as Error).message, 'PIN tidak cocok.');
+  assert.equal(attempts.length, 1, 'the operation was not sent again');
+  assert.equal(refreshes, 0);
+});

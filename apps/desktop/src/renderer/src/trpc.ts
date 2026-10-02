@@ -1,7 +1,7 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { createTRPCClient, httpBatchLink, httpLink } from '@trpc/client';
 import { createTRPCContext } from '@trpc/tanstack-react-query';
-import { createRefreshLink, createTokenProvider, type AppRouter } from '@repo/api-contract';
+import { createRefreshLink, createTokenProvider, isInvalidPin, type AppRouter } from '@repo/api-contract';
 import { useAuthStore } from './stores/auth';
 
 export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
@@ -18,9 +18,13 @@ const accessToken = createTokenProvider({
   refresh: (refreshToken) => refreshClient.auth.refresh.mutate({ refreshToken }),
 });
 
-/** A 401 the token's own `exp` could not predict (revoked user, rotated secret) still ends the session. */
+/**
+ * A 401 the token's own `exp` could not predict (revoked user, rotated secret) still ends the session.
+ * A wrong approval PIN is a 401 too, but a failed attempt, not a dead session.
+ */
 const onAuthError = (error: unknown) => {
-  if ((error as { data?: { code?: string } })?.data?.code === 'UNAUTHORIZED') useAuthStore.getState().clear();
+  if ((error as { data?: { code?: string } })?.data?.code === 'UNAUTHORIZED' && !isInvalidPin(error))
+    useAuthStore.getState().clear();
 };
 
 export const queryClient = new QueryClient({

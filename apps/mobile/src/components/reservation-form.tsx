@@ -3,8 +3,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { Button, Modal, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useApproval } from '@repo/hooks/use-approval';
 import { nextFullHourLocal } from '@repo/api-contract';
 import { z } from 'zod';
+import { ApprovalDialog } from '@/components/approval-dialog';
 import type { TableRow } from '@/components/floor-table';
 import { useTRPC } from '@/lib/trpc';
 
@@ -41,7 +43,15 @@ const FIELDS = [
   ['note', 'Note', 'default'],
 ] as const;
 
-export function ReservationForm({ table, onClose }: { table: TableRow; onClose: () => void }) {
+export function ReservationForm({
+  table,
+  canCreate,
+  onClose,
+}: {
+  table: TableRow;
+  canCreate: boolean;
+  onClose: () => void;
+}) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [date, time] = nextFullHourLocal().split('T') as [string, string];
@@ -60,17 +70,20 @@ export function ReservationForm({ table, onClose }: { table: TableRow; onClose: 
     }),
   );
 
+  const approval = useApproval('reservation.create', create.mutateAsync);
+
   const submit = (values: FormOutput) =>
-    create
-      .mutateAsync({
+    approval.start(
+      {
         tableId: table.id,
         customerName: values.customerName,
         phone: values.phone || undefined,
         partySize: values.partySize,
         startsAt: new Date(`${values.date}T${values.time}`).toISOString(),
         note: values.note || undefined,
-      })
-      .catch(() => undefined);
+      },
+      canCreate,
+    );
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -106,7 +119,8 @@ export function ReservationForm({ table, onClose }: { table: TableRow; onClose: 
           onPress={handleSubmit(submit)}
         />
         <Button title="Cancel" onPress={onClose} />
-        {create.error && <Text style={styles.error}>{create.error.message}</Text>}
+        {approval.error && <Text style={styles.error}>{approval.error.message}</Text>}
+        <ApprovalDialog approval={approval} />
       </SafeAreaView>
     </Modal>
   );

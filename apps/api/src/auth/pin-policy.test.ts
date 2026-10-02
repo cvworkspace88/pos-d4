@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { rejectPinLogin } from './pin-policy.ts';
+import { PIN_WINDOW_MS, nextPinFailure, pinLockedFor, rejectPinLogin } from './pin-policy.ts';
 import { REVOKE_GRACE_MS } from './refresh-window.ts';
 
 const NOW = Date.UTC(2026, 8, 4, 12, 0, 0);
@@ -50,4 +50,35 @@ test('that retry window closes with the grace period', () => {
 test('expiry outranks parking', () => {
   const parkedAndExpired = row({ expiresAt: ago(1), revokedAt: ago(1_000), revokedReason: 'parked' });
   assert.equal(rejectPinLogin(parkedAndExpired, NOW), 'expired');
+});
+
+const fresh = { pinFailures: 0, pinWindowStartedAt: null };
+
+test('a first wrong PIN opens a window at 1', () => {
+  assert.deepEqual(nextPinFailure(fresh, NOW), { pinFailures: 1, pinWindowStartedAt: new Date(NOW) });
+  assert.equal(pinLockedFor(fresh, NOW), 0);
+});
+
+test('four wrong PINs inside the window do not lock', () => {
+  const four = { pinFailures: 4, pinWindowStartedAt: ago(60_000) };
+  assert.equal(pinLockedFor(four, NOW), 0);
+});
+
+test('the fifth wrong PIN locks for a full window from that failure', () => {
+  const fifth = nextPinFailure({ pinFailures: 4, pinWindowStartedAt: ago(9 * 60_000) }, NOW);
+  assert.deepEqual(fifth, { pinFailures: 5, pinWindowStartedAt: new Date(NOW) });
+  assert.equal(pinLockedFor(fifth, NOW), PIN_WINDOW_MS);
+  assert.equal(pinLockedFor(fifth, NOW + PIN_WINDOW_MS - 1), 1);
+  assert.equal(pinLockedFor(fifth, NOW + PIN_WINDOW_MS), 0);
+});
+
+test('a wrong PIN after the window restarts the count', () => {
+  const stale = { pinFailures: 3, pinWindowStartedAt: ago(PIN_WINDOW_MS) };
+  assert.deepEqual(nextPinFailure(stale, NOW), { pinFailures: 1, pinWindowStartedAt: new Date(NOW) });
+});
+
+test('an expired lock restarts the count on the next wrong PIN', () => {
+  const expired = { pinFailures: 5, pinWindowStartedAt: ago(PIN_WINDOW_MS + 1) };
+  assert.equal(pinLockedFor(expired, NOW), 0);
+  assert.deepEqual(nextPinFailure(expired, NOW), { pinFailures: 1, pinWindowStartedAt: new Date(NOW) });
 });

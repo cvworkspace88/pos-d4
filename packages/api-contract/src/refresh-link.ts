@@ -17,7 +17,9 @@ export interface RefreshLinkDeps {
  *
  * Place it FIRST in the links array, above the terminating HTTP link. The refresh call itself must
  * go through a separate client that does not include this link, or a failing refresh recurses.
- * Retrying is safe for mutations too: a request rejected as UNAUTHORIZED never reached the handler.
+ * Retrying is safe for mutations too: a request rejected as UNAUTHORIZED never reached the handler —
+ * except a wrong PIN (`reason: 'INVALID_PIN'`), which the handler did run and counted toward the PIN
+ * lock, so it is never retried.
  *
  * Assumes a single-emission terminating link (`httpBatchLink`). Values already forwarded are not
  * tracked, so a streaming link would replay whatever arrived before the error.
@@ -37,7 +39,8 @@ export function createRefreshLink({ accessToken }: RefreshLinkDeps): TRPCLink<Ap
             error: (error) => {
               // One retry only. A second UNAUTHORIZED means the fresh token was rejected too, so the
               // session is genuinely over and the error must reach the cache hook that ends it.
-              if (retried || (error.data as { code?: string } | undefined)?.code !== 'UNAUTHORIZED')
+              const data = error.data as { code?: string; reason?: string } | undefined;
+              if (retried || data?.code !== 'UNAUTHORIZED' || data.reason === 'INVALID_PIN')
                 return observer.error(error);
 
               retried = true;

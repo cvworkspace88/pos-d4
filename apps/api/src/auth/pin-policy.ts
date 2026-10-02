@@ -29,3 +29,36 @@ export function rejectPinLogin(row: TokenRow, now = Date.now()): 'expired' | 're
     return now - row.revokedAt.getTime() > REVOKE_GRACE_MS ? 'revoked' : null;
   return rejectRefresh(row, now);
 }
+
+/** Wrong PINs allowed inside one window before the PIN locks (US-006, US-010). */
+export const PIN_MAX_FAILURES = 5;
+/** How long the counting window runs, and how long a lock lasts once the fifth failure lands. */
+export const PIN_WINDOW_MS = 10 * 60 * 1000;
+
+/** The two `users` columns the lock lives in. A `User` row satisfies it as is. */
+export interface PinFailures {
+  pinFailures: number;
+  pinWindowStartedAt: Date | null;
+}
+
+/** Milliseconds until this PIN may be tried again; 0 when it is not locked. */
+export function pinLockedFor(state: PinFailures, now = Date.now()): number {
+  if (state.pinFailures < PIN_MAX_FAILURES || !state.pinWindowStartedAt) return 0;
+  return Math.max(0, state.pinWindowStartedAt.getTime() + PIN_WINDOW_MS - now);
+}
+
+/**
+ * The counter after one more wrong PIN. A window older than `PIN_WINDOW_MS` (or an expired lock)
+ * starts over at 1. The failure that reaches the limit restamps the window, so the lock runs a full
+ * window from the attempt that triggered it rather than from the first miss.
+ */
+export function nextPinFailure(state: PinFailures, now = Date.now()): PinFailures {
+  const start = state.pinWindowStartedAt?.getTime();
+  if (start === undefined || now - start >= PIN_WINDOW_MS)
+    return { pinFailures: 1, pinWindowStartedAt: new Date(now) };
+  const pinFailures = state.pinFailures + 1;
+  return {
+    pinFailures,
+    pinWindowStartedAt: pinFailures >= PIN_MAX_FAILURES ? new Date(now) : state.pinWindowStartedAt,
+  };
+}

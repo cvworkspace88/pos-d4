@@ -141,6 +141,20 @@
       "when": 1790866404515,
       "tag": "0019_roles_catalogue",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790915230430,
+      "tag": "0020_pin_lock",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790919431649,
+      "tag": "0021_approval_block",
+      "breakpoints": true
     }
   ]
 }

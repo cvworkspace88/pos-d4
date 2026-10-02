@@ -17,3 +17,4 @@ export {
 } from './floor';
 export { MAX_RUPIAH, parseRupiah } from './money';
 export { describeRule, getSelectAddonErrorMessage } from './addon';
+export { errorReason, isInvalidPin, needsApproval, type Approval } from './approval';

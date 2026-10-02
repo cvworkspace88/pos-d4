@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { PublicUser } from '../auth/auth.service';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
-import type { Actor } from '../auth/rbac-rules';
+import type { Actor, ApprovalInput } from '../auth/rbac-rules';
 import { ReservationService, type ReservationInput, type ReservationPatch } from './reservation.service';
 
 type Ctx = Actor & { user: PublicUser };
@@ -45,13 +45,21 @@ export class ReservationRouter {
       partySize: z.number().int().min(1).max(100),
       startsAt: z.iso.datetime({ offset: true }),
       note: z.string().trim().max(500).optional(),
+      approval: z
+        .object({
+          approverUserId: z.uuid(),
+          pin: z.string().regex(/^\d{6}$/),
+          reason: z.string().trim().max(200).optional(),
+        })
+        .optional(),
     }),
     output: reservationOutput,
   })
   @UseMiddlewares(ProtectedMiddleware)
-  async create(@Ctx() ctx: Ctx, @Input() input: ReservationInput) {
-    await this.rbac.require(ctx, 'reservation.create');
-    return this.service.create(ctx.user.id, input);
+  async create(@Ctx() ctx: Ctx, @Input() input: ReservationInput & { approval?: ApprovalInput }) {
+    const { approval, ...fields } = input;
+    const approved = await this.rbac.requireOrApprove(ctx, 'reservation.create', approval);
+    return this.service.create(ctx.user.id, fields, approved);
   }
 
   @Mutation({
@@ -64,13 +72,20 @@ export class ReservationRouter {
       partySize: z.number().int().min(1).max(100).optional(),
       startsAt: z.iso.datetime({ offset: true }).optional(),
       note: z.string().trim().max(500).optional(),
+      approval: z
+        .object({
+          approverUserId: z.uuid(),
+          pin: z.string().regex(/^\d{6}$/),
+          reason: z.string().trim().max(200).optional(),
+        })
+        .optional(),
     }),
     output: reservationOutput,
   })
   @UseMiddlewares(ProtectedMiddleware)
-  async update(@Ctx() ctx: Ctx, @Input() input: { id: string } & ReservationPatch) {
-    await this.rbac.require(ctx, 'reservation.update');
-    const { id, ...patch } = input;
-    return this.service.update(id, patch);
+  async update(@Ctx() ctx: Ctx, @Input() input: { id: string; approval?: ApprovalInput } & ReservationPatch) {
+    const { id, approval, ...patch } = input;
+    const approved = await this.rbac.requireOrApprove(ctx, 'reservation.update', approval);
+    return this.service.update(id, patch, approved);
   }
 }

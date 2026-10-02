@@ -20,3 +20,9 @@ export type Actor = { user: { id: string }; outletId: string | null; global: boo
  */
 export const canActOn = (actor: Actor, outletId: string): boolean =>
   actor.global || actor.outletId === outletId;
+
+/** What a client sends with an overridable mutation: the approving manager and their PIN (US-010). */
+export type ApprovalInput = { approverUserId: string; pin: string; reason?: string };
+
+/** An approval that passed: everything the service needs to write its `approval.granted` audit row. */
+export type Approved = { actor: Actor; permission: string; approverUserId: string; reason?: string };

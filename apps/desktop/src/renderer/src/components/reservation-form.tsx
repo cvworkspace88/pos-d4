@@ -3,7 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { nextFullHourLocal } from '@repo/api-contract';
 import { z } from 'zod';
+import { useApproval } from '@repo/hooks/use-approval';
 import { useTRPC } from '../trpc';
+import { ApprovalDialog } from './approval-dialog';
 import type { FloorTable } from './floor-plan';
 
 const schema = z.object({
@@ -17,7 +19,15 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export function ReservationForm({ table, onClose }: { table: FloorTable; onClose: () => void }) {
+export function ReservationForm({
+  table,
+  canCreate,
+  onClose,
+}: {
+  table: FloorTable;
+  canCreate: boolean;
+  onClose: () => void;
+}) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -39,17 +49,20 @@ export function ReservationForm({ table, onClose }: { table: FloorTable; onClose
     }),
   );
 
+  const approval = useApproval('reservation.create', create.mutateAsync);
+
   const submit = ({ customerName, phone, partySize, startsAt, note }: FormValues) =>
-    create
-      .mutateAsync({
+    approval.start(
+      {
         tableId: table.id,
         customerName,
         phone: phone || undefined,
         partySize,
         startsAt: new Date(startsAt).toISOString(),
         note: note || undefined,
-      })
-      .catch(() => undefined);
+      },
+      canCreate,
+    );
 
   return (
     <dialog open>
@@ -90,8 +103,9 @@ export function ReservationForm({ table, onClose }: { table: FloorTable; onClose
             Cancel
           </button>
         </div>
-        {create.error && <p role="alert">{create.error.message}</p>}
+        {approval.error && <p role="alert">{approval.error.message}</p>}
       </form>
+      <ApprovalDialog approval={approval} />
     </dialog>
   );
 }

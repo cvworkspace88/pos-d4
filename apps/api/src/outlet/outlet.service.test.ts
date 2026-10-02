@@ -584,3 +584,22 @@ test('a custom role is the owner to hand out, and missing from a manager list', 
   await service.setStaff(outlet.id, [{ userId: ann.id, roleId: custom!.id }], OWNER);
   expect((await service.assignableRoles(OWNER)).map((r) => r.name)).toContain('Area Manager');
 });
+
+test('the roster shows when a member is blocked from requesting approvals', async () => {
+  const outlet = await anOutlet();
+  const kim = await addUser('kim');
+  await service.setStaff(outlet.id, [as(kim.id)], OWNER);
+  const setWindow = (ms: number) =>
+    db
+      .update(users)
+      .set({ approvalFailures: 5, approvalWindowStartedAt: new Date(Date.now() - ms) })
+      .where(eq(users.id, kim.id));
+  const kimRow = async () => (await service.staff(outlet.id)).find((s) => s.id === kim.id)!;
+
+  await setWindow(0);
+  const until = Date.parse((await kimRow()).approvalBlockedUntil!);
+  expect(Math.abs(until - (Date.now() + 10 * 60_000))).toBeLessThan(15_000);
+
+  await setWindow(11 * 60_000);
+  expect((await kimRow()).approvalBlockedUntil).toBeNull();
+});

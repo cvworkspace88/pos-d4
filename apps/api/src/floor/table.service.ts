@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { auditApproval } from '../audit/audit';
+import type { Approved } from '../auth/rbac-rules';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { isUniqueViolation } from '../db/errors';
 import { reservations, tables, type Table } from '../db/schema';
@@ -125,7 +127,7 @@ export class TableService {
     return { success: true };
   }
 
-  async merge(headId: string, memberIds: string[]): Promise<TableOutput[]> {
+  async merge(headId: string, memberIds: string[], approved: Approved | null = null): Promise<TableOutput[]> {
     if (memberIds.includes(headId))
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'A table cannot merge into itself.' });
 
@@ -142,17 +144,26 @@ export class TableService {
       if (reason) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: reason });
 
       await tx.update(tables).set({ mergedIntoId: headId }).where(inArray(tables.id, memberIds));
+      if (approved) await auditApproval(tx, approved, 'table', headId);
       const rows = await tx.select().from(tables).where(live).orderBy(tables.name);
       return rows.map(tableOutput);
     });
   }
 
   /** On a head the whole group dissolves; on a member only that row leaves; standalone is a no-op. */
-  async unmerge(id: string): Promise<TableOutput[]> {
-    const table = await this.find(id);
-    const target = table.mergedIntoId ? eq(tables.id, id) : eq(tables.mergedIntoId, id);
-    await this.db.update(tables).set({ mergedIntoId: null }).where(target);
-    return this.list();
+  async unmerge(id: string, approved: Approved | null = null): Promise<TableOutput[]> {
+    return this.db.transaction(async (tx) => {
+      const [table] = await tx
+        .select()
+        .from(tables)
+        .where(and(eq(tables.id, id), live));
+      if (!table) throw notFound();
+      const target = table.mergedIntoId ? eq(tables.id, id) : eq(tables.mergedIntoId, id);
+      await tx.update(tables).set({ mergedIntoId: null }).where(target);
+      if (approved) await auditApproval(tx, approved, 'table', id);
+      const rows = await tx.select().from(tables).where(live).orderBy(tables.name);
+      return rows.map(tableOutput);
+    });
   }
 
   private async find(id: string): Promise<Table> {

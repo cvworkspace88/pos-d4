@@ -51,6 +51,7 @@ const staffOutput = z.object({
   roleId: z.string(),
   roleName: z.string(),
   global: z.boolean(),
+  approvalBlockedUntil: z.string().nullable(),
 });
 
 /**

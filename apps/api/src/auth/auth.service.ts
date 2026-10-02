@@ -2,12 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { TRPCError } from '@trpc/server';
-import { Reason } from '../trpc/error-formatter';
 import * as argon2 from 'argon2';
 import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { randomBytes, createHash } from 'node:crypto';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { outletStaff, outlets, refreshTokens, users, type User } from '../db/schema';
+import { verifyPin } from './pin-check';
 import { rejectPinLogin } from './pin-policy';
 import { rejectRefresh } from './refresh-window';
 
@@ -195,21 +195,16 @@ export class AuthService {
   }
 
   /**
-   * Every PIN failure is UNAUTHORIZED — a wrong PIN is an invalid credential, not an authorization
-   * refusal. `reason` carries what the code no longer can: `INVALID_PIN` means the profile is fine
-   * and the digits were not, so the client keeps the card; no reason means the profile itself is
-   * dead and the card goes. Load-bearing — see the README error-code table. The formatter is what
-   * puts `cause` on the wire. No attempt counter, by decision.
+   * Every PIN failure that is about the credential is UNAUTHORIZED — a wrong PIN is an invalid
+   * credential, not an authorization refusal. `reason` carries what the code no longer can:
+   * `INVALID_PIN` means the profile is fine and the digits were not, so the client keeps the card; no
+   * reason means the profile itself is dead and the card goes. Load-bearing — see the README
+   * error-code table. Five wrong PINs in ten minutes lock it (`verifyPin`), answered FORBIDDEN: the
+   * card stays, the user waits.
    */
   private async checkPin(user: User, pin: string): Promise<void> {
-    if (!user.pinHash)
+    if (!(await verifyPin(this.db, user, pin)))
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Belum ada PIN. Masuk dengan kata sandi.' });
-    if (!(await argon2.verify(user.pinHash, pin)))
-      throw new TRPCError({
-        code: 'UNAUTHORIZED',
-        message: 'PIN tidak cocok.',
-        cause: new Reason('INVALID_PIN'),
-      });
   }
 
   /**

@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import * as argon2 from 'argon2';
 import { and, count, eq, inArray, isNotNull, isNull, like, or, sql } from 'drizzle-orm';
 import { audit } from '../audit/audit';
+import { PIN_MAX_FAILURES, PIN_WINDOW_MS } from '../auth/pin-policy';
 import type { Actor } from '../auth/rbac-rules';
 import { DRIZZLE, type Database, type Tx } from '../db/db.module';
 import { isUniqueViolation, violatedConstraint } from '../db/errors';
@@ -57,6 +58,8 @@ export interface StaffOutput {
   roleName: string;
   /** A global role (owner): on every roster, never a membership, so `setStaff` does not take it. */
   global: boolean;
+  /** When this member's approval block lifts (US-010); null when not blocked. ISO string. */
+  approvalBlockedUntil: string | null;
 }
 
 /** What clients see of an outlet. Timestamps stay server-side; `deletedAt` shows only as `active`. */
@@ -475,7 +478,8 @@ export class OutletService {
    */
   private async rosterOf(db: Database | Tx, outletId: string): Promise<StaffOutput[]> {
     const roleId = sql<string>`coalesce(${users.roleId}, ${outletStaff.roleId})`;
-    return db
+    const window = sql`(${PIN_WINDOW_MS}::int * interval '1 millisecond')`;
+    const rows = await db
       .select({
         id: users.id,
         name: users.name,
@@ -483,12 +487,20 @@ export class OutletService {
         roleId,
         roleName: roles.name,
         global: sql<boolean>`${users.roleId} is not null`,
+        blockedUntil:
+          sql<Date | null>`case when ${users.approvalFailures} >= ${PIN_MAX_FAILURES}::int and ${users.approvalWindowStartedAt} > now() - ${window} then ${users.approvalWindowStartedAt} + ${window} end`.mapWith(
+            users.approvalWindowStartedAt,
+          ),
       })
       .from(users)
       .leftJoin(outletStaff, and(eq(outletStaff.userId, users.id), eq(outletStaff.outletId, outletId)))
       .innerJoin(roles, eq(roles.id, roleId))
       .where(and(isNull(users.deletedAt), or(isNotNull(users.roleId), eq(outletStaff.outletId, outletId))))
       .orderBy(sql`${users.roleId} is null`, users.name);
+    return rows.map(({ blockedUntil, ...r }) => ({
+      ...r,
+      approvalBlockedUntil: blockedUntil ? blockedUntil.toISOString() : null,
+    }));
   }
 
   private async find(id: string): Promise<Outlet> {

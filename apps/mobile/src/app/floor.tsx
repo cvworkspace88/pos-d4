@@ -3,8 +3,10 @@ import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useApproval } from '@repo/hooks/use-approval';
 import { clampPosition, dayRange, groupsOf, isReserved, scaleFor, seatsOf } from '@repo/api-contract';
 import { FloorTable, groupColor, type TableRow } from '@/components/floor-table';
+import { ApprovalDialog } from '@/components/approval-dialog';
 import { ReservationForm } from '@/components/reservation-form';
 import { TableForm } from '@/components/table-form';
 import { useAuthStore } from '@/lib/stores/auth';
@@ -103,13 +105,11 @@ export default function FloorScreen() {
         queryClient.setQueryData(listKey, rows);
         setPicking(null);
       },
-      onError: fail,
     }),
   );
   const unmerge = useMutation(
     trpc.table.unmerge.mutationOptions({
       onSuccess: (rows) => queryClient.setQueryData(listKey, rows),
-      onError: fail,
     }),
   );
   const updateReservation = useMutation(
@@ -118,6 +118,11 @@ export default function FloorScreen() {
       onSettled: () => void queryClient.invalidateQueries({ queryKey: trpc.reservation.list.queryKey() }),
     }),
   );
+
+  // Check-first: `can` picks the path; the server's NEEDS_APPROVAL still opens the dialog if it is stale.
+  const mergeApproval = useApproval('table.merge', merge.mutateAsync, fail);
+  const unmergeApproval = useApproval('table.merge', unmerge.mutateAsync, fail);
+  const reservationApproval = useApproval('reservation.update', updateReservation.mutateAsync);
 
   const positionOf = (t: TableRow): Position => override[t.id] ?? { x: t.x, y: t.y };
   const isStandalone = (t: TableRow) => !t.mergedIntoId && !groups.has(t.id);
@@ -185,7 +190,7 @@ export default function FloorScreen() {
           <Button
             title="Confirm"
             disabled={picking.memberIds.length === 0 || merge.isPending}
-            onPress={() => merge.mutate(picking)}
+            onPress={() => void mergeApproval.start(picking, can('table.merge'))}
           />
           <Button title="Cancel" onPress={() => setPicking(null)} />
         </View>
@@ -194,17 +199,17 @@ export default function FloorScreen() {
       {current && !editing && !picking && (
         <View style={styles.bar}>
           <Text style={styles.name}>{current.name}</Text>
-          {can('table.merge') && !current.mergedIntoId && (
+          {!current.mergedIntoId && (
             <Button title="Merge" onPress={() => setPicking({ headId: current.id, memberIds: [] })} />
           )}
-          {can('table.merge') && !isStandalone(current) && (
+          {!isStandalone(current) && (
             <Button
               title="Unmerge"
               disabled={unmerge.isPending}
-              onPress={() => unmerge.mutate({ id: current.id })}
+              onPress={() => void unmergeApproval.start({ id: current.id }, can('table.merge'))}
             />
           )}
-          {can('reservation.create') && <Button title="Reserve" onPress={() => setReserving(current)} />}
+          <Button title="Reserve" onPress={() => setReserving(current)} />
         </View>
       )}
 
@@ -243,18 +248,19 @@ export default function FloorScreen() {
                 {timeOf(r.startsAt)} · {nameOf(r.tableId)} · {r.customerName} × {r.partySize} · {r.status}
               </Text>
               {r.status === 'booked' &&
-                can('reservation.update') &&
                 ACTIONS.map(([status, label]) => (
                   <Button
                     key={status}
                     title={label}
                     disabled={updateReservation.isPending}
-                    onPress={() => updateReservation.mutate({ id: r.id, status })}
+                    onPress={() =>
+                      void reservationApproval.start({ id: r.id, status }, can('reservation.update'))
+                    }
                   />
                 ))}
             </View>
           ))}
-          {updateReservation.error && <Text style={styles.error}>{updateReservation.error.message}</Text>}
+          {reservationApproval.error && <Text style={styles.error}>{reservationApproval.error.message}</Text>}
         </ScrollView>
       )}
 
@@ -265,7 +271,16 @@ export default function FloorScreen() {
           onClose={() => setForm(null)}
         />
       )}
-      {reserving && <ReservationForm table={reserving} onClose={() => setReserving(null)} />}
+      {reserving && (
+        <ReservationForm
+          table={reserving}
+          canCreate={can('reservation.create')}
+          onClose={() => setReserving(null)}
+        />
+      )}
+      <ApprovalDialog approval={mergeApproval} />
+      <ApprovalDialog approval={unmergeApproval} />
+      <ApprovalDialog approval={reservationApproval} />
     </SafeAreaView>
   );
 }

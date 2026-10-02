@@ -41,8 +41,8 @@ test('the base roles are the PRD seven', () => {
   );
 });
 
-test('the catalogue has 66 permissions and no request/approve pairs', () => {
-  assert.equal(Object.keys(PERMISSIONS).length, 66);
+test('the catalogue has 67 permissions and no request/approve pairs', () => {
+  assert.equal(Object.keys(PERMISSIONS).length, 67);
   for (const name of Object.keys(PERMISSIONS)) assert.doesNotMatch(name, /_(request|approve)$/, name);
 });
 

@@ -96,7 +96,9 @@ const appRouter = t.router({
       outletId: z.uuid(),
       fromDate: z.iso.date(),
       toDate: z.iso.date(),
-      module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role']).optional(),
+      module: z
+        .enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role', 'approval'])
+        .optional(),
       userId: z.uuid().optional(),
       cursor: z.object({ createdAt: z.string().max(40), id: z.uuid() }).optional(),
     }))
@@ -104,7 +106,7 @@ const appRouter = t.router({
       rows: z.array(z.object({
   id: z.string(),
   createdAt: z.string(),
-  module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role']),
+  module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role', 'approval']),
   action: z.string(),
   entityType: z.string(),
   entityId: z.string().nullable(),
@@ -121,6 +123,16 @@ const appRouter = t.router({
       .input(z.object({ outletId: z.uuid() }))
       .output(z.array(z.object({ id: z.string(), name: z.string() })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
+  approval: t.router({
+    approvers: publicProcedure
+      .input(z.object({ permission: z.string().max(60) }))
+      .output(z.array(z.object({ id: z.string(), name: z.string() })))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    unblock: publicProcedure
+      .input(z.object({ userId: z.uuid() }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   auth: t.router({
     register: publicProcedure
@@ -302,6 +314,13 @@ const appRouter = t.router({
       partySize: z.number().int().min(1).max(100),
       startsAt: z.iso.datetime({ offset: true }),
       note: z.string().trim().max(500).optional(),
+      approval: z
+        .object({
+          approverUserId: z.uuid(),
+          pin: z.string().regex(/^\d{6}$/),
+          reason: z.string().trim().max(200).optional(),
+        })
+        .optional(),
     }))
       .output(z.object({
   id: z.string(),
@@ -324,6 +343,13 @@ const appRouter = t.router({
       partySize: z.number().int().min(1).max(100).optional(),
       startsAt: z.iso.datetime({ offset: true }).optional(),
       note: z.string().trim().max(500).optional(),
+      approval: z
+        .object({
+          approverUserId: z.uuid(),
+          pin: z.string().regex(/^\d{6}$/),
+          reason: z.string().trim().max(200).optional(),
+        })
+        .optional(),
     }))
       .output(z.object({
   id: z.string(),
@@ -411,7 +437,17 @@ const appRouter = t.router({
       .output(z.object({ success: z.boolean() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     merge: publicProcedure
-      .input(z.object({ headId: z.string(), memberIds: z.array(z.string()).min(1).max(50) }))
+      .input(z.object({
+      headId: z.string(),
+      memberIds: z.array(z.string()).min(1).max(50),
+      approval: z
+        .object({
+          approverUserId: z.uuid(),
+          pin: z.string().regex(/^\d{6}$/),
+          reason: z.string().trim().max(200).optional(),
+        })
+        .optional(),
+    }))
       .output(z.array(z.object({
   id: z.string(),
   name: z.string(),
@@ -424,7 +460,16 @@ const appRouter = t.router({
 })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     unmerge: publicProcedure
-      .input(z.object({ id: z.string() }))
+      .input(z.object({
+      id: z.string(),
+      approval: z
+        .object({
+          approverUserId: z.uuid(),
+          pin: z.string().regex(/^\d{6}$/),
+          reason: z.string().trim().max(200).optional(),
+        })
+        .optional(),
+    }))
       .output(z.array(z.object({
   id: z.string(),
   name: z.string(),
@@ -909,6 +954,7 @@ const appRouter = t.router({
   roleId: z.string(),
   roleName: z.string(),
   global: z.boolean(),
+  approvalBlockedUntil: z.string().nullable(),
 })))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     roles: publicProcedure
@@ -926,6 +972,7 @@ const appRouter = t.router({
   roleId: z.string(),
   roleName: z.string(),
   global: z.boolean(),
+  approvalBlockedUntil: z.string().nullable(),
 })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     findUsers: publicProcedure
@@ -951,6 +998,7 @@ const appRouter = t.router({
   roleId: z.string(),
   roleName: z.string(),
   global: z.boolean(),
+  approvalBlockedUntil: z.string().nullable(),
 })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),

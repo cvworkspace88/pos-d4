@@ -1,6 +1,6 @@
 import type { Tx } from '../db/db.module';
 import { type AuditModule, auditLog } from '../db/schema';
-import type { Actor } from '../auth/rbac-rules';
+import type { Actor, Approved } from '../auth/rbac-rules';
 import { type Snapshot, auditDiff } from './audit-rules';
 
 export type AuditEntry<M extends AuditModule> = {
@@ -13,6 +13,8 @@ export type AuditEntry<M extends AuditModule> = {
   before?: Snapshot;
   after?: Snapshot;
   reason?: string;
+  /** for approver flow */
+  approverUserId?: string;
 };
 
 /**
@@ -30,6 +32,7 @@ export const audit = async <M extends AuditModule>(
   await db.insert(auditLog).values({
     outletId: entry.outletId,
     actorUserId: actor.user.id,
+    approverUserId: entry.approverUserId ?? null,
     module: entry.module,
     action: entry.action,
     entityType: entry.entityType,
@@ -38,3 +41,24 @@ export const audit = async <M extends AuditModule>(
     ...diff,
   });
 };
+
+/**
+ * The row an action approved by a manager's PIN leaves behind (US-010), whichever module the action
+ * belongs to. Same transaction as the action, like every audit row.
+ */
+export const auditApproval = (
+  db: Pick<Tx, 'insert'>,
+  approved: Approved,
+  entityType: string,
+  entityId: string,
+): Promise<void> =>
+  audit(db, approved.actor, {
+    outletId: approved.actor.outletId,
+    module: 'approval',
+    action: 'approval.granted',
+    entityType,
+    entityId,
+    approverUserId: approved.approverUserId,
+    reason: approved.reason,
+    after: { permission: approved.permission },
+  });

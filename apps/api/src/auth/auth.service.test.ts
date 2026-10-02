@@ -188,3 +188,35 @@ test('the refresh row records the outlet', async () => {
   const [row] = await db.select().from(refreshTokens).where(eq(refreshTokens.userId, ann.id));
   expect(row?.outletId).toBe(o1.id);
 });
+
+test('five wrong PINs lock the PIN, even against the right one', async () => {
+  const ann = await addUser('ann');
+  await auth.setPin(ann.id, { pin: '123456' });
+  const session = await login('ann');
+  await auth.park(session.refreshToken);
+
+  for (let i = 0; i < 5; i++)
+    await expect(auth.pinLogin(session.refreshToken, '000000')).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+      cause: { reason: 'INVALID_PIN' },
+    });
+
+  // FORBIDDEN, not UNAUTHORIZED: the profile is fine, the PIN is just resting.
+  await expect(auth.pinLogin(session.refreshToken, '123456')).rejects.toMatchObject({
+    code: 'FORBIDDEN',
+    message: 'PIN terkunci. Coba lagi dalam 10 menit.',
+  });
+});
+
+test('a right PIN resets the wrong-PIN count', async () => {
+  const ann = await addUser('ann');
+  await auth.setPin(ann.id, { pin: '123456' });
+  const session = await login('ann');
+  await auth.park(session.refreshToken);
+
+  for (let i = 0; i < 4; i++) await expect(auth.pinLogin(session.refreshToken, '000000')).rejects.toThrow();
+  await auth.pinLogin(session.refreshToken, '123456');
+
+  const [row] = await db.select().from(users).where(eq(users.id, ann.id));
+  expect(row).toMatchObject({ pinFailures: 0, pinWindowStartedAt: null });
+});

@@ -9,7 +9,9 @@ import {
   seatsOf,
   type RouterOutputs,
 } from '@repo/api-contract';
+import { useApproval } from '@repo/hooks/use-approval';
 import { useTRPC } from '../trpc';
+import { ApprovalDialog } from './approval-dialog';
 import { ReservationForm } from './reservation-form';
 import { ReservationList } from './reservation-list';
 import { TableForm } from './table-form';
@@ -113,15 +115,16 @@ export function FloorPlan({ permissions }: { permissions: string[] }) {
         queryClient.setQueryData(listKey, rows);
         setPicking(null);
       },
-      onError: fail,
     }),
   );
   const unmerge = useMutation(
     trpc.table.unmerge.mutationOptions({
       onSuccess: (rows) => queryClient.setQueryData(listKey, rows),
-      onError: fail,
     }),
   );
+  // Check-first: `can` picks the path; the server's NEEDS_APPROVAL still opens the dialog if it is stale.
+  const mergeApproval = useApproval('table.merge', merge.mutateAsync, fail);
+  const unmergeApproval = useApproval('table.merge', unmerge.mutateAsync, fail);
 
   const positionOf = (t: FloorTable): Position => override[t.id] ?? { x: t.x, y: t.y };
   const isStandalone = (t: FloorTable) => !t.mergedIntoId && !groups.has(t.id);
@@ -235,7 +238,7 @@ export function FloorPlan({ permissions }: { permissions: string[] }) {
           <button
             type="button"
             disabled={picking.memberIds.length === 0 || merge.isPending}
-            onClick={() => merge.mutate(picking)}
+            onClick={() => void mergeApproval.start(picking, can('table.merge'))}
           >
             Confirm
           </button>
@@ -248,25 +251,23 @@ export function FloorPlan({ permissions }: { permissions: string[] }) {
       {current && !editing && !picking && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
           <strong>{current.name}</strong>
-          {can('table.merge') && !current.mergedIntoId && (
+          {!current.mergedIntoId && (
             <button type="button" onClick={() => setPicking({ headId: current.id, memberIds: [] })}>
               Merge
             </button>
           )}
-          {can('table.merge') && !isStandalone(current) && (
+          {!isStandalone(current) && (
             <button
               type="button"
               disabled={unmerge.isPending}
-              onClick={() => unmerge.mutate({ id: current.id })}
+              onClick={() => void unmergeApproval.start({ id: current.id }, can('table.merge'))}
             >
               Unmerge
             </button>
           )}
-          {can('reservation.create') && (
-            <button type="button" onClick={() => setReserving(current)}>
-              Reserve
-            </button>
-          )}
+          <button type="button" onClick={() => setReserving(current)}>
+            Reserve
+          </button>
         </div>
       )}
 
@@ -333,7 +334,15 @@ export function FloorPlan({ permissions }: { permissions: string[] }) {
           onClose={() => setForm(null)}
         />
       )}
-      {reserving && <ReservationForm table={reserving} onClose={() => setReserving(null)} />}
+      {reserving && (
+        <ReservationForm
+          table={reserving}
+          canCreate={can('reservation.create')}
+          onClose={() => setReserving(null)}
+        />
+      )}
+      <ApprovalDialog approval={mergeApproval} />
+      <ApprovalDialog approval={unmergeApproval} />
     </section>
   );
 }

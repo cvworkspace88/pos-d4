@@ -11,6 +11,7 @@ export const MODULE_LABEL: Record<AuditModule, string> = {
   menu: 'Menu',
   addon: 'Add-on',
   role: 'Peran',
+  approval: 'Akses',
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -38,6 +39,9 @@ const ACTION_LABEL: Record<string, string> = {
   'role.update': 'Ubah peran',
   'role.delete': 'Hapus peran',
   'role.override': 'Ubah izin staf',
+  'approval.granted': 'Akses manajer',
+  'approval.blocked': 'Akses diblokir',
+  'approval.unblocked': 'Buka blokir akses',
 };
 
 /** An action added on the server before this list learns it still shows, as its code. */
@@ -45,7 +49,7 @@ export const actionLabel = (action: string) => ACTION_LABEL[action] ?? action;
 
 /** What the row is about, by name when the snapshot carries one. */
 export const subjectOf = (row: AuditRow): string => {
-  const name = row.after?.name ?? row.before?.name;
+  const name = row.after?.name ?? row.before?.name ?? row.after?.permission;
   return typeof name === 'string' ? name : '';
 };
 

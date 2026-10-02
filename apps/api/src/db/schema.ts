@@ -24,6 +24,14 @@ export const users = pgTable('users', {
   // argon2 hash of a 6-digit PIN. NULL = never set. Only staff enrolled on a shared tablet need
   // one; desktop users sign in with the password alone.
   pinHash: text('pin_hash'),
+  // Wrong PINs in the current window and when it opened (`pin-policy.ts`). Five inside ten minutes
+  // lock the PIN for ten, for PIN login (`auth.pinLogin`).
+  pinFailures: integer('pin_failures').notNull().default(0),
+  pinWindowStartedAt: timestamp('pin_window_started_at', { withTimezone: true }),
+  // Wrong manager PINs this user typed while asking for an approval (US-010): five inside ten minutes
+  // block THIS user from requesting overrides for ten. Never the approver's counter.
+  approvalFailures: integer('approval_failures').notNull().default(0),
+  approvalWindowStartedAt: timestamp('approval_window_started_at', { withTimezone: true }),
   // The GLOBAL role: applies at every outlet and needs no `outlet_staff` row. Only the owner is
   // meant to have one; everyone else's role lives on `outlet_staff.role_id` per outlet. No API
   // sets this yet — only the seed does.
@@ -559,7 +567,16 @@ export const menuItemAddonGroups = pgTable(
  * Which part of the app an audit row is about. The router's zod enum repeats it inline: the
  * contract generator cannot hoist it. Later stories append (`role`, `approval`, `order`, `payment`…).
  */
-export const AUDIT_MODULES = ['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role'] as const;
+export const AUDIT_MODULES = [
+  'settings',
+  'outlet',
+  'staff',
+  'category',
+  'menu',
+  'addon',
+  'role',
+  'approval',
+] as const;
 export type AuditModule = (typeof AUDIT_MODULES)[number];
 
 /**
