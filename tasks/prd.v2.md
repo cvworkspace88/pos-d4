@@ -138,26 +138,28 @@ Audit rows on settings writes come with US-011.
 
 **Acceptance Criteria:**
 - [x] `auth.login(username, password)` → access JWT (15 min) + opaque refresh token (SHA-256 hash stored, rotated on use, 30 s grace for the previous token to absorb concurrent refreshes)
-- [ ] Passwords hashed with argon2id; 5 failed logins within 15 min lock the user for 15 min (`FORBIDDEN`, message says how long); every password check (login, `setPin`) counts toward and obeys the lock; a staff manager can clear it early with a password reset (US-057)
-- [ ] JWT carries `userId`, `outletId`, `roleId`, `deviceId`, `exp`
+- [x] Passwords hashed with argon2id; 5 failed logins within 15 min lock the user for 15 min (`FORBIDDEN` + `data.reason: 'LOCKED'`, message says how long; clients show the "Terlalu banyak percobaan gagal" dialog); every password check (login, change password, change PIN) counts toward and obeys the lock; a staff manager can clear it early with a password reset (US-057)
+- [ ] Change password (self, all apps): current password + new password; counts toward and obeys the password lock. A forgotten password cannot be reset by its owner: a staff manager resets it (US-057)
+- [x] JWT carries `sub` (user id), `username`, `outletId`, `exp`. No `roleId`: roles are per outlet and `rbac.require` reads them from the DB, so a role change applies without a new token. `deviceId` is added by US-003
 - [x] Any `UNAUTHORIZED` response ends the client session (store cleared, cache dropped, back to login); `FORBIDDEN` never does
 - [x] `auth.logout` revokes the refresh token with reason `logout`
-- [ ] Tests: rotation, grace window, lockout, revoked token refused
-- [ ] Typecheck/lint passes
+- [x] Tests: rotation, grace window, lockout, revoked token refused
+- [x] Typecheck/lint passes
 
 ### US-006: Mobile PIN profiles for shift changes
 **Description:** As a waiter on a shared tablet, I want to switch to my profile with a 6-digit PIN so that shift changes take seconds, but only after I logged in once with my password.
 
 **Acceptance Criteria:**
-- [ ] First login on a device with username/password creates a profile on that device (name, avatar initials, outlet) and asks the user to set a PIN if none exists
+- [x] First login on a device with username/password creates a profile on that device (name, avatar initials; the outlet rides on its parked token) and asks the user to set a PIN if none exists
 - [x] "Sign out" parks the session (refresh token kept with reason `parked`); profile stays on the device
-- [ ] Profile picker screen lists parked profiles; tapping one asks for the PIN; `auth.pinLogin(profileId, pin)` redeems the parked token and issues a new session
-- [x] Wrong PIN returns `UNAUTHORIZED` with `data.reason: 'INVALID_PIN'`; client shows "PIN salah" and does not end the session; 5 wrong PINs in 10 min park-locks the profile for 10 min — per user, not per profile (US-010, shared with approvals)
+- [x] Profile picker screen lists parked profiles; tapping one asks for the PIN; `auth.pinLogin(refreshToken, pin)` (the profile's parked token) redeems it and issues a new session
+- [x] Wrong PIN returns `UNAUTHORIZED` with `data.reason: 'INVALID_PIN'`; client shows "PIN salah" and does not end the session; 5 wrong PINs in 10 min lock PIN login for 10 min (`FORBIDDEN` + `data.reason: 'LOCKED'`, same dialog as the password lock) — per user, not per profile; separate from the approval block (US-010)
+- [ ] Change PIN (self, mobile): needs the password (counts toward and obeys the password lock); a successful change clears the PIN lock. A forgotten PIN cannot be reset by its owner: a staff manager resets it (US-057)
 - [x] Parked tokens cannot be used by `auth.refresh`; only `pinLogin` redeems them
-- [ ] Idle lock after `security.pin_idle_lock_seconds` (setting, default 120) returns to the profile picker
-- [ ] "Remove profile" requires the profile's PIN or a manager, revokes the parked token
+- [x] Idle lock after `idle_timeout_seconds` (setting, default 120) parks the session and returns to the profile picker
+- [x] "Remove profile" asks for confirmation only ("Hapus {nama}?"; no PIN or manager needed: the user just signs in with their password again), forgets the profile on the device and revokes its parked token
 - [ ] Verify in browser using dev-browser skill (Expo web) or simulator
-- [ ] Typecheck/lint passes
+- [x] Typecheck/lint passes
 
 ### US-007: Desktop login
 **Description:** As a cashier, I want to log in on the desktop with username and password, and lock the screen between users.
@@ -765,7 +767,7 @@ Wired so far: table.merge/unmerge, reservation.create/update (2026-10-02); void,
 - [ ] Role editor: duplicate a base role into a custom role, tick permissions by group, rename, delete; base roles are read-only
 - [ ] Per-user override editor, per outlet (tick several outlets to apply one change to all), showing effective permissions with the source (role / grant / revoke) of each
 - [ ] Reset password and reset PIN (PIN cleared; user sets a new PIN on next mobile login), behind `staff.manage` + `canActOn` (only staff of an outlet the actor may act on; only the owner may reset the owner), audited
-- [ ] Reset password clears the password lockout (US-005); reset PIN clears the PIN lockout (US-006); reset password also revokes the user's live and parked refresh tokens. No other way to clear a lock early: the user waits it out
+- [ ] Reset password clears the password lockout (US-005); reset PIN clears the PIN lockout (US-006); reset password also revokes the user's live and parked refresh tokens. Otherwise a lock clears only by waiting it out, or (PIN only) by the user's own change PIN (US-006). Users never reset their own password or PIN; they change it, knowing the password
 - [ ] Verify in browser using dev-browser skill
 - [ ] Typecheck/lint passes
 
