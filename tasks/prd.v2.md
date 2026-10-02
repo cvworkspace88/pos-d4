@@ -138,7 +138,7 @@ Audit rows on settings writes come with US-011.
 
 **Acceptance Criteria:**
 - [x] `auth.login(username, password)` → access JWT (15 min) + opaque refresh token (SHA-256 hash stored, rotated on use, 30 s grace for the previous token to absorb concurrent refreshes)
-- [ ] Passwords hashed with argon2id; 5 failed logins within 15 min lock the user for 15 min (`FORBIDDEN`, message says how long)
+- [ ] Passwords hashed with argon2id; 5 failed logins within 15 min lock the user for 15 min (`FORBIDDEN`, message says how long); every password check (login, `setPin`) counts toward and obeys the lock; a staff manager can clear it early with a password reset (US-057)
 - [ ] JWT carries `userId`, `outletId`, `roleId`, `deviceId`, `exp`
 - [x] Any `UNAUTHORIZED` response ends the client session (store cleared, cache dropped, back to login); `FORBIDDEN` never does
 - [x] `auth.logout` revokes the refresh token with reason `logout`
@@ -152,7 +152,7 @@ Audit rows on settings writes come with US-011.
 - [ ] First login on a device with username/password creates a profile on that device (name, avatar initials, outlet) and asks the user to set a PIN if none exists
 - [x] "Sign out" parks the session (refresh token kept with reason `parked`); profile stays on the device
 - [ ] Profile picker screen lists parked profiles; tapping one asks for the PIN; `auth.pinLogin(profileId, pin)` redeems the parked token and issues a new session
-- [ ] Wrong PIN returns `UNAUTHORIZED` with `data.reason: 'INVALID_PIN'`; client shows "PIN salah" and does not end the session; 5 wrong PINs in 10 min park-locks the profile for 10 min
+- [x] Wrong PIN returns `UNAUTHORIZED` with `data.reason: 'INVALID_PIN'`; client shows "PIN salah" and does not end the session; 5 wrong PINs in 10 min park-locks the profile for 10 min — per user, not per profile (US-010, shared with approvals)
 - [x] Parked tokens cannot be used by `auth.refresh`; only `pinLogin` redeems them
 - [ ] Idle lock after `security.pin_idle_lock_seconds` (setting, default 120) returns to the profile picker
 - [ ] "Remove profile" requires the profile's PIN or a manager, revokes the parked token
@@ -199,12 +199,14 @@ Audit rows on settings writes come with US-011.
 **Description:** As a cashier lacking a permission, I want a manager to approve a single action by entering their PIN on my screen so that the manager's session is never exposed.
 
 **Acceptance Criteria:**
-- [ ] Any guarded mutation accepts optional `approval: {approverUserId, pin}`; server verifies the approver has the permission and `approval.grant`, checks the PIN, then executes as the caller while recording `approved_by`
-- [ ] Wrong approver PIN → `UNAUTHORIZED` + `data.reason: 'INVALID_PIN'`; approver without permission → `FORBIDDEN`
-- [ ] Client: on `FORBIDDEN` from an overridable action, shows an "Minta persetujuan" dialog (approver picker of users with `approval.grant` at this outlet + PIN pad + reason if the action needs one) and retries the same mutation with the same idempotency id
-- [ ] Every overridden action appears in the audit log with actor, approver, action, reason, entity
+- [x] Any guarded mutation accepts optional `approval: {approverUserId, pin}`; server verifies the approver has the permission and `approval.grant`, checks the PIN, then executes as the caller while recording `approved_by`
+- [x] Wrong approver PIN → `UNAUTHORIZED` + `data.reason: 'INVALID_PIN'`; approver without permission → `FORBIDDEN`
+- [x] Client: on `FORBIDDEN` from an overridable action, shows an "Minta persetujuan" dialog (approver picker of users with `approval.grant` at this outlet + PIN pad + reason if the action needs one) and retries the same mutation with the same idempotency id
+- [x] Every overridden action appears in the audit log with actor, approver, action, reason, entity
 - [ ] Verify in browser using dev-browser skill
-- [ ] Typecheck/lint passes
+- [x] Typecheck/lint passes
+
+Wired so far: table.merge/unmerge, reservation.create/update (2026-10-02); void, comp, refund, discount, price override, reopen and shift variance opt in with requireOrApprove when they land. Reason is never required yet.
 
 ### US-011: Audit log
 **Description:** As an owner, I want every sensitive action recorded so that disputes can be settled.
@@ -759,7 +761,8 @@ Audit rows on settings writes come with US-011.
 - [ ] Users list with search; create user (username unique (global), name, phone, initial password), deactivate; per-outlet membership and role
 - [ ] Role editor: duplicate a base role into a custom role, tick permissions by group, rename, delete; base roles are read-only
 - [ ] Per-user override editor, per outlet (tick several outlets to apply one change to all), showing effective permissions with the source (role / grant / revoke) of each
-- [ ] Reset password and clear PIN (user sets a new PIN on next mobile login)
+- [ ] Reset password and reset PIN (PIN cleared; user sets a new PIN on next mobile login), behind `staff.manage` + `canActOn` (only staff of an outlet the actor may act on; only the owner may reset the owner), audited
+- [ ] Reset password clears the password lockout (US-005); reset PIN clears the PIN lockout (US-006); reset password also revokes the user's live and parked refresh tokens. No other way to clear a lock early: the user waits it out
 - [ ] Verify in browser using dev-browser skill
 - [ ] Typecheck/lint passes
 
