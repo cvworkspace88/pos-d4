@@ -28,6 +28,10 @@ export const users = pgTable('users', {
   // lock the PIN for ten, for PIN login (`auth.pinLogin`).
   pinFailures: integer('pin_failures').notNull().default(0),
   pinWindowStartedAt: timestamp('pin_window_started_at', { withTimezone: true }),
+  // Same for wrong passwords (US-005): five inside fifteen minutes lock `auth.login` and the password
+  // check in `auth.setPin` for fifteen. A staff manager's password reset clears it (US-057).
+  passwordFailures: integer('password_failures').notNull().default(0),
+  passwordWindowStartedAt: timestamp('password_window_started_at', { withTimezone: true }),
   // Wrong manager PINs this user typed while asking for an approval (US-010): five inside ten minutes
   // block THIS user from requesting overrides for ten. Never the approver's counter.
   approvalFailures: integer('approval_failures').notNull().default(0),

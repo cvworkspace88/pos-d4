@@ -34,6 +34,8 @@ export function rejectPinLogin(row: TokenRow, now = Date.now()): 'expired' | 're
 export const PIN_MAX_FAILURES = 5;
 /** How long the counting window runs, and how long a lock lasts once the fifth failure lands. */
 export const PIN_WINDOW_MS = 10 * 60 * 1000;
+/** The password lock (US-005): same five failures, a fifteen-minute window and lock. */
+export const PASSWORD_WINDOW_MS = 15 * 60 * 1000;
 
 /** The two `users` columns the lock lives in. A `User` row satisfies it as is. */
 export interface PinFailures {
@@ -41,10 +43,10 @@ export interface PinFailures {
   pinWindowStartedAt: Date | null;
 }
 
-/** Milliseconds until this PIN may be tried again; 0 when it is not locked. */
-export function pinLockedFor(state: PinFailures, now = Date.now()): number {
+/** Milliseconds until this PIN (or, with `windowMs`, password) may be tried again; 0 when not locked. */
+export function pinLockedFor(state: PinFailures, now = Date.now(), windowMs = PIN_WINDOW_MS): number {
   if (state.pinFailures < PIN_MAX_FAILURES || !state.pinWindowStartedAt) return 0;
-  return Math.max(0, state.pinWindowStartedAt.getTime() + PIN_WINDOW_MS - now);
+  return Math.max(0, state.pinWindowStartedAt.getTime() + windowMs - now);
 }
 
 /**

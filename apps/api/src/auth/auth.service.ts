@@ -7,7 +7,7 @@ import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { randomBytes, createHash } from 'node:crypto';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { outletStaff, outlets, refreshTokens, users, type User } from '../db/schema';
-import { verifyPin } from './pin-check';
+import { verifyPassword, verifyPin } from './pin-check';
 import { rejectPinLogin } from './pin-policy';
 import { rejectRefresh } from './refresh-window';
 
@@ -79,7 +79,8 @@ export class AuthService {
     // NOTE: an unknown username short-circuits without an argon2 verify, so it answers in ~1ms
     // against ~100ms for a real one — a username-enumeration signal. Verifying against a dummy hash
     // would even the cost; see backlog.md before changing this.
-    const valid = user ? await argon2.verify(user.passwordHash, input.password) : false;
+    // A locked account throws here (FORBIDDEN + `LOCKED`), even for the right password.
+    const valid = user ? await verifyPassword(this.db, user, input.password) : false;
     // One message for both halves, so it never says which of the two was wrong.
     if (!user || !valid)
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Username atau kata sandi salah.' });
@@ -219,7 +220,8 @@ export class AuthService {
     if (!user) throw new TRPCError({ code: 'UNAUTHORIZED' });
 
     if (user.pinHash) {
-      const valid = input.password ? await argon2.verify(user.passwordHash, input.password) : false;
+      // Counts toward the password lock: otherwise a stolen access token guesses passwords here freely.
+      const valid = input.password ? await verifyPassword(this.db, user, input.password) : false;
       if (!valid)
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Masukkan password untuk mengganti PIN.' });
     }

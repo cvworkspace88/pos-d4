@@ -2,9 +2,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { z } from 'zod';
+import { LOCKED_DIALOG, isLocked } from '@repo/api-contract';
 import { Alert } from '@repo/ui/alert';
 import { Button } from '@repo/ui/button';
 import { Card } from '@repo/ui/card';
+import { Dialog } from '@repo/ui/dialog';
 import { PasswordField, TextField } from '@repo/ui/text-field';
 import { useTRPC } from '../trpc';
 import { useAuthStore } from '../stores/auth';
@@ -30,6 +32,8 @@ export function LoginForm() {
   });
 
   const login = useMutation(trpc.auth.login.mutationOptions({ onSuccess: setSession }));
+  // A lock gets the dialog instead of the alert; dismissing it clears the error.
+  const locked = isLocked(login.error);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-canvas p-6">
@@ -67,7 +71,7 @@ export function LoginForm() {
             />
           </div>
 
-          {login.error && (
+          {login.error && !locked && (
             <Alert data-testid="login-error" variant="danger" role="alert">
               <span className="mr-2 inline-block h-2 w-2 rounded-full bg-danger align-middle" aria-hidden />
               {login.error.message}
@@ -79,6 +83,21 @@ export function LoginForm() {
           </Button>
         </Card>
       </form>
+
+      <Dialog
+        open={locked}
+        onClose={() => login.reset()}
+        blocking
+        title={LOCKED_DIALOG.title}
+        data-testid="login-locked"
+        footer={
+          <Button type="button" onClick={() => login.reset()}>
+            {LOCKED_DIALOG.button}
+          </Button>
+        }
+      >
+        <p className="text-sm text-ink-secondary">{LOCKED_DIALOG.message}</p>
+      </Dialog>
     </div>
   );
 }

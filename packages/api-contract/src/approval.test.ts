@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { errorReason, isInvalidPin, needsApproval } from './approval.ts';
+import { errorReason, isInvalidPin, isLocked, needsApproval } from './approval.ts';
 
 const trpcError = (data: unknown) => Object.assign(new Error('x'), { data });
 
@@ -18,4 +18,10 @@ test('needsApproval and isInvalidPin tell the two reasons apart', () => {
   assert.equal(needsApproval(wrongPin), false);
   assert.equal(isInvalidPin(wrongPin), true);
   assert.equal(isInvalidPin(refused), false);
+});
+
+test('isLocked spots a login lock and nothing else', () => {
+  assert.equal(isLocked(trpcError({ code: 'FORBIDDEN', reason: 'LOCKED' })), true);
+  assert.equal(isLocked(trpcError({ code: 'FORBIDDEN', reason: 'NEEDS_APPROVAL' })), false);
+  assert.equal(isLocked(trpcError({ code: 'FORBIDDEN' })), false);
 });

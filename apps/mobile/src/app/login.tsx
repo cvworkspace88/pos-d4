@@ -5,9 +5,11 @@ import { Controller, useForm } from 'react-hook-form';
 import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { z } from 'zod';
+import { isLocked } from '@repo/api-contract';
 import { Alert } from '@ui/alert';
 import { Button } from '@ui/button';
 import { PasswordField, TextField } from '@ui/text-field';
+import { LockedDialog } from '@/components/locked-dialog';
 import { useAuthStore } from '@/lib/stores/auth';
 import { useTRPC } from '@/lib/trpc';
 
@@ -29,6 +31,8 @@ export default function LoginScreen() {
   });
 
   const login = useMutation(trpc.auth.login.mutationOptions({ onSuccess: setSession }));
+  // A lock gets the dialog instead of the alert; dismissing it clears the error.
+  const locked = isLocked(login.error);
 
   return (
     <SafeAreaView className="flex-1 bg-surface-canvas">
@@ -79,7 +83,7 @@ export default function LoginScreen() {
             />
           </View>
 
-          {login.error && (
+          {login.error && !locked && (
             <Alert testID="login-error" variant="danger">
               {login.error.message}
             </Alert>
@@ -106,6 +110,7 @@ export default function LoginScreen() {
           </Button>
         </View>
       </ScrollView>
+      <LockedDialog visible={locked} onClose={() => login.reset()} />
     </SafeAreaView>
   );
 }

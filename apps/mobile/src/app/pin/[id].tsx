@@ -3,10 +3,12 @@ import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { isLocked } from '@repo/api-contract';
 import { Alert } from '@ui/alert';
 import { Avatar } from '@ui/avatar';
 import { Keypad } from '@ui/keypad';
 import { PinInput } from '@ui/pin-input';
+import { LockedDialog } from '@/components/locked-dialog';
 import { removeProfile } from '@/lib/session';
 import { useAuthStore } from '@/lib/stores/auth';
 import { useTRPC } from '@/lib/trpc';
@@ -20,6 +22,7 @@ export default function PinScreen() {
   const { accessToken, hydrated, profiles, setSession } = useAuthStore();
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
 
   const profile = profiles[id];
 
@@ -27,6 +30,12 @@ export default function PinScreen() {
     trpc.auth.pinLogin.mutationOptions({
       onSuccess: setSession,
       onError: (mutationError) => {
+        // Too many wrong PINs: the profile is fine, the user waits or asks a manager. Dialog, keep the card.
+        if (isLocked(mutationError)) {
+          setPin('');
+          setLocked(true);
+          return;
+        }
         // Every PIN failure is UNAUTHORIZED, so the code alone cannot say whether the card is
         // still good. `reason: 'INVALID_PIN'` means the profile is fine and the digits were not —
         // keep it. Anything else means the profile is dead (expired, revoked, no PIN), so the card
@@ -99,6 +108,7 @@ export default function PinScreen() {
           <Text className="font-poppins text-xs text-ink-muted">Lupa PIN? Minta manajer mengatur ulang.</Text>
         </View>
       </View>
+      <LockedDialog visible={locked} onClose={() => setLocked(false)} />
     </SafeAreaView>
   );
 }

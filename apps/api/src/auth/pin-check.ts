@@ -4,28 +4,55 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { Database, Tx } from '../db/db.module';
 import { users, type User } from '../db/schema';
 import { Reason } from '../trpc/error-formatter';
-import { PIN_MAX_FAILURES, PIN_WINDOW_MS, pinLockedFor } from './pin-policy';
+import { PASSWORD_WINDOW_MS, PIN_MAX_FAILURES, PIN_WINDOW_MS, pinLockedFor } from './pin-policy';
 
 type Columns = {
-  failures: typeof users.pinFailures | typeof users.approvalFailures;
-  windowStartedAt: typeof users.pinWindowStartedAt | typeof users.approvalWindowStartedAt;
+  failures: typeof users.pinFailures | typeof users.approvalFailures | typeof users.passwordFailures;
+  windowStartedAt:
+    | typeof users.pinWindowStartedAt
+    | typeof users.approvalWindowStartedAt
+    | typeof users.passwordWindowStartedAt;
+  keys:
+    | ['pinFailures', 'pinWindowStartedAt']
+    | ['approvalFailures', 'approvalWindowStartedAt']
+    | ['passwordFailures', 'passwordWindowStartedAt'];
+  windowMs: number;
 };
 
-/** `'pin'`: the user's own PIN (PIN login). `'approval'`: wrong manager PINs this user typed (US-010). */
-export type AttemptCounter = 'pin' | 'approval';
+/**
+ * `'pin'`: the user's own PIN (PIN login). `'approval'`: wrong manager PINs this user typed (US-010).
+ * `'password'`: the user's password (login, `setPin`; US-005).
+ */
+export type AttemptCounter = 'pin' | 'approval' | 'password';
 
 const COLUMNS: Record<AttemptCounter, Columns> = {
-  pin: { failures: users.pinFailures, windowStartedAt: users.pinWindowStartedAt },
-  approval: { failures: users.approvalFailures, windowStartedAt: users.approvalWindowStartedAt },
+  pin: {
+    failures: users.pinFailures,
+    windowStartedAt: users.pinWindowStartedAt,
+    keys: ['pinFailures', 'pinWindowStartedAt'],
+    windowMs: PIN_WINDOW_MS,
+  },
+  approval: {
+    failures: users.approvalFailures,
+    windowStartedAt: users.approvalWindowStartedAt,
+    keys: ['approvalFailures', 'approvalWindowStartedAt'],
+    windowMs: PIN_WINDOW_MS,
+  },
+  password: {
+    failures: users.passwordFailures,
+    windowStartedAt: users.passwordWindowStartedAt,
+    keys: ['passwordFailures', 'passwordWindowStartedAt'],
+    windowMs: PASSWORD_WINDOW_MS,
+  },
 };
 
 // `pinLockedFor` / `nextPinFailure` in SQL, on the DB clock so concurrent requests agree.
-const pinWindow = sql`(${PIN_WINDOW_MS}::int * interval '1 millisecond')`;
+const windowOf = (c: Columns) => sql`(${c.windowMs}::int * interval '1 millisecond')`;
 const max = sql`${PIN_MAX_FAILURES}::int`;
 const freshOf = (c: Columns) =>
-  sql`(${c.windowStartedAt} is null or now() - ${c.windowStartedAt} >= ${pinWindow})`;
+  sql`(${c.windowStartedAt} is null or now() - ${c.windowStartedAt} >= ${windowOf(c)})`;
 const lockedOf = (c: Columns) =>
-  sql`(${c.failures} >= ${max} and ${c.windowStartedAt} is not null and now() - ${c.windowStartedAt} < ${pinWindow})`;
+  sql`(${c.failures} >= ${max} and ${c.windowStartedAt} is not null and now() - ${c.windowStartedAt} < ${windowOf(c)})`;
 
 /**
  * Counts one attempt BEFORE the PIN is checked, by one conditional UPDATE that refuses a locked row,
@@ -38,13 +65,12 @@ export async function reserveAttempt(
 ): Promise<{ failures: number; windowStartedAt: Date } | null> {
   const c = COLUMNS[counter];
   const fresh = freshOf(c);
+  const [failuresKey, windowKey] = c.keys;
   const [row] = await db
     .update(users)
     .set({
-      [counter === 'pin' ? 'pinFailures' : 'approvalFailures']:
-        sql`case when ${fresh} then 1 else ${c.failures} + 1 end`,
-      [counter === 'pin' ? 'pinWindowStartedAt' : 'approvalWindowStartedAt']:
-        sql`case when ${fresh} or ${c.failures} + 1 >= ${max} then now() else ${c.windowStartedAt} end`,
+      [failuresKey]: sql`case when ${fresh} then 1 else ${c.failures} + 1 end`,
+      [windowKey]: sql`case when ${fresh} or ${c.failures} + 1 >= ${max} then now() else ${c.windowStartedAt} end`,
     })
     .where(and(eq(users.id, userId), sql`not ${lockedOf(c)}`))
     .returning({ failures: c.failures, windowStartedAt: c.windowStartedAt });
@@ -58,7 +84,7 @@ export async function lockedForMs(db: Database, userId: string, counter: Attempt
     .select({ pinFailures: c.failures, pinWindowStartedAt: c.windowStartedAt })
     .from(users)
     .where(eq(users.id, userId));
-  return row ? pinLockedFor(row) : 0;
+  return row ? pinLockedFor(row, Date.now(), c.windowMs) : 0;
 }
 
 export async function resetAttempts(
@@ -66,27 +92,46 @@ export async function resetAttempts(
   userId: string,
   counter: AttemptCounter,
 ): Promise<void> {
-  const fields =
-    counter === 'pin'
-      ? { pinFailures: 0, pinWindowStartedAt: null }
-      : { approvalFailures: 0, approvalWindowStartedAt: null };
-  await db.update(users).set(fields).where(eq(users.id, userId));
+  const [failuresKey, windowKey] = COLUMNS[counter].keys;
+  await db
+    .update(users)
+    .set({ [failuresKey]: 0, [windowKey]: null })
+    .where(eq(users.id, userId));
 }
 
 /** Whole minutes left, never "0 menit": app and DB clocks may disagree by a moment. */
 export const minutesLeft = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
 
 /**
- * The user's own PIN, for `auth.pinLogin`. Locked → FORBIDDEN (never 401, which would sign the caller
- * out); wrong digits → UNAUTHORIZED + `INVALID_PIN`; false when the user has no PIN at all.
+ * A login lock (PIN or password): FORBIDDEN, never 401, which would sign the caller out, with
+ * `LOCKED` so clients show the "Terlalu banyak percobaan gagal" dialog rather than a plain alert.
+ */
+const locked = async (db: Database, userId: string, counter: 'pin' | 'password') =>
+  new TRPCError({
+    code: 'FORBIDDEN',
+    message: `Terlalu banyak percobaan gagal. Coba lagi dalam ${minutesLeft(await lockedForMs(db, userId, counter))} menit.`,
+    cause: new Reason('LOCKED'),
+  });
+
+/**
+ * The user's own password, for `auth.login` and the password check in `auth.setPin` (US-005). Counted
+ * before it is checked, like the PIN; a right password clears the count. Locked → FORBIDDEN + `LOCKED`
+ * even for the right password. False = wrong password; the caller picks the refusal.
+ */
+export async function verifyPassword(db: Database, user: User, password: string): Promise<boolean> {
+  if (!(await reserveAttempt(db, user.id, 'password'))) throw await locked(db, user.id, 'password');
+  if (!(await argon2.verify(user.passwordHash, password))) return false;
+  await resetAttempts(db, user.id, 'password');
+  return true;
+}
+
+/**
+ * The user's own PIN, for `auth.pinLogin`. Locked → FORBIDDEN + `LOCKED`; wrong digits → UNAUTHORIZED
+ * + `INVALID_PIN`; false when the user has no PIN at all.
  */
 export async function verifyPin(db: Database, user: User, pin: string): Promise<boolean> {
   if (!user.pinHash) return false;
-  if (!(await reserveAttempt(db, user.id, 'pin')))
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: `PIN terkunci. Coba lagi dalam ${minutesLeft(await lockedForMs(db, user.id, 'pin'))} menit.`,
-    });
+  if (!(await reserveAttempt(db, user.id, 'pin'))) throw await locked(db, user.id, 'pin');
   if (await argon2.verify(user.pinHash, pin)) {
     await resetAttempts(db, user.id, 'pin');
     return true;

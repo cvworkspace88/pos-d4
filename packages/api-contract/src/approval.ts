@@ -15,3 +15,13 @@ export const needsApproval = (error: unknown): boolean => errorReason(error) ===
 
 /** Wrong PIN digits: a failed attempt, never a dead session. */
 export const isInvalidPin = (error: unknown): boolean => errorReason(error) === 'INVALID_PIN';
+
+/** Too many wrong passwords or PINs at login (US-005, US-006): show the locked dialog. */
+export const isLocked = (error: unknown): boolean => errorReason(error) === 'LOCKED';
+
+/** The locked dialog's copy, one source for mobile, desktop and backoffice. */
+export const LOCKED_DIALOG = {
+  title: 'Terlalu banyak percobaan gagal',
+  message: 'Coba lagi dalam beberapa saat atau hubungi manager atau admin untuk atur ulang pin/password',
+  button: 'Mengerti',
+} as const;
