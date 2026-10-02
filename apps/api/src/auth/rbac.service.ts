@@ -3,7 +3,15 @@ import { TRPCError } from '@trpc/server';
 import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { unionAll } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Database } from '../db/db.module';
-import { outletStaff, outlets, permissions, rolePermissions, userPermissions, users } from '../db/schema';
+import {
+  outletStaff,
+  outlets,
+  permissions,
+  rolePermissions,
+  roles,
+  userPermissions,
+  users,
+} from '../db/schema';
 import { Reason } from '../trpc/error-formatter';
 import * as argon2 from 'argon2';
 import { audit } from '../audit/audit';
@@ -21,6 +29,20 @@ import {
 export const forbidden = () => new TRPCError({ code: 'FORBIDDEN', message: 'Anda tidak memiliki akses.' });
 
 /** Role → permission lookups. The code checks permission *names* (`domain.action`), never ids. */
+/**
+ * The `outlet_staff` join condition for a role at `outletId`. `sql\`false\`` keeps the join shape
+ * identical when there is no outlet to match: the left join yields nulls, coalesce falls through to
+ * users.role_id, and a scoped user gets nothing.
+ */
+const membershipAt = (outletId: string | null) =>
+  outletId
+    ? and(
+        eq(outletStaff.outletId, outletId),
+        // A closed outlet grants nothing, even to a token minted before it closed.
+        sql`exists (select 1 from ${outlets} where ${outlets.id} = ${outletStaff.outletId} and ${outlets.deletedAt} is null)`,
+      )
+    : sql`false`;
+
 @Injectable()
 export class RbacService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
@@ -74,15 +96,7 @@ export class RbacService {
    * cannot outlive a removal. No outlet: no overrides, and role rows for a global role only.
    */
   async rowsOf(userId: string, outletId: string | null): Promise<PermissionRow[]> {
-    // `sql\`false\`` keeps the join shape identical when there is no outlet to match: the left join
-    // yields nulls, coalesce falls through to users.role_id, and a scoped user gets nothing.
-    const membership = outletId
-      ? and(
-          eq(outletStaff.outletId, outletId),
-          // A closed outlet grants nothing, even to a token minted before it closed.
-          sql`exists (select 1 from ${outlets} where ${outlets.id} = ${outletStaff.outletId} and ${outlets.deletedAt} is null)`,
-        )
-      : sql`false`;
+    const membership = membershipAt(outletId);
     const roleId = sql`coalesce(${users.roleId}, ${outletStaff.roleId})`;
 
     const fromRole = this.db
@@ -114,6 +128,17 @@ export class RbacService {
       );
 
     return unionAll(fromRole, fromOverrides);
+  }
+
+  /** The name of the role the user acts under at `outletId`: the global one (owner) first, else the membership's. */
+  async roleOf(userId: string, outletId: string | null): Promise<string | null> {
+    const [row] = await this.db
+      .select({ name: roles.name })
+      .from(users)
+      .leftJoin(outletStaff, and(eq(outletStaff.userId, users.id), membershipAt(outletId)))
+      .innerJoin(roles, eq(roles.id, sql`coalesce(${users.roleId}, ${outletStaff.roleId})`))
+      .where(eq(users.id, userId));
+    return row?.name ?? null;
   }
 
   /** What the user holds at `outletId`: role grants plus grants, minus revokes. One round trip: `require` runs on every gated call. */

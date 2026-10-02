@@ -162,6 +162,13 @@
       "when": 1790922492556,
       "tag": "0022_password_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790928963862,
+      "tag": "0023_floor_outlet",
+      "breakpoints": true
     }
   ]
 }

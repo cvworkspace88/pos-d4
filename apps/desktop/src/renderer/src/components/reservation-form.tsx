@@ -1,7 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { nextFullHourLocal } from '@repo/api-contract';
+import { nextFullHourLocal, uuidv7 } from '@repo/api-contract';
 import { z } from 'zod';
 import { useApproval } from '@repo/hooks/use-approval';
 import { useTRPC } from '../trpc';
@@ -30,6 +31,9 @@ export function ReservationForm({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  // One id per form: a retry or an approval resend reuses it, so the server returns the stored row
+  // instead of booking twice. A success closes the form, so no fresh id is ever needed.
+  const [id] = useState(() => uuidv7());
 
   const {
     register,
@@ -54,6 +58,7 @@ export function ReservationForm({
   const submit = ({ customerName, phone, partySize, startsAt, note }: FormValues) =>
     approval.start(
       {
+        id,
         tableId: table.id,
         customerName,
         phone: phone || undefined,

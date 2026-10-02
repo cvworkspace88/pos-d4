@@ -264,13 +264,25 @@ test('setPin counts toward and obeys the password lock', async () => {
   for (let i = 0; i < 5; i++)
     await expect(auth.setPin(ann.id, { pin: '654321', password: 'wrong-password' })).rejects.toMatchObject({
       code: 'FORBIDDEN',
-      message: 'Masukkan password untuk mengganti PIN.',
+      message: 'Password salah.',
     });
 
   await expect(auth.setPin(ann.id, { pin: '654321', password: PASSWORD })).rejects.toMatchObject({
     cause: { reason: 'LOCKED' },
   });
   await expect(login('ann')).rejects.toMatchObject({ cause: { reason: 'LOCKED' } });
+});
+
+test('changing a PIN without the password asks for it, and does not count toward the lock', async () => {
+  const ann = await addUser('ann');
+  await auth.setPin(ann.id, { pin: '123456' });
+
+  await expect(auth.setPin(ann.id, { pin: '654321' })).rejects.toMatchObject({
+    code: 'FORBIDDEN',
+    message: 'Masukkan password untuk mengganti PIN.',
+  });
+  const [row] = await db.select().from(users).where(eq(users.id, ann.id));
+  expect(row!.passwordFailures).toBe(0);
 });
 
 test('the password and PIN locks are separate', async () => {
@@ -285,4 +297,53 @@ test('the password and PIN locks are separate', async () => {
   await expect(auth.pinLogin(session.refreshToken, '123456')).resolves.toMatchObject({
     user: { id: ann.id },
   });
+});
+
+test('a changed PIN clears the PIN lock', async () => {
+  const ann = await addUser('ann');
+  await auth.setPin(ann.id, { pin: '123456' });
+  await db.update(users).set({ pinFailures: 5, pinWindowStartedAt: new Date() }).where(eq(users.id, ann.id));
+
+  await auth.setPin(ann.id, { pin: '654321', password: PASSWORD });
+
+  const [row] = await db.select().from(users).where(eq(users.id, ann.id));
+  expect(row).toMatchObject({ pinFailures: 0, pinWindowStartedAt: null });
+});
+
+test('changePassword needs the current password and obeys the password lock', async () => {
+  const ann = await addUser('ann');
+  const change = (currentPassword: string) =>
+    auth.changePassword(ann.id, { currentPassword, newPassword: 'new-password' });
+
+  // FORBIDDEN, not UNAUTHORIZED: a typo must not sign the user out.
+  for (let i = 0; i < 5; i++)
+    await expect(change('wrong-password')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'Password saat ini salah.',
+    });
+  await expect(change(PASSWORD)).rejects.toMatchObject({ cause: { reason: 'LOCKED' } });
+});
+
+test('a changed password is the one login takes', async () => {
+  await addUser('ann');
+  const { user } = await login('ann');
+
+  await auth.changePassword(user.id, { currentPassword: PASSWORD, newPassword: 'new-password' });
+
+  await expect(login('ann')).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+  await expect(auth.login({ username: 'ann', password: 'new-password' })).resolves.toMatchObject({
+    user: { id: user.id },
+  });
+});
+
+test('unlock refuses a wrong password with FORBIDDEN and counts it toward the lock', async () => {
+  const ann = await addUser('ann');
+
+  await expect(auth.unlock(ann.id, PASSWORD)).resolves.toBeUndefined();
+  for (let i = 0; i < 5; i++)
+    await expect(auth.unlock(ann.id, 'wrong-password')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'Password salah.',
+    });
+  await expect(auth.unlock(ann.id, PASSWORD)).rejects.toMatchObject({ cause: { reason: 'LOCKED' } });
 });

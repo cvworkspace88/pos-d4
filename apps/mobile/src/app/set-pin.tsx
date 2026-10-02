@@ -1,42 +1,79 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { Redirect } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Controller, useForm } from 'react-hook-form';
 import { ActivityIndicator, Button, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { z } from 'zod';
+import { isLocked } from '@repo/api-contract';
+import { PasswordField } from '@ui/text-field';
+import { LockedDialog } from '@/components/locked-dialog';
 import { useAuthStore } from '@/lib/stores/auth';
 import { useTRPC } from '@/lib/trpc';
 
 // Same rule as the API's `pinInput`; duplicated because mobile cannot import from apps/api.
-const schema = z
-  .object({
-    pin: z.string().regex(/^\d{6}$/, 'exactly 6 digits.'),
-    confirm: z.string(),
-  })
-  .refine((values) => values.pin === values.confirm, { message: 'PINs do not match.', path: ['confirm'] });
+const base = z.object({
+  pin: z.string().regex(/^\d{6}$/, 'Harus 6 digit.'),
+  confirm: z.string(),
+  password: z.string(),
+});
+const samePin = (schema: typeof base) =>
+  schema.refine((values) => values.pin === values.confirm, { message: 'PIN tidak sama.', path: ['confirm'] });
+const setSchema = samePin(base);
+// Changing an existing PIN (US-006) needs the password; the server enforces it too.
+const changeSchema = samePin(base.extend({ password: z.string().min(8, 'Minimal 8 karakter.') }));
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<typeof base>;
 
 export default function SetPinScreen() {
   const trpc = useTRPC();
+  const router = useRouter();
   const { user, accessToken, hydrated, setUser } = useAuthStore();
+  // From the route, not `hasPin`: the store may not be hydrated on the first render, and a first-time
+  // setup flips `hasPin` on success and must then leave via the redirect below.
+  const changing = useLocalSearchParams<{ mode?: string }>().mode === 'change';
+  // A restored or deep-linked screen has no history to go back to.
+  const leave = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
   const { control, handleSubmit, formState } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: { pin: '', confirm: '' },
+    resolver: zodResolver(changing ? changeSchema : setSchema),
+    defaultValues: { pin: '', confirm: '', password: '' },
   });
 
-  const setPin = useMutation(trpc.auth.setPin.mutationOptions({ onSuccess: setUser }));
+  const setPin = useMutation(
+    trpc.auth.setPin.mutationOptions({
+      onSuccess: (updated) => {
+        setUser(updated);
+        if (changing) leave();
+      },
+    }),
+  );
+  const locked = isLocked(setPin.error);
 
   if (!hydrated) return <ActivityIndicator style={styles.center} />;
   if (!accessToken) return <Redirect href="/profiles" />;
-  if (user?.hasPin) return <Redirect href="/" />;
+  if (user?.hasPin && !changing) return <Redirect href="/" />;
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Choose a PIN</Text>
-      <Text style={styles.hint}>You will use it instead of your password on this tablet.</Text>
+      <Text style={styles.title}>{changing ? 'Ubah PIN' : 'Buat PIN'}</Text>
+      <Text style={styles.hint}>PIN dipakai untuk masuk di tablet ini, menggantikan password.</Text>
+
+      {changing && (
+        <Controller
+          control={control}
+          name="password"
+          render={({ field }) => (
+            <PasswordField
+              label="Password"
+              error={formState.errors.password?.message}
+              value={field.value}
+              onChangeText={field.onChange}
+              onBlur={field.onBlur}
+            />
+          )}
+        />
+      )}
 
       {(['pin', 'confirm'] as const).map((name) => (
         <View key={name}>
@@ -46,7 +83,7 @@ export default function SetPinScreen() {
             render={({ field }) => (
               <TextInput
                 style={styles.input}
-                placeholder={name === 'pin' ? 'PIN (6-digits)' : 'Repeat PIN'}
+                placeholder={name === 'pin' ? 'PIN baru (6 digit)' : 'Ulangi PIN'}
                 keyboardType="number-pad"
                 secureTextEntry
                 maxLength={6}
@@ -62,11 +99,15 @@ export default function SetPinScreen() {
 
       <View style={styles.spacer} />
       <Button
-        title={setPin.isPending ? 'Saving…' : 'Save PIN'}
+        title={setPin.isPending ? 'Menyimpan…' : 'Simpan PIN'}
         disabled={setPin.isPending}
-        onPress={handleSubmit(({ pin }) => setPin.mutateAsync({ pin }).catch(() => undefined))}
+        onPress={handleSubmit(({ pin, password }) =>
+          setPin.mutateAsync({ pin, password: changing ? password : undefined }).catch(() => undefined),
+        )}
       />
-      {setPin.error && <Text style={styles.error}>{setPin.error.message}</Text>}
+      {changing && <Button title="Batal" onPress={leave} />}
+      {setPin.error && !locked && <Text style={styles.error}>{setPin.error.message}</Text>}
+      <LockedDialog visible={locked} onClose={() => setPin.reset()} />
     </SafeAreaView>
   );
 }

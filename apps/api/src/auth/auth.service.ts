@@ -198,25 +198,51 @@ export class AuthService {
    * was minted by a password login moments ago and the client has no password left to re-enter.
    */
   async setPin(userId: string, input: { pin: string; password?: string }): Promise<PublicUser> {
-    const [user] = await this.db
-      .select()
-      .from(users)
-      .where(and(eq(users.id, userId), isNull(users.deletedAt)));
-    if (!user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+    const user = await this.userFromPayload({ sub: userId });
 
     if (user.pinHash) {
-      // Counts toward the password lock: otherwise a stolen access token guesses passwords here freely.
-      const valid = input.password ? await verifyPassword(this.db, user, input.password) : false;
-      if (!valid)
+      if (!input.password)
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Masukkan password untuk mengganti PIN.' });
+      // Counts toward the password lock: otherwise a stolen access token guesses passwords here freely.
+      if (!(await verifyPassword(this.db, user, input.password)))
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Password salah.' });
     }
 
+    // A new PIN starts with a clean slate: the lock guarded the old one.
     const [updated] = await this.db
       .update(users)
-      .set({ pinHash: await argon2.hash(input.pin) })
+      .set({ pinHash: await argon2.hash(input.pin), pinFailures: 0, pinWindowStartedAt: null })
       .where(eq(users.id, userId))
       .returning();
     return publicUser(updated!);
+  }
+
+  /**
+   * The desktop lock screen (US-007): the same user re-enters their password. FORBIDDEN, never
+   * UNAUTHORIZED, on a wrong one — a 401 would end the session the lock screen is protecting.
+   */
+  async unlock(userId: string, password: string): Promise<void> {
+    if (!(await verifyPassword(this.db, await this.userFromPayload({ sub: userId }), password)))
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Password salah.' });
+  }
+
+  /**
+   * Self-service only, and only with the current password: it counts toward and obeys the password
+   * lock. A forgotten password is a staff manager's reset (US-057), never this.
+   */
+  async changePassword(
+    userId: string,
+    input: { currentPassword: string; newPassword: string },
+  ): Promise<void> {
+    const user = await this.userFromPayload({ sub: userId });
+    // FORBIDDEN, not UNAUTHORIZED: a typo here must not sign the user out.
+    if (!(await verifyPassword(this.db, user, input.currentPassword)))
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Password saat ini salah.' });
+    // ponytail: other sessions stay signed in; revoke the user's other refresh tokens if a leaked password must lock everyone out.
+    await this.db
+      .update(users)
+      .set({ passwordHash: await argon2.hash(input.newPassword) })
+      .where(eq(users.id, userId));
   }
 
   /** Single source of truth for "who is this bearer token", used by JwtStrategy and the tRPC middleware. */

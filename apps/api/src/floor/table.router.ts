@@ -2,6 +2,7 @@ import { Inject } from '@nestjs/common';
 import { Ctx, Input, Mutation, Query, Router, UseMiddlewares } from 'nestjs-trpc';
 import { z } from 'zod';
 import type { PublicUser } from '../auth/auth.service';
+import { activeOutlet } from '../auth/active-outlet';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
 import type { Actor, ApprovalInput } from '../auth/rbac-rules';
@@ -23,7 +24,7 @@ const tableOutput = z.object({
 });
 
 const layoutItem = z.object({
-  id: z.string(),
+  id: z.uuid(),
   x: z.number().int().min(0).max(1000),
   y: z.number().int().min(0).max(1000),
   w: z.number().int().min(40).max(500),
@@ -41,7 +42,7 @@ export class TableRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async list(@Ctx() ctx: Ctx) {
     await this.rbac.require(ctx, 'table.view');
-    return this.service.list();
+    return this.service.list(activeOutlet(ctx));
   }
 
   @Mutation({
@@ -58,12 +59,12 @@ export class TableRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async create(@Ctx() ctx: Ctx, @Input() input: TableInput) {
     await this.rbac.require(ctx, 'table.create');
-    return this.service.create(input);
+    return this.service.create(activeOutlet(ctx), input);
   }
 
   @Mutation({
     input: z.object({
-      id: z.string(),
+      id: z.uuid(),
       name: z.string().trim().min(1).max(20),
       seats: z.number().int().min(1).max(50),
     }),
@@ -73,7 +74,7 @@ export class TableRouter {
   async update(@Ctx() ctx: Ctx, @Input() input: { id: string; name: string; seats: number }) {
     await this.rbac.require(ctx, 'table.layout_manage');
     const { id, ...patch } = input;
-    return this.service.update(id, patch);
+    return this.service.update(activeOutlet(ctx), id, patch);
   }
 
   @Mutation({
@@ -83,20 +84,20 @@ export class TableRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async updateLayout(@Ctx() ctx: Ctx, @Input('items') items: LayoutItem[]) {
     await this.rbac.require(ctx, 'table.layout_manage');
-    return this.service.updateLayout(items);
+    return this.service.updateLayout(activeOutlet(ctx), items);
   }
 
-  @Mutation({ input: z.object({ id: z.string() }), output: z.object({ success: z.boolean() }) })
+  @Mutation({ input: z.object({ id: z.uuid() }), output: z.object({ success: z.boolean() }) })
   @UseMiddlewares(ProtectedMiddleware)
   async delete(@Ctx() ctx: Ctx, @Input('id') id: string) {
     await this.rbac.require(ctx, 'table.delete');
-    return this.service.delete(id);
+    return this.service.delete(activeOutlet(ctx), id);
   }
 
   @Mutation({
     input: z.object({
-      headId: z.string(),
-      memberIds: z.array(z.string()).min(1).max(50),
+      headId: z.uuid(),
+      memberIds: z.array(z.uuid()).min(1).max(50),
       approval: z
         .object({
           approverUserId: z.uuid(),
@@ -113,12 +114,12 @@ export class TableRouter {
     @Input() input: { headId: string; memberIds: string[]; approval?: ApprovalInput },
   ) {
     const approved = await this.rbac.requireOrApprove(ctx, 'table.merge', input.approval);
-    return this.service.merge(input.headId, input.memberIds, approved);
+    return this.service.merge(activeOutlet(ctx), input.headId, input.memberIds, approved);
   }
 
   @Mutation({
     input: z.object({
-      id: z.string(),
+      id: z.uuid(),
       approval: z
         .object({
           approverUserId: z.uuid(),
@@ -132,6 +133,6 @@ export class TableRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async unmerge(@Ctx() ctx: Ctx, @Input() input: { id: string; approval?: ApprovalInput }) {
     const approved = await this.rbac.requireOrApprove(ctx, 'table.merge', input.approval);
-    return this.service.unmerge(input.id, approved);
+    return this.service.unmerge(activeOutlet(ctx), input.id, approved);
   }
 }

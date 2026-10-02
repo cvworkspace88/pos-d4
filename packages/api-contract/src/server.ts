@@ -197,13 +197,28 @@ const appRouter = t.router({
   hasPin: z.boolean(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    changePassword: publicProcedure
+      .input(z.object({
+      currentPassword: z.string().min(1).max(128),
+      newPassword: z.string().min(8).max(128),
+    }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    unlock: publicProcedure
+      .input(z.object({ password: z.string().min(1).max(128) }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     me: publicProcedure
       .output(z.object({
   id: z.string(),
   name: z.string(),
   username: z.string(),
   hasPin: z.boolean(),
-}).extend({ outletId: z.string().nullable(), permissions: z.array(z.string()) }))
+}).extend({
+      outletId: z.string().nullable(),
+      role: z.string().nullable(),
+      permissions: z.array(z.string()),
+    }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   category: t.router({
@@ -289,7 +304,8 @@ const appRouter = t.router({
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     create: publicProcedure
       .input(z.object({
-      tableId: z.string(),
+      id: z.uuid(),
+      tableId: z.uuid(),
       customerName: z.string().trim().min(1).max(80),
       phone: z.string().trim().max(32).optional(),
       partySize: z.number().int().min(1).max(100),
@@ -316,9 +332,9 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     update: publicProcedure
       .input(z.object({
-      id: z.string(),
+      id: z.uuid(),
       status: z.enum(['seated', 'cancelled', 'no_show']).optional(),
-      tableId: z.string().optional(),
+      tableId: z.uuid().optional(),
       customerName: z.string().trim().min(1).max(80).optional(),
       phone: z.string().trim().max(32).optional(),
       partySize: z.number().int().min(1).max(100).optional(),
@@ -379,7 +395,7 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     update: publicProcedure
       .input(z.object({
-      id: z.string(),
+      id: z.uuid(),
       name: z.string().trim().min(1).max(20),
       seats: z.number().int().min(1).max(50),
     }))
@@ -396,7 +412,7 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     updateLayout: publicProcedure
       .input(z.object({ items: z.array(z.object({
-  id: z.string(),
+  id: z.uuid(),
   x: z.number().int().min(0).max(1000),
   y: z.number().int().min(0).max(1000),
   w: z.number().int().min(40).max(500),
@@ -414,13 +430,13 @@ const appRouter = t.router({
 })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     delete: publicProcedure
-      .input(z.object({ id: z.string() }))
+      .input(z.object({ id: z.uuid() }))
       .output(z.object({ success: z.boolean() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     merge: publicProcedure
       .input(z.object({
-      headId: z.string(),
-      memberIds: z.array(z.string()).min(1).max(50),
+      headId: z.uuid(),
+      memberIds: z.array(z.uuid()).min(1).max(50),
       approval: z
         .object({
           approverUserId: z.uuid(),
@@ -442,7 +458,7 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     unmerge: publicProcedure
       .input(z.object({
-      id: z.string(),
+      id: z.uuid(),
       approval: z
         .object({
           approverUserId: z.uuid(),

@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
+import { and, eq } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { Tx } from '../db/db.module';
 import { syncEvents } from '../db/schema';
@@ -26,7 +27,12 @@ export const recordSyncEvent = async (
   await db.insert(syncEvents).values({ ...entry, actorUserId: actor.user.id });
 };
 
-type IdTable = PgTable & { id: AnyPgColumn; $inferInsert: { id?: unknown }; $inferSelect: { id: string } };
+type IdTable = PgTable & {
+  id: AnyPgColumn;
+  outletId: AnyPgColumn;
+  $inferInsert: { id?: unknown };
+  $inferSelect: { id: string; outletId: string };
+};
 
 /**
  * Safely inserts a record with a predetermined ID or fetches the existing one if it already exists.
@@ -51,6 +57,8 @@ export const createOnce = async <T extends IdTable>(
   const [stored] = (await tx
     .select()
     .from(table as PgTable)
-    .where(eq(table.id, values.id))) as T['$inferSelect'][];
-  return { row: stored!, created: false };
+    .where(and(eq(table.id, values.id), eq(table.outletId, event.outletId)))) as T['$inferSelect'][];
+  // An id taken at another outlet is not this request's retry: never hand that row back.
+  if (!stored) throw new TRPCError({ code: 'CONFLICT', message: 'Id already used.' });
+  return { row: stored, created: false };
 };

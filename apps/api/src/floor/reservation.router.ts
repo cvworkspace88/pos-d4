@@ -2,6 +2,7 @@ import { Inject } from '@nestjs/common';
 import { Ctx, Input, Mutation, Query, Router, UseMiddlewares } from 'nestjs-trpc';
 import { z } from 'zod';
 import type { PublicUser } from '../auth/auth.service';
+import { activeOutlet } from '../auth/active-outlet';
 import { ProtectedMiddleware } from '../auth/protected.middleware';
 import { RbacService } from '../auth/rbac.service';
 import type { Actor, ApprovalInput } from '../auth/rbac-rules';
@@ -34,12 +35,13 @@ export class ReservationRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async list(@Ctx() ctx: Ctx, @Input() input: { from: string; to: string }) {
     await this.rbac.require(ctx, 'reservation.view');
-    return this.service.list(input.from, input.to);
+    return this.service.list(activeOutlet(ctx), input.from, input.to);
   }
 
   @Mutation({
     input: z.object({
-      tableId: z.string(),
+      id: z.uuid(),
+      tableId: z.uuid(),
       customerName: z.string().trim().min(1).max(80),
       phone: z.string().trim().max(32).optional(),
       partySize: z.number().int().min(1).max(100),
@@ -56,17 +58,17 @@ export class ReservationRouter {
     output: reservationOutput,
   })
   @UseMiddlewares(ProtectedMiddleware)
-  async create(@Ctx() ctx: Ctx, @Input() input: ReservationInput & { approval?: ApprovalInput }) {
+  async create(@Ctx() ctx: Ctx, @Input() input: ReservationInput & { id: string; approval?: ApprovalInput }) {
     const { approval, ...fields } = input;
     const approved = await this.rbac.requireOrApprove(ctx, 'reservation.create', approval);
-    return this.service.create(ctx.user.id, fields, approved);
+    return this.service.create(ctx, activeOutlet(ctx), fields, approved);
   }
 
   @Mutation({
     input: z.object({
-      id: z.string(),
+      id: z.uuid(),
       status: z.enum(['seated', 'cancelled', 'no_show']).optional(),
-      tableId: z.string().optional(),
+      tableId: z.uuid().optional(),
       customerName: z.string().trim().min(1).max(80).optional(),
       phone: z.string().trim().max(32).optional(),
       partySize: z.number().int().min(1).max(100).optional(),
@@ -86,6 +88,6 @@ export class ReservationRouter {
   async update(@Ctx() ctx: Ctx, @Input() input: { id: string; approval?: ApprovalInput } & ReservationPatch) {
     const { id, approval, ...patch } = input;
     const approved = await this.rbac.requireOrApprove(ctx, 'reservation.update', approval);
-    return this.service.update(id, patch, approved);
+    return this.service.update(ctx, activeOutlet(ctx), id, patch, approved);
   }
 }

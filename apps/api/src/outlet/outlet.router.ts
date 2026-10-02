@@ -269,7 +269,10 @@ export class OutletRouter {
     return this.service.findUsers(input.outletId, input.username);
   }
 
-  /** A new account, straight onto this outlet's roster. Same gate and confinement as `setStaff`. */
+  /**
+   * A new account, straight onto this outlet's roster: `staff.manage` for the account, plus the
+   * roster's own gate and confinement (`setStaff`).
+   */
   @Mutation({
     input: z.object({
       outletId: z.uuid(),
@@ -287,6 +290,7 @@ export class OutletRouter {
   @UseMiddlewares(ProtectedMiddleware)
   async addStaff(@Ctx() ctx: Ctx, @Input() input: NewStaffInput & { outletId: string }) {
     await this.rbac.require(ctx, 'outlet.staff_assign');
+    await this.rbac.require(ctx, 'staff.manage');
     if (!canActOn(ctx, input.outletId)) throw wrongOutlet();
     const { outletId, ...staff } = input;
     return this.service.addStaff(outletId, staff, ctx);

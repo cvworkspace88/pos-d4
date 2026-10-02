@@ -85,16 +85,46 @@ export class AuthRouter {
     return this.authService.setPin(ctx.user.id, input);
   }
 
+  @Mutation({
+    input: z.object({
+      currentPassword: z.string().min(1).max(128),
+      newPassword: z.string().min(8).max(128),
+    }),
+    output: z.object({ success: z.boolean() }),
+  })
+  @UseMiddlewares(ProtectedMiddleware)
+  async changePassword(
+    @Ctx() ctx: { user: PublicUser },
+    @Input() input: { currentPassword: string; newPassword: string },
+  ) {
+    await this.authService.changePassword(ctx.user.id, input);
+    return { success: true };
+  }
+
+  @Mutation({
+    input: z.object({ password: z.string().min(1).max(128) }),
+    output: z.object({ success: z.boolean() }),
+  })
+  @UseMiddlewares(ProtectedMiddleware)
+  async unlock(@Ctx() ctx: { user: PublicUser }, @Input('password') password: string) {
+    await this.authService.unlock(ctx.user.id, password);
+    return { success: true };
+  }
+
   // Extends rather than re-declares, so a field added to `userOutput` reaches `me` too.
   @Query({
-    output: userOutput.extend({ outletId: z.string().nullable(), permissions: z.array(z.string()) }),
+    output: userOutput.extend({
+      outletId: z.string().nullable(),
+      role: z.string().nullable(),
+      permissions: z.array(z.string()),
+    }),
   })
   @UseMiddlewares(ProtectedMiddleware)
   async me(@Ctx() ctx: Actor & { user: PublicUser }) {
-    return {
-      ...ctx.user,
-      outletId: ctx.outletId,
-      permissions: await this.rbac.permissionsOf(ctx.user.id, ctx.outletId),
-    };
+    const [role, permissions] = await Promise.all([
+      this.rbac.roleOf(ctx.user.id, ctx.outletId),
+      this.rbac.permissionsOf(ctx.user.id, ctx.outletId),
+    ]);
+    return { ...ctx.user, outletId: ctx.outletId, role, permissions };
   }
 }

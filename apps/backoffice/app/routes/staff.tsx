@@ -36,6 +36,7 @@ export default function StaffPage() {
   const roles = useQuery(trpc.outlet.roles.queryOptions());
   const me = useQuery(trpc.auth.me.queryOptions());
   const canUnblock = me.data?.permissions.includes('approval.unblock') ?? false;
+  const canCreate = me.data?.permissions.includes('staff.manage') ?? false;
   const unblock = useMutation(
     trpc.approval.unblock.mutationOptions({
       onSuccess: () =>
@@ -128,6 +129,7 @@ export default function StaffPage() {
               outletId={outletId}
               roster={staff.data ?? []}
               roleItems={roleItems}
+              canCreate={canCreate}
               // A staff line belongs to an outlet: with none active there is nowhere to add them.
               disabled={!outlet || !staff.data}
             />

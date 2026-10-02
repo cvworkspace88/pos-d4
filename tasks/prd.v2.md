@@ -139,7 +139,7 @@ Audit rows on settings writes come with US-011.
 **Acceptance Criteria:**
 - [x] `auth.login(username, password)` → access JWT (15 min) + opaque refresh token (SHA-256 hash stored, rotated on use, 30 s grace for the previous token to absorb concurrent refreshes)
 - [x] Passwords hashed with argon2id; 5 failed logins within 15 min lock the user for 15 min (`FORBIDDEN` + `data.reason: 'LOCKED'`, message says how long; clients show the "Terlalu banyak percobaan gagal" dialog); every password check (login, change password, change PIN) counts toward and obeys the lock; a staff manager can clear it early with a password reset (US-057)
-- [ ] Change password (self, all apps): current password + new password; counts toward and obeys the password lock. A forgotten password cannot be reset by its owner: a staff manager resets it (US-057)
+- [x] Change password (self, all apps): current password + new password; counts toward and obeys the password lock. A forgotten password cannot be reset by its owner: a staff manager resets it (US-057)
 - [x] JWT carries `sub` (user id), `username`, `outletId`, `exp`. No `roleId`: roles are per outlet and `rbac.require` reads them from the DB, so a role change applies without a new token. `deviceId` is added by US-003
 - [x] Any `UNAUTHORIZED` response ends the client session (store cleared, cache dropped, back to login); `FORBIDDEN` never does
 - [x] `auth.logout` revokes the refresh token with reason `logout`
@@ -154,7 +154,7 @@ Audit rows on settings writes come with US-011.
 - [x] "Sign out" parks the session (refresh token kept with reason `parked`); profile stays on the device
 - [x] Profile picker screen lists parked profiles; tapping one asks for the PIN; `auth.pinLogin(refreshToken, pin)` (the profile's parked token) redeems it and issues a new session
 - [x] Wrong PIN returns `UNAUTHORIZED` with `data.reason: 'INVALID_PIN'`; client shows "PIN salah" and does not end the session; 5 wrong PINs in 10 min lock PIN login for 10 min (`FORBIDDEN` + `data.reason: 'LOCKED'`, same dialog as the password lock) — per user, not per profile; separate from the approval block (US-010)
-- [ ] Change PIN (self, mobile): needs the password (counts toward and obeys the password lock); a successful change clears the PIN lock. A forgotten PIN cannot be reset by its owner: a staff manager resets it (US-057)
+- [x] Change PIN (self, mobile): needs the password (counts toward and obeys the password lock); a successful change clears the PIN lock. A forgotten PIN cannot be reset by its owner: a staff manager resets it (US-057)
 - [x] Parked tokens cannot be used by `auth.refresh`; only `pinLogin` redeems them
 - [x] Idle lock after `idle_timeout_seconds` (setting, default 120) parks the session and returns to the profile picker
 - [x] "Remove profile" asks for confirmation only ("Hapus {nama}?"; no PIN or manager needed: the user just signs in with their password again), forgets the profile on the device and revokes its parked token
@@ -166,22 +166,22 @@ Audit rows on settings writes come with US-011.
 
 **Acceptance Criteria:**
 - [x] Desktop login screen with username/password; no PIN profiles, no idle lock
-- [ ] "Lock" button and `security.desktop_lock_seconds` (setting, default 0 = off) show a lock screen requiring the same user's password
-- [ ] Current user and role shown in the top bar; "Switch user" logs out and returns to login
+- [x] "Lock" button and `security.desktop_lock_seconds` (setting, default 0 = off) show a lock screen requiring the same user's password
+- [x] Current user and role shown in the top bar; "Switch user" logs out and returns to login
 - [ ] Verify in browser using dev-browser skill
-- [ ] Typecheck/lint passes
+- [x] Typecheck/lint passes
 
 ### US-008: Outlets and staff membership
 **Description:** As an owner, I want several outlets, each with its own staff and role assignments.
 
 **Acceptance Criteria:**
-- [ ] Tables `outlets(id, name, code, address, phone, npwp, timezone, active)`, `outlet_staff(outlet_id, user_id, role_id, active)`
-- [ ] `users.global_role_id` holds the global role (owner) that needs no membership; everyone else acts only in outlets where they have an active membership
-- [ ] Login on a device bound to outlet X refuses users without membership there: `FORBIDDEN` "Anda tidak terdaftar di outlet ini."
+- [x] Tables `outlets(id, name, code, address, phone, npwp, timezone, deleted_at)` (closing an outlet is `outlet.setActive(false)`, a soft delete; name and code unique among live outlets), `outlet_staff(outlet_id, user_id, role_id)` (a membership is a row; removing it deletes the row)
+- [x] `users.role_id` holds the global role (owner) that needs no membership; everyone else acts only in outlets where they have a membership, at a live outlet
+- [ ] Login on a device bound to outlet X refuses users without membership there: `FORBIDDEN` "Anda tidak terdaftar di outlet ini." (needs device binding, lands with US-003)
 - [x] `auth.refresh({outletId})` switches active outlet for multi-outlet users (backoffice and owners)
 - [x] `canActOn(ctx, outletId)` guard used by every query and mutation that takes an outlet id; refusal is `FORBIDDEN` "Outlet tidak ditemukan."
 - [x] Tests: membership check, global role bypass, guard
-- [ ] Typecheck/lint passes
+- [x] Typecheck/lint passes
 
 ### US-009: Roles, permissions catalogue and per-user overrides
 **Description:** As an owner, I want fixed base roles, my own custom roles, and the ability to grant or revoke single permissions for one person at one outlet.
@@ -226,9 +226,9 @@ Wired so far: table.merge/unmerge, reservation.create/update (2026-10-02); void,
 **Description:** As a developer, I need every transactional write to be an idempotent, ordered event so that sync and retries are safe by construction.
 
 **Acceptance Criteria:**
-- [ ] All transactional entities (orders, lines, payments, refunds, shifts, drawer entries, kitchen tickets, table sessions, reservations, stock ledger) use client-generated UUID v7 primary keys
+- [x] All transactional entities (orders, lines, payments, refunds, shifts, drawer entries, kitchen tickets, table sessions, reservations, stock ledger) use client-generated UUID v7 primary keys (reservations so far, via `createOnce` and `uuidv7()` from `@repo/api-contract`; each later entity lands the same way)
 - [x] Table `sync_events(id uuid, outlet_id, device_id, seq bigserial, type, entity_id, payload jsonb, actor_user_id, created_at, synced_at nullable)`; every transactional mutation writes its entity change and an event in one DB transaction
-- [ ] Repeating a mutation with an already-stored id is a no-op that returns the stored result (idempotency), verified by a test that calls the same mutation twice
+- [x] Repeating a mutation with an already-stored id is a no-op that returns the stored result (idempotency), verified by a test that calls the same mutation twice
 - [x] `sync.pendingCount` returns the unsynced count for the active outlet
 - [x] Typecheck/lint passes
 

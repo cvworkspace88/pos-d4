@@ -38,7 +38,8 @@ export const tableOutput = (t: Table) => ({
 });
 export type TableOutput = ReturnType<typeof tableOutput>;
 
-const live = isNull(tables.deletedAt);
+/** Live tables of one outlet: every query is outlet-scoped. */
+const live = (outletId: string) => and(eq(tables.outletId, outletId), isNull(tables.deletedAt));
 
 // Mirrors FLOOR.size from @repo/api-contract. That package's internal imports are extensionless
 // (fine for the bundler-based desktop/mobile clients), which breaks Node's runtime module
@@ -61,14 +62,17 @@ const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Table not fo
 export class TableService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
-  async list(): Promise<TableOutput[]> {
-    const rows = await this.db.select().from(tables).where(live).orderBy(tables.name);
+  async list(outletId: string): Promise<TableOutput[]> {
+    const rows = await this.db.select().from(tables).where(live(outletId)).orderBy(tables.name);
     return rows.map(tableOutput);
   }
 
-  async create(input: TableInput): Promise<TableOutput> {
+  async create(outletId: string, input: TableInput): Promise<TableOutput> {
     try {
-      const [row] = await this.db.insert(tables).values(clampToCanvas(input)).returning();
+      const [row] = await this.db
+        .insert(tables)
+        .values({ ...clampToCanvas(input), outletId })
+        .returning();
       return tableOutput(row!);
     } catch (error) {
       if (isUniqueViolation(error))
@@ -77,13 +81,17 @@ export class TableService {
     }
   }
 
-  async update(id: string, patch: Pick<TableInput, 'name' | 'seats'>): Promise<TableOutput> {
-    await this.find(id);
+  async update(
+    outletId: string,
+    id: string,
+    patch: Pick<TableInput, 'name' | 'seats'>,
+  ): Promise<TableOutput> {
+    await this.find(outletId, id);
     try {
       const [row] = await this.db
         .update(tables)
         .set(patch)
-        .where(and(eq(tables.id, id), live))
+        .where(and(eq(tables.id, id), live(outletId)))
         .returning();
       return tableOutput(row!);
     } catch (error) {
@@ -94,14 +102,14 @@ export class TableService {
   }
 
   /** One transaction: a stale id anywhere in the batch rolls back every move. */
-  async updateLayout(items: LayoutItem[]): Promise<TableOutput[]> {
+  async updateLayout(outletId: string, items: LayoutItem[]): Promise<TableOutput[]> {
     return this.db.transaction(async (tx) => {
       const out: TableOutput[] = [];
       for (const { id, ...position } of items) {
         const [row] = await tx
           .update(tables)
           .set(clampToCanvas(position))
-          .where(and(eq(tables.id, id), live))
+          .where(and(eq(tables.id, id), live(outletId)))
           .returning();
         if (!row) throw notFound();
         out.push(tableOutput(row));
@@ -110,12 +118,12 @@ export class TableService {
     });
   }
 
-  async delete(id: string): Promise<{ success: boolean }> {
-    const table = await this.find(id);
+  async delete(outletId: string, id: string): Promise<{ success: boolean }> {
+    const table = await this.find(outletId, id);
     const all = await this.db
       .select({ id: tables.id, mergedIntoId: tables.mergedIntoId })
       .from(tables)
-      .where(live);
+      .where(live(outletId));
     const onTable = await this.db
       .select({ tableId: reservations.tableId, status: reservations.status })
       .from(reservations)
@@ -127,14 +135,19 @@ export class TableService {
     return { success: true };
   }
 
-  async merge(headId: string, memberIds: string[], approved: Approved | null = null): Promise<TableOutput[]> {
+  async merge(
+    outletId: string,
+    headId: string,
+    memberIds: string[],
+    approved: Approved | null = null,
+  ): Promise<TableOutput[]> {
     if (memberIds.includes(headId))
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'A table cannot merge into itself.' });
 
     return this.db.transaction(async (tx) => {
       // Lock the live rows so a concurrent merge can't read the same pre-merge snapshot and
       // pass rejectMerge too, which would build a two-level chain (B -> A -> C).
-      const all = await tx.select().from(tables).where(live).for('update');
+      const all = await tx.select().from(tables).where(live(outletId)).for('update');
       const byId = new Map(all.map((t) => [t.id, t]));
       const head = byId.get(headId);
       const members = memberIds.map((id) => byId.get(id));
@@ -145,32 +158,32 @@ export class TableService {
 
       await tx.update(tables).set({ mergedIntoId: headId }).where(inArray(tables.id, memberIds));
       if (approved) await auditApproval(tx, approved, 'table', headId);
-      const rows = await tx.select().from(tables).where(live).orderBy(tables.name);
+      const rows = await tx.select().from(tables).where(live(outletId)).orderBy(tables.name);
       return rows.map(tableOutput);
     });
   }
 
   /** On a head the whole group dissolves; on a member only that row leaves; standalone is a no-op. */
-  async unmerge(id: string, approved: Approved | null = null): Promise<TableOutput[]> {
+  async unmerge(outletId: string, id: string, approved: Approved | null = null): Promise<TableOutput[]> {
     return this.db.transaction(async (tx) => {
       const [table] = await tx
         .select()
         .from(tables)
-        .where(and(eq(tables.id, id), live));
+        .where(and(eq(tables.id, id), live(outletId)));
       if (!table) throw notFound();
       const target = table.mergedIntoId ? eq(tables.id, id) : eq(tables.mergedIntoId, id);
       await tx.update(tables).set({ mergedIntoId: null }).where(target);
       if (approved) await auditApproval(tx, approved, 'table', id);
-      const rows = await tx.select().from(tables).where(live).orderBy(tables.name);
+      const rows = await tx.select().from(tables).where(live(outletId)).orderBy(tables.name);
       return rows.map(tableOutput);
     });
   }
 
-  private async find(id: string): Promise<Table> {
+  private async find(outletId: string, id: string): Promise<Table> {
     const [row] = await this.db
       .select()
       .from(tables)
-      .where(and(eq(tables.id, id), live));
+      .where(and(eq(tables.id, id), live(outletId)));
     if (!row) throw notFound();
     return row;
   }

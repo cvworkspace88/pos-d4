@@ -98,3 +98,21 @@ test('pendingCount counts only unsynced events of the outlet', async () => {
   expect(await new SyncService(db).pendingCount(outletId)).toBe(1);
   expect(await new SyncService(db).pendingCount(other)).toBe(1);
 });
+
+test("an id already stored at another outlet is CONFLICT, never the other outlet's row", async () => {
+  const other = (await new OutletService(db).create({ name: 'Uptown', code: 'UP' }, actor)).id;
+  const id = randomUUID();
+  await create(id);
+
+  await expect(
+    db.transaction((tx) =>
+      createOnce(
+        tx,
+        actor,
+        categories,
+        { id, outletId: other, name: 'Kopi', sortOrder: 0 },
+        { outletId: other, type: 'category.created' },
+      ),
+    ),
+  ).rejects.toMatchObject({ code: 'CONFLICT' });
+});

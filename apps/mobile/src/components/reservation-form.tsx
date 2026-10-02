@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Button, Modal, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +9,7 @@ import { nextFullHourLocal } from '@repo/api-contract';
 import { z } from 'zod';
 import { ApprovalDialog } from '@/components/approval-dialog';
 import type { TableRow } from '@/components/floor-table';
+import { newId } from '@/lib/id';
 import { useTRPC } from '@/lib/trpc';
 
 // ponytail: date and time are text fields (YYYY-MM-DD, HH:mm). No native picker is installed;
@@ -55,6 +57,8 @@ export function ReservationForm({
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [date, time] = nextFullHourLocal().split('T') as [string, string];
+  // One id per create attempt: a retry (approval, flaky Wi-Fi) resends it and the server dedupes.
+  const [id, setId] = useState(newId);
 
   const { control, handleSubmit, formState } = useForm<FormInput, unknown, FormOutput>({
     resolver: zodResolver(schema),
@@ -64,6 +68,7 @@ export function ReservationForm({
   const create = useMutation(
     trpc.reservation.create.mutationOptions({
       onSuccess: () => {
+        setId(newId());
         void queryClient.invalidateQueries({ queryKey: trpc.reservation.list.queryKey() });
         onClose();
       },
@@ -75,6 +80,7 @@ export function ReservationForm({
   const submit = (values: FormOutput) =>
     approval.start(
       {
+        id,
         tableId: table.id,
         customerName: values.customerName,
         phone: values.phone || undefined,

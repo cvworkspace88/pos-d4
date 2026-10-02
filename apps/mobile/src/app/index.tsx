@@ -93,6 +93,8 @@ export default function HomeScreen() {
           <Button title="Floor" onPress={() => router.push('/floor')} />
         )}
         <View style={styles.spacer} />
+        <Button title="Ubah PIN" onPress={() => router.push('/set-pin?mode=change')} />
+        <Button title="Ubah password" onPress={() => router.push('/change-password')} />
         {/* Keeps the profile on this tablet; remove it from the picker instead. */}
         <Button title="Sign out" onPress={park} />
       </ScrollView>

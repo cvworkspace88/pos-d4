@@ -83,6 +83,20 @@ test('the wrong outlet, or none, gives a scoped user no role permissions', async
   expect(await rbac.permissionsOf(ann.id, null)).toEqual([]);
 });
 
+test('roleOf names the role at the active outlet, the global one first, and none at a closed outlet', async () => {
+  const owner = await addUser('owner', 'owner');
+  const ann = await addUser('ann');
+  const o1 = await addOutlet('O1');
+  await assign(ann.id, o1.id, 'manager');
+
+  expect(await rbac.roleOf(owner.id, null)).toBe('owner');
+  expect(await rbac.roleOf(ann.id, o1.id)).toBe('manager');
+  expect(await rbac.roleOf(ann.id, null)).toBeNull();
+
+  await db.update(outlets).set({ deletedAt: new Date() }).where(eq(outlets.id, o1.id));
+  expect(await rbac.roleOf(ann.id, o1.id)).toBeNull();
+});
+
 test('an override applies at its own outlet only, and never without an outlet', async () => {
   const ann = await addUser('ann');
   const o1 = await addOutlet('O1');

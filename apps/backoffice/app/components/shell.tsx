@@ -1,7 +1,10 @@
 import { LogOut } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { roleLabel } from '../roles';
 import { useAuthStore } from '../stores/auth';
-import { trpcClient } from '../trpc';
+import { trpcClient, useTRPC } from '../trpc';
+import { ChangePassword } from './change-password-dialog';
 import { OutletSwitcher } from './outlet-switcher';
 import { SidebarNav } from './sidebar-nav';
 
@@ -25,6 +28,9 @@ function signOut() {
  */
 export function Shell({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user);
+  // Shares the sidebar's cached `auth.me`; the role is per active outlet, so it is not in the session.
+  const trpc = useTRPC();
+  const role = useQuery(trpc.auth.me.queryOptions()).data?.role;
 
   return (
     <div className="flex h-screen bg-surface">
@@ -44,8 +50,12 @@ export function Shell({ children }: { children: ReactNode }) {
               <span className="block truncate text-sm font-semibold text-ink-primary">
                 {user?.name ?? '—'}
               </span>
-              <span className="block truncate text-xs text-ink-tertiary">{user?.username ?? '—'}</span>
+              <span className="block truncate text-xs text-ink-tertiary">
+                {user?.username ?? '—'}
+                {role && ` · ${roleLabel(role)}`}
+              </span>
             </div>
+            <ChangePassword />
             <button
               type="button"
               onClick={signOut}

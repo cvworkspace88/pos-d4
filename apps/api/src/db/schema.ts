@@ -179,6 +179,9 @@ export const tables = pgTable(
   'tables',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id),
     name: text('name').notNull(),
     seats: integer('seats').notNull().default(4),
     // Virtual floor canvas 1000×1000 units; clients scale uniformly to their viewport.
@@ -200,9 +203,9 @@ export const tables = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [
-    // A deleted "T3" can be recreated; only live names must be unique.
-    uniqueIndex('tables_name_active_idx')
-      .on(table.name)
+    // A deleted "T3" can be recreated; only live names must be unique, per outlet.
+    uniqueIndex('tables_outlet_name_active_idx')
+      .on(table.outletId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
     index('tables_merged_into_id_idx').on(table.mergedIntoId),
   ],
@@ -213,7 +216,13 @@ export type Table = typeof tables.$inferSelect;
 export const reservations = pgTable(
   'reservations',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    // Client-generated UUID v7 (US-012): a retried create finds the stored row instead of a second one.
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id),
     // Restrict on delete: tables are soft-deleted, so this FK is never hit.
     tableId: uuid('table_id')
       .notNull()
@@ -232,7 +241,10 @@ export const reservations = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (table) => [index('reservations_table_starts_idx').on(table.tableId, table.startsAt)],
+  (table) => [
+    index('reservations_table_starts_idx').on(table.tableId, table.startsAt),
+    index('reservations_outlet_starts_idx').on(table.outletId, table.startsAt),
+  ],
 );
 
 export type Reservation = typeof reservations.$inferSelect;

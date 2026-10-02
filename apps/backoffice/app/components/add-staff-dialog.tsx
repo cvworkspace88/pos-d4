@@ -34,14 +34,18 @@ interface AddStaffProps {
   /** The current roster: an existing account joins by `setStaff`, which takes the whole list. */
   roster: Member[];
   roleItems: SelectItem[];
+  /** `staff.manage`: a brand-new account. Without it only the existing-account tab is offered. */
+  canCreate: boolean;
   disabled?: boolean;
 }
 
 /** The `Tambah staf` button and its dialog: a brand-new account, or an existing one found by username. */
-export function AddStaff({ outletId, roster, roleItems, disabled }: AddStaffProps) {
+export function AddStaff({ outletId, roster, roleItems, canCreate, disabled }: AddStaffProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'new' | 'existing'>('new');
+  const [pickedTab, setTab] = useState<'new' | 'existing'>('new');
+  // Derived, not stored: `auth.me` may load after mount, and a stale 'new' must never show the form.
+  const tab = canCreate ? pickedTab : 'existing';
 
   const {
     register,
@@ -249,7 +253,7 @@ export function AddStaff({ outletId, roster, roleItems, disabled }: AddStaffProp
           value={tab}
           onValueChange={(next) => setTab(next as 'new' | 'existing')}
           items={[
-            { value: 'new', label: 'User baru', content: newForm, disabled: pending },
+            ...(canCreate ? [{ value: 'new', label: 'User baru', content: newForm, disabled: pending }] : []),
             { value: 'existing', label: 'Cari username', content: existingForm, disabled: pending },
           ]}
         />

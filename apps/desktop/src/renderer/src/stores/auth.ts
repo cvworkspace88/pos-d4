@@ -10,8 +10,11 @@ interface AuthState {
   refreshToken: string | null;
   outlet: Session['outlet'];
   outlets: Session['outlets'];
+  /** The lock screen is up (US-007). Persisted so a reload while locked stays locked. */
+  locked: boolean;
   setSession: (session: Session) => void;
   clear: () => void;
+  setLocked: (locked: boolean) => void;
 }
 
 const signedOut = {
@@ -20,6 +23,7 @@ const signedOut = {
   refreshToken: null,
   outlet: null,
   outlets: [],
+  locked: false,
 };
 
 export const useAuthStore = create<AuthState>()(
@@ -29,16 +33,18 @@ export const useAuthStore = create<AuthState>()(
       setSession: ({ user, accessToken, refreshToken, outlet, outlets }) =>
         set({ user, accessToken, refreshToken, outlet, outlets }),
       clear: () => set(signedOut),
+      setLocked: (locked) => set({ locked }),
     }),
     {
       name: 'pos-d4-auth',
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ user, accessToken, refreshToken, outlet, outlets }) => ({
+      partialize: ({ user, accessToken, refreshToken, outlet, outlets, locked }) => ({
         user,
         accessToken,
         refreshToken,
         outlet,
         outlets,
+        locked,
       }),
     },
   ),
