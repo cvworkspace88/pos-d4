@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { permissionMatrix } from './role-rules';
+import { overrideRows, permissionMatrix } from './role-rules';
 
 const p = (...names: string[]) => names.map((name) => ({ name, description: null }));
 
@@ -22,5 +22,22 @@ test('domains group in name order', () => {
   expect(groups.map((g) => [g.domain, g.rows.map((r) => r.key)])).toEqual([
     ['sales', ['sales.create', 'sales.view']],
     ['table', ['table.view']],
+  ]);
+});
+
+test('override rows show source and result for every permission', () => {
+  const rows = overrideRows(
+    ['table.view', 'menu.manage', 'order.void_sent'],
+    [
+      { name: 'table.view', source: 'role' },
+      { name: 'order.void_sent', source: 'role' },
+      { name: 'order.void_sent', source: 'revoke' },
+      { name: 'menu.manage', source: 'grant' },
+    ],
+  );
+  expect(rows).toEqual([
+    { permission: 'menu.manage', fromRole: false, override: 'grant', effective: true },
+    { permission: 'order.void_sent', fromRole: true, override: 'revoke', effective: false },
+    { permission: 'table.view', fromRole: true, override: null, effective: true },
   ]);
 });

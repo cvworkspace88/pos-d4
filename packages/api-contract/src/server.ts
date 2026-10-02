@@ -96,7 +96,7 @@ const appRouter = t.router({
       outletId: z.uuid(),
       fromDate: z.iso.date(),
       toDate: z.iso.date(),
-      module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon']).optional(),
+      module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role']).optional(),
       userId: z.uuid().optional(),
       cursor: z.object({ createdAt: z.string().max(40), id: z.uuid() }).optional(),
     }))
@@ -104,7 +104,7 @@ const appRouter = t.router({
       rows: z.array(z.object({
   id: z.string(),
   createdAt: z.string(),
-  module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon']),
+  module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role']),
   action: z.string(),
   entityType: z.string(),
   entityId: z.string().nullable(),
@@ -962,6 +962,8 @@ const appRouter = t.router({
           id: z.string(),
           name: z.string(),
           description: z.string().nullable(),
+          isGlobal: z.boolean(),
+          editable: z.boolean(),
           permissionCount: z.number(),
         }),
       ),
@@ -978,7 +980,48 @@ const appRouter = t.router({
         }),
       ),
     }))
-      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    create: publicProcedure
+      .input(z.object({
+      name: z.string().trim().min(1).max(40),
+      description: z.string().trim().max(200).nullable(),
+      permissions: z.array(z.string().max(60)).max(200),
+    }))
+      .output(z.object({ id: z.string() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    update: publicProcedure
+      .input(z.object({
+      id: z.uuid(),
+      name: z.string().trim().min(1).max(40),
+      description: z.string().trim().max(200).nullable(),
+      permissions: z.array(z.string().max(60)).max(200),
+    }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    delete: publicProcedure
+      .input(z.object({ id: z.uuid() }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    userPermissions: publicProcedure
+      .input(z.object({ userId: z.uuid(), outletId: z.uuid() }))
+      .output(z.array(
+      z.object({
+        permission: z.string(),
+        fromRole: z.boolean(),
+        override: z.enum(['grant', 'revoke']).nullable(),
+        effective: z.boolean(),
+      }),
+    ))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    setOverride: publicProcedure
+      .input(z.object({
+      userId: z.uuid(),
+      outletIds: z.array(z.uuid()).min(1).max(50),
+      permission: z.string().max(60),
+      effect: z.enum(['grant', 'revoke']).nullable(),
+    }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   settings: t.router({
     get: publicProcedure

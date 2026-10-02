@@ -26,10 +26,11 @@ const DOMAIN_LABEL: Record<string, string> = {
 const SWATCH: Record<string, string> = {
   owner: 'bg-pink-light',
   manager: 'bg-lavender-light',
+  supervisor: 'bg-primary-lighter',
   cashier: 'bg-success-light',
   waiter: 'bg-warning-lighter',
-  inventory_staff: 'bg-teal-lighter',
-  auditor: 'bg-teal-light',
+  kitchen: 'bg-danger-light',
+  accountant: 'bg-teal-light',
 };
 
 function Cell({ granted }: { granted: boolean }) {

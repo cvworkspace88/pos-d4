@@ -459,7 +459,7 @@ test('a non-owner cannot remove, demote or appoint a manager', async () => {
   const ann = await addUser('ann');
   const bob = await addUser('bob');
   await service.setStaff(outlet.id, [as(ann.id, 'manager'), as(bob.id)], OWNER);
-  const refused = { code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur manajer.' };
+  const refused = { code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur peran ini.' };
 
   await expect(service.setStaff(outlet.id, [as(bob.id)], STAFF)).rejects.toMatchObject(refused);
   await expect(service.setStaff(outlet.id, [as(ann.id), as(bob.id)], STAFF)).rejects.toMatchObject(refused);
@@ -569,4 +569,18 @@ test('setBusinessDay saves HH:mm, and an omitted auto close clears it', async ()
   expect(await service.setBusinessDay(outlet.id, { businessDayCutoff: '05:30' }, OWNER)).toMatchObject({
     businessDayAutoClose: null,
   });
+});
+
+test('a custom role is the owner to hand out, and missing from a manager list', async () => {
+  const outlet = await anOutlet();
+  const ann = await addUser('ann');
+  const [custom] = await db.insert(roles).values({ name: 'Area Manager' }).returning();
+
+  await expect(
+    service.setStaff(outlet.id, [{ userId: ann.id, roleId: custom!.id }], STAFF),
+  ).rejects.toMatchObject({ code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur peran ini.' });
+  expect((await service.assignableRoles(STAFF)).map((r) => r.name)).not.toContain('Area Manager');
+
+  await service.setStaff(outlet.id, [{ userId: ann.id, roleId: custom!.id }], OWNER);
+  expect((await service.assignableRoles(OWNER)).map((r) => r.name)).toContain('Area Manager');
 });

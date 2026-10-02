@@ -1,78 +1,155 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { PERMISSIONS, holdersOf } from './seed-rbac.ts';
+import { PERMISSIONS, ROLES, holdersOf } from './seed-rbac.ts';
 
-test('an approve gate belongs to owner and manager', () => {
-  assert.deepEqual(holdersOf('sales.void_approve'), ['owner', 'manager']);
-});
+/** Every permission a role holds, sorted. Mirrors PRD Appendix B one role at a time. */
+const grantsOf = (role: string) =>
+  Object.keys(PERMISSIONS)
+    .filter((p) => holdersOf(p).includes(role))
+    .sort();
 
-test('listed roles come after owner and manager', () => {
-  assert.deepEqual(holdersOf('sales.create'), ['owner', 'manager', 'cashier']);
-});
+const CASHIER = [
+  'customer.manage',
+  'customer.view',
+  'drawer.pay_in_out',
+  'menu.sold_out',
+  'menu.view',
+  'order.create',
+  'order.discount_bill',
+  'order.discount_line',
+  'order.merge',
+  'order.send',
+  'order.split',
+  'order.transfer',
+  'payment.reprint',
+  'payment.take',
+  'report.view_shift',
+  'reservation.create',
+  'reservation.update',
+  'reservation.view',
+  'shift.close',
+  'shift.open',
+  'table.merge',
+  'table.use',
+  'table.view',
+];
 
-test('settings.manage is owner only — manager does not hold everything after all', () => {
-  assert.deepEqual(holdersOf('settings.manage'), ['owner']);
-});
-
-test('manager is granted, never assumed: an empty list is the owner alone', () => {
+test('the base roles are the PRD seven', () => {
   assert.deepEqual(
-    Object.keys(PERMISSIONS)
-      .filter((p) => PERMISSIONS[p]!.roles.length === 0)
-      .sort(),
-    ['outlet.create', 'outlet.delete', 'outlet.view_all', 'role.view', 'settings.manage'],
+    ROLES.map(([name]) => name),
+    ['owner', 'manager', 'supervisor', 'cashier', 'waiter', 'kitchen', 'accountant'],
   );
-  // Owner is the only implicit holder, and an unlisted permission grants nobody else.
-  for (const permission of Object.keys(PERMISSIONS))
-    assert.ok(holdersOf(permission).includes('owner'), permission);
+});
+
+test('the catalogue has 66 permissions and no request/approve pairs', () => {
+  assert.equal(Object.keys(PERMISSIONS).length, 66);
+  for (const name of Object.keys(PERMISSIONS)) assert.doesNotMatch(name, /_(request|approve)$/, name);
+});
+
+test('owner is the only implicit holder, of everything', () => {
+  assert.deepEqual(grantsOf('owner'), Object.keys(PERMISSIONS).sort());
   assert.deepEqual(holdersOf('nothing.declared'), ['owner']);
 });
 
-test('table.merge is a direct floor action held by waiter and cashier', () => {
-  assert.deepEqual(holdersOf('table.merge'), ['owner', 'manager', 'waiter', 'cashier']);
+test('manager holds everything but roles, overrides, app settings and the set of outlets', () => {
+  const ownerOnly = [
+    'outlet.create',
+    'outlet.delete',
+    'outlet.view_all',
+    'permission.override',
+    'role.manage',
+    'role.view',
+    'settings.manage',
+  ];
+  assert.deepEqual(
+    grantsOf('manager'),
+    Object.keys(PERMISSIONS)
+      .filter((p) => !ownerOnly.includes(p))
+      .sort(),
+  );
 });
 
-test('the request/approve merge pair is gone', () => {
-  assert.equal('table.merge_request' in PERMISSIONS, false);
-  assert.equal('table.merge_approve' in PERMISSIONS, false);
+test('cashier', () => {
+  assert.deepEqual(grantsOf('cashier'), CASHIER);
 });
 
-test('table lifecycle and layout are manager and owner only', () => {
-  for (const permission of ['table.create', 'table.delete', 'table.layout_manage'])
-    assert.deepEqual(holdersOf(permission), ['owner', 'manager'], permission);
+test('supervisor is cashier plus the floor approvals', () => {
+  assert.deepEqual(
+    grantsOf('supervisor'),
+    [
+      ...CASHIER,
+      'approval.grant',
+      'drawer.no_sale',
+      'kitchen.view',
+      'order.cancel',
+      'order.comp',
+      'order.edit_others',
+      'order.void_sent',
+      'payment.void',
+      'report.view_sales',
+      'shift.approve_variance',
+      'shift.view_expected',
+    ].sort(),
+  );
 });
 
-test('reservations are floor-staff work', () => {
-  for (const permission of ['reservation.view', 'reservation.create', 'reservation.update'])
-    assert.deepEqual(holdersOf(permission), ['owner', 'manager', 'waiter', 'cashier'], permission);
+test('waiter', () => {
+  assert.deepEqual(grantsOf('waiter'), [
+    'customer.view',
+    'menu.sold_out',
+    'menu.view',
+    'order.create',
+    'order.merge',
+    'order.send',
+    'order.split',
+    'order.transfer',
+    'reservation.create',
+    'reservation.update',
+    'reservation.view',
+    'table.merge',
+    'table.use',
+    'table.view',
+  ]);
 });
 
-test('the set of outlets is the owner alone: who exists, and who may see them all', () => {
-  for (const permission of ['outlet.create', 'outlet.delete', 'outlet.view_all'])
-    assert.deepEqual(holdersOf(permission), ['owner'], permission);
+test('kitchen', () => {
+  assert.deepEqual(grantsOf('kitchen'), ['kitchen.bump', 'kitchen.view', 'menu.sold_out', 'menu.view']);
 });
 
-test('one outlet is the manager job — its settings and its roster', () => {
-  assert.deepEqual(holdersOf('outlet.manage'), ['owner', 'manager']);
-  assert.deepEqual(holdersOf('outlet.staff_assign'), ['owner', 'manager']);
+test('accountant is read-only', () => {
+  assert.deepEqual(grantsOf('accountant'), [
+    'customer.view',
+    'inventory.view',
+    'menu.view',
+    'report.export',
+    'report.view_audit',
+    'report.view_sales',
+    'report.view_shift',
+  ]);
 });
 
-// Floor roles hold nothing here: the outlets they may work at already arrive with every login
-// and refresh, and reading their own outlet needs no permission either.
-test('no floor role holds an outlet permission', () => {
-  for (const permission of Object.keys(PERMISSIONS).filter((p) => p.startsWith('outlet.')))
-    assert.deepEqual(
-      PERMISSIONS[permission]!.roles,
-      holdersOf(permission).includes('manager') ? ['manager'] : [],
-      permission,
-    );
-});
-
-test('menu categories are the manager job, per outlet', () => {
-  assert.deepEqual(holdersOf('category.view'), ['owner', 'manager']);
-  assert.deepEqual(holdersOf('category.edit'), ['owner', 'manager']);
-});
-
-test('the floor and counter read the menu; only a manager changes it', () => {
-  assert.deepEqual(holdersOf('menu.view'), ['owner', 'manager', 'cashier', 'waiter']);
-  assert.deepEqual(holdersOf('menu.manage'), ['owner', 'manager']);
+test('a permission the code already checks keeps its name', () => {
+  for (const name of [
+    'category.edit',
+    'category.view',
+    'menu.manage',
+    'menu.view',
+    'outlet.create',
+    'outlet.delete',
+    'outlet.manage',
+    'outlet.staff_assign',
+    'outlet.view_all',
+    'report.view_audit',
+    'reservation.create',
+    'reservation.update',
+    'reservation.view',
+    'role.view',
+    'settings.manage',
+    'table.create',
+    'table.delete',
+    'table.layout_manage',
+    'table.merge',
+    'table.view',
+  ])
+    assert.ok(name in PERMISSIONS, name);
 });

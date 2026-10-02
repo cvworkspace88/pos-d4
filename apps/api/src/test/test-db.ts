@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
@@ -74,6 +74,8 @@ export const truncateAll = async (db: TestDatabase): Promise<void> => {
   await db.execute(
     sql`truncate table sync_events, audit_log, menu_item_addon_groups, addon_options, addon_groups, menu_variants, menu_items, categories, kitchen_stations, refresh_tokens, user_permissions, outlet_staff, outlets, users restart identity cascade`,
   );
+  // Custom roles are test data; the seeded base roles (editable = false) stay.
+  await db.delete(schema.roles).where(eq(schema.roles.editable, true));
 };
 
 /**

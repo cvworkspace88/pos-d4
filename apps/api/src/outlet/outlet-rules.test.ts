@@ -52,9 +52,13 @@ test('someone else constraint is not ours to explain', () => {
   assert.equal(conflictField(''), null);
 });
 
-test('owner manages every role; everyone else stops below manager', () => {
-  assert.equal(canManageRole(true, 'manager'), true);
-  assert.equal(canManageRole(false, 'manager'), false);
-  assert.equal(canManageRole(false, 'owner'), false);
-  assert.equal(canManageRole(false, 'cashier'), true);
+test('owner manages every role; everyone else stops below manager and at custom roles', () => {
+  const base = (name: string) => ({ name, editable: false });
+  const custom = { name: 'Area Manager', editable: true };
+  assert.equal(canManageRole(true, base('manager')), true);
+  assert.equal(canManageRole(true, custom), true);
+  assert.equal(canManageRole(false, base('manager')), false);
+  assert.equal(canManageRole(false, base('owner')), false);
+  assert.equal(canManageRole(false, base('cashier')), true);
+  assert.equal(canManageRole(false, custom), false);
 });

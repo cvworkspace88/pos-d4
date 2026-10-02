@@ -182,16 +182,18 @@ Audit rows on settings writes come with US-011.
 - [ ] Typecheck/lint passes
 
 ### US-009: Roles, permissions catalogue and per-user overrides
-**Description:** As an owner, I want base roles I can adjust and the ability to grant or revoke single permissions for one person.
+**Description:** As an owner, I want fixed base roles, my own custom roles, and the ability to grant or revoke single permissions for one person at one outlet.
 
 **Acceptance Criteria:**
-- [ ] Tables `roles(id, name, is_global, editable)`, `permissions(name, description, group)`, `role_permissions`, `user_permission_overrides(user_id, outlet_id nullable, permission, effect grant|revoke)`
-- [ ] Seed the permission catalogue from Appendix B and base roles Owner, Manager, Supervisor, Cashier, Waiter, Kitchen, Accountant with the grants in Appendix B
+- [x] Tables `roles(id, name, description, is_global, editable)`, `permissions(name, description)`, `role_permissions`, `user_permissions(user_id, outlet_id, permission, effect grant|revoke)` with `outlet_id` required — an override always belongs to one outlet; there are no global overrides
+- [x] Seed the permission catalogue and base roles Owner, Manager, Supervisor, Cashier, Waiter, Kitchen, Accountant with the grants in Appendix B; one permission per action, no request/approve pairs (approval is US-010)
 - [x] Rules function `effectivePermissions(roleGrants, overrides)` = role grants + grants − revokes; revoke wins over grant; tests
-- [ ] `rbac.require(ctx, 'domain.action')` reads the role for `ctx.outletId`, applies overrides (outlet-specific first, then global); refusal is `FORBIDDEN` "Anda tidak memiliki akses." never `UNAUTHORIZED`
-- [ ] Owner role cannot be edited or deleted; Owner cannot be assigned per outlet (`BAD_REQUEST` "Owner is global.")
-- [ ] Role edits and overrides write audit rows
-- [ ] Typecheck/lint passes
+- [x] `rbac.require(ctx, 'domain.action')` reads the role for `ctx.outletId` and applies the overrides for that outlet only; refusal is `FORBIDDEN` "Anda tidak memiliki akses." never `UNAUTHORIZED`
+- [x] Base roles are locked (`editable = false`, owned by the seed); custom roles are created (typically by duplicating a base role), edited and deleted through `role.create/update/delete` behind `role.manage`; a role still assigned cannot be deleted
+- [x] Overrides are set per user and outlet (several outlets in one call) through `role.setOverride` behind `permission.override`; `role.userPermissions` shows each permission's source (role / grant / revoke)
+- [x] Owner is the only global role: cannot be edited or deleted, cannot be assigned per outlet (`BAD_REQUEST` "Owner is global."), takes no overrides
+- [x] Role edits and overrides write audit rows (module `role`)
+- [x] Typecheck/lint passes
 
 ### US-010: Manager PIN override at the point of refusal
 **Description:** As a cashier lacking a permission, I want a manager to approve a single action by entering their PIN on my screen so that the manager's session is never exposed.
@@ -318,7 +320,7 @@ Audit rows on settings writes come with US-011.
 **Acceptance Criteria:**
 - [ ] Desktop editor: add/rename/resize/rotate/move tables on a grid, choose shape, set capacity, per floor; save writes positions in one mutation
 - [ ] Geometry rules (overlap check, bounds) in a rules function with tests
-- [ ] Permission `table.manage`
+- [ ] Permissions `table.create`, `table.delete`, `table.layout_manage`
 - [ ] Verify in browser using dev-browser skill
 - [ ] Typecheck/lint passes
 
@@ -755,8 +757,8 @@ Audit rows on settings writes come with US-011.
 
 **Acceptance Criteria:**
 - [ ] Users list with search; create user (username unique (global), name, phone, initial password), deactivate; per-outlet membership and role
-- [ ] Role editor: duplicate a base role, tick permissions by group, rename; Owner locked
-- [ ] Per-user override editor showing effective permissions with the source (role / grant / revoke) of each
+- [ ] Role editor: duplicate a base role into a custom role, tick permissions by group, rename, delete; base roles are read-only
+- [ ] Per-user override editor, per outlet (tick several outlets to apply one change to all), showing effective permissions with the source (role / grant / revoke) of each
 - [ ] Reset password and clear PIN (user sets a new PIN on next mobile login)
 - [ ] Verify in browser using dev-browser skill
 - [ ] Typecheck/lint passes
@@ -836,7 +838,7 @@ Audit rows on settings writes come with US-011.
 - [ ] "Seat" opens (or creates) the dine-in order on the reserved tables with pax and customer name, sets `seated`
 - [ ] No-show and cancel require a reason; a `closed` status is set when the seated order is paid
 - [ ] Seating a table that has an open order asks to merge into it or pick another table
-- [ ] Permission `reservation.manage`
+- [ ] Permissions `reservation.create`, `reservation.update`
 - [ ] Typecheck/lint passes
 
 ### US-065: Reservation screens
@@ -863,7 +865,7 @@ Audit rows on settings writes come with US-011.
 **Acceptance Criteria:**
 - [ ] A deposit is a payment row (client id, any tender, `required_fields` apply) with `reservation_id` and no order yet, taken in an open shift and counted in that shift's expected cash when cash
 - [ ] Seating the reservation (US-064) attaches its deposits to the order; they reduce the remaining due and print as "Uang muka" on the bill and receipt
-- [ ] No-show or cancel: the deposit is either forfeited (reason, permission `reservation.manage`, reported as other income) or refunded through a refund row (US-043); never deleted
+- [ ] No-show or cancel: the deposit is either forfeited (reason, permission `reservation.update`, reported as other income) or refunded through a refund row (US-043); never deleted
 - [ ] Deposit shown on the reservation card and in the payments report
 - [ ] Verify in browser using dev-browser skill (Expo web) or simulator
 - [ ] Typecheck/lint passes
@@ -1068,9 +1070,9 @@ Auth and access
 - FR-8: Password login issues a 15-minute JWT and a rotating refresh token; the refresh token is stored hashed.
 - FR-9: Mobile profiles are created only after a password login; later switches use a 6-digit PIN; parked profiles cannot refresh without the PIN.
 - FR-10: `UNAUTHORIZED` ends the client session; `FORBIDDEN` never does; a wrong PIN is `UNAUTHORIZED` with `reason: 'INVALID_PIN'` and is the one 401 clients ignore.
-- FR-11: Permissions are checked by name; effective permissions = role grants + user grants − user revokes; overrides can be global or per outlet.
+- FR-11: Permissions are checked by name; effective permissions = role grants + user grants − user revokes; an override belongs to one outlet and applies only there.
 - FR-12: Any refused overridable action can be completed by an approver's PIN entered on the same screen; actor and approver are both recorded.
-- FR-13: The Owner role is global, uneditable and not assignable per outlet.
+- FR-13: The Owner role is global, uneditable and not assignable per outlet. Base roles are locked; the owner adjusts access with custom roles and per-outlet overrides.
 
 Menu
 - FR-14: Items have a tax type (`pbjt`, `ppn`, `none`); service charge is per bill, not per item; variants, modifier groups with min/max/required, and combos are supported.
@@ -1207,11 +1209,12 @@ Settled by the owner when the earlier spec was merged into this PRD. Do not reop
 - **Reservations:** written on the desktop and mobile only, last-write-wins; backoffice read-only.
 - **Pricing defaults:** exclusive prices; cash rounding nearest Rp 100 (modes nearest, always down, always up), every rounding stored as proof in `cash_roundings`.
 - **Roles:** base roles include Supervisor and Accountant.
+- **Roles and permissions (2026-10-01):** a user has one role per outlet (`outlet_staff.role_id`); Owner is the only global role. Base roles are locked and owned by the seed; the owner adds custom roles (usually a copy of a base role) for a group, and per-outlet overrides for one person. Overrides always name an outlet — no global overrides. One permission per action: the old `*_request`/`*_approve` pairs are gone, and a refused action is approved through the manager PIN override (US-010, `approval.grant`). Permission names the code already checks keep their finer names (Appendix B).
 - **Desktop login:** username and password only, never a PIN.
 - **Stock:** deducted at send only.
 - **In scope:** reservation deposits, customer display, second desktop as a hub client, order search, park/recall takeaway, card fields on tenders, variance approval, X report, backoffice sync monitor, report freshness stamp, customer data export and phone masking, LAN/USB/Bluetooth/serial printers.
 - **Out of scope:** tips, self-pickup as its own type (takeaway covers it), hotel-restaurant rules, macOS.
-- **Kept from this PRD as written:** LAN plain HTTP for v1, QR/mDNS pairing, cloud snapshot restore, outlet-only settings without effective dates, `tax_type` model, permission names, phase order, default timers and retention.
+- **Kept from this PRD as written:** LAN plain HTTP for v1, QR/mDNS pairing, cloud snapshot restore, outlet-only settings without effective dates, `tax_type` model, phase order, default timers and retention.
 
 ## Appendix A — Outlet settings catalogue (all runtime-editable)
 
@@ -1275,25 +1278,28 @@ Address, phone, NPWP and timezone are outlet profile fields (US-008), not settin
 
 ## Appendix B — Permission catalogue and base roles
 
+One permission per action. A user without it is refused (`FORBIDDEN`); the manager PIN override (US-010) lets an approver holding the permission plus `approval.grant` complete it.
+
 Groups and names:
 - order: `order.create`, `order.edit_others`, `order.send`, `order.void_sent`, `order.comp`, `order.discount_line`, `order.discount_bill`, `order.price_override`, `order.transfer`, `order.merge`, `order.split`, `order.reopen`, `order.cancel`
 - payment: `payment.take`, `payment.void`, `payment.refund`, `payment.reprint`
 - shift/drawer: `shift.open`, `shift.close`, `shift.close_blind`, `shift.view_expected`, `shift.approve_variance`, `drawer.pay_in_out`, `drawer.no_sale`, `day.close`
-- menu: `menu.view`, `menu.manage`, `menu.sold_out`, `menu.price`
-- table: `table.use`, `table.manage`
+- menu: `menu.view`, `menu.manage`, `menu.sold_out`, `menu.price`, `category.view`, `category.edit`
+- table: `table.view`, `table.use` (seat, close), `table.merge`, `table.create`, `table.delete`, `table.layout_manage`
 - kitchen: `kitchen.view`, `kitchen.bump`
-- reservation: `reservation.view`, `reservation.manage`
+- reservation: `reservation.view`, `reservation.create`, `reservation.update`
 - inventory: `inventory.view`, `inventory.adjust`, `inventory.count`, `inventory.receive`, `inventory.transfer`
 - customer: `customer.view`, `customer.manage`
 - report: `report.view_sales`, `report.view_shift`, `report.view_audit`, `report.export`
-- admin: `staff.manage`, `role.manage`, `permission.override`, `settings.manage`, `outlet.manage`, `device.manage`, `sync.manage`, `approval.grant`
+- admin: `staff.manage`, `role.view`, `role.manage`, `permission.override`, `settings.manage` (deployment-wide settings), `device.manage`, `sync.manage`, `approval.grant`
+- outlet: `outlet.manage` (one outlet's profile and charges), `outlet.staff_assign` (one outlet's roster), `outlet.view_all`, `outlet.create`, `outlet.delete` (the set of outlets)
 
-Base roles (editable except Owner):
+Base roles (locked; the seed owns their grants — adjust access with custom roles and per-outlet overrides):
 - **Owner** (global): everything.
-- **Manager**: everything except `role.manage`, `permission.override`, `outlet.manage`.
-- **Supervisor**: everything Cashier has, plus `order.void_sent`, `order.comp`, `order.cancel`, `order.edit_others`, `order.transfer`, `order.merge`, `order.split`, `payment.void`, `shift.view_expected`, `shift.approve_variance`, `drawer.no_sale`, `kitchen.view`, `report.view_sales`, `approval.grant`.
-- **Cashier**: `order.*` except `void_sent`, `comp`, `price_override`, `reopen`, `cancel`, `edit_others`; `order.discount_line`, `order.discount_bill` within cap; `payment.take`, `payment.reprint`; `shift.open`, `shift.close`, `drawer.pay_in_out`; `menu.view`, `menu.sold_out`; `table.use`; `reservation.view`, `reservation.manage`; `customer.view`, `customer.manage`; `report.view_shift`.
-- **Waiter**: `order.create`, `order.send`, `order.transfer`, `order.split`, `order.merge`; `menu.view`, `menu.sold_out`; `table.use`; `reservation.view`, `reservation.manage`; `customer.view`.
+- **Manager**: everything except `role.view`, `role.manage`, `permission.override`, `settings.manage`, `outlet.view_all`, `outlet.create`, `outlet.delete`.
+- **Supervisor**: everything Cashier has, plus `order.void_sent`, `order.comp`, `order.cancel`, `order.edit_others`, `payment.void`, `shift.view_expected`, `shift.approve_variance`, `drawer.no_sale`, `kitchen.view`, `report.view_sales`, `approval.grant`.
+- **Cashier**: `order.create`, `order.send`, `order.discount_line`, `order.discount_bill` (within cap), `order.transfer`, `order.merge`, `order.split`; `payment.take`, `payment.reprint`; `shift.open`, `shift.close`, `drawer.pay_in_out`; `menu.view`, `menu.sold_out`; `table.view`, `table.use`, `table.merge`; `reservation.view`, `reservation.create`, `reservation.update`; `customer.view`, `customer.manage`; `report.view_shift`.
+- **Waiter**: `order.create`, `order.send`, `order.transfer`, `order.split`, `order.merge`; `menu.view`, `menu.sold_out`; `table.view`, `table.use`, `table.merge`; `reservation.view`, `reservation.create`, `reservation.update`; `customer.view`.
 - **Kitchen**: `kitchen.view`, `kitchen.bump`, `menu.view`, `menu.sold_out`.
 - **Accountant** (read-only): `menu.view`, `inventory.view`, `customer.view`, `report.view_sales`, `report.view_shift`, `report.view_audit`, `report.export`.
 

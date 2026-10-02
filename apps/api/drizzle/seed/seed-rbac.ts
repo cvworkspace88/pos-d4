@@ -4,117 +4,137 @@ import * as schema from '../../src/db/schema.ts';
 
 const { roles, permissions, rolePermissions } = schema;
 
+/** The base roles (PRD Appendix B). Locked: the seed owns their grants; the owner adds custom roles instead. */
 export const ROLES = [
   ['owner', 'Full access. Owns the business.'],
-  ['manager', 'Full access. Approves what staff request.'],
-  ['cashier', 'Rings up sales and takes payment.'],
+  ['manager', 'Runs an outlet: everything but roles, overrides, app settings and the set of outlets.'],
+  [
+    'supervisor',
+    'Runs the shift: everything a cashier does, plus voids, comps, cancellations and approvals.',
+  ],
+  ['cashier', 'Takes orders and payment, opens and closes the shift.'],
   ['waiter', 'Takes orders and works the floor.'],
-  ['inventory_staff', 'Receives, adjusts and transfers stock.'],
-  ['auditor', 'Read-only across sales, products and inventory.'],
+  ['kitchen', 'Sees and bumps kitchen tickets, marks items sold out.'],
+  ['accountant', 'Read-only: menu, stock, customers and reports.'],
 ] as const;
 
 export type RoleName = (typeof ROLES)[number][0];
 
+// One permission per action (PRD Appendix B). Someone without it is refused, and the manager PIN
+// override (US-010) lets an approver holding it plus `approval.grant` complete the action.
 export const PERMISSIONS: Record<string, { label: string; roles: RoleName[] }> = {
-  'sales.view': { label: 'Lihat penjualan', roles: ['manager', 'cashier', 'auditor'] },
-  'sales.create': { label: 'Buat penjualan', roles: ['manager', 'cashier'] },
-  'sales.void_request': { label: 'Ajukan void penjualan', roles: ['manager', 'cashier'] },
-  'sales.void_approve': { label: 'Setujui void penjualan', roles: ['manager'] },
-  'sales.discount_request': { label: 'Ajukan diskon', roles: ['manager', 'cashier'] },
-  'sales.discount_approve': { label: 'Setujui diskon', roles: ['manager'] },
-  'sales.price_override_request': { label: 'Ajukan ubah harga', roles: ['manager'] },
-  'sales.price_override_approve': { label: 'Setujui ubah harga', roles: ['manager'] },
+  'order.create': { label: 'Buat pesanan', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  'order.edit_others': { label: 'Ubah pesanan orang lain', roles: ['manager', 'supervisor'] },
+  'order.send': { label: 'Kirim pesanan ke dapur', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  'order.void_sent': { label: 'Void item yang sudah dikirim', roles: ['manager', 'supervisor'] },
+  'order.comp': { label: 'Gratiskan item', roles: ['manager', 'supervisor'] },
+  'order.discount_line': { label: 'Diskon per item', roles: ['manager', 'supervisor', 'cashier'] },
+  'order.discount_bill': { label: 'Diskon per tagihan', roles: ['manager', 'supervisor', 'cashier'] },
+  'order.price_override': { label: 'Ubah harga di pesanan', roles: ['manager'] },
+  'order.transfer': { label: 'Pindah pesanan', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  'order.merge': { label: 'Gabung tagihan', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  'order.split': { label: 'Pisah tagihan', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  'order.reopen': { label: 'Buka kembali tagihan', roles: ['manager'] },
+  'order.cancel': { label: 'Batalkan pesanan', roles: ['manager', 'supervisor'] },
 
-  'payments.accept': { label: 'Terima pembayaran', roles: ['manager', 'cashier'] },
-  'payments.refund_request': { label: 'Ajukan refund', roles: ['manager'] },
-  'payments.refund_approve': { label: 'Setujui refund', roles: ['manager'] },
+  'payment.take': { label: 'Terima pembayaran', roles: ['manager', 'supervisor', 'cashier'] },
+  'payment.void': { label: 'Void pembayaran', roles: ['manager', 'supervisor'] },
+  'payment.refund': { label: 'Refund', roles: ['manager'] },
+  'payment.reprint': { label: 'Cetak ulang struk', roles: ['manager', 'supervisor', 'cashier'] },
 
-  'product.view': { label: 'Lihat produk', roles: ['manager', 'cashier', 'inventory_staff', 'auditor'] },
-  'product.create': { label: 'Tambah produk', roles: ['manager', 'inventory_staff'] },
-  'product.edit': { label: 'Ubah produk', roles: ['manager', 'inventory_staff'] },
-  'product.price_edit': { label: 'Ubah harga produk', roles: ['manager'] },
-  'product.delete': { label: 'Hapus produk', roles: ['manager'] },
+  'shift.open': { label: 'Buka shift', roles: ['manager', 'supervisor', 'cashier'] },
+  'shift.close': { label: 'Tutup shift', roles: ['manager', 'supervisor', 'cashier'] },
+  'shift.close_blind': { label: 'Tutup shift hitung buta', roles: ['manager'] },
+  'shift.view_expected': { label: 'Lihat saldo kas seharusnya', roles: ['manager', 'supervisor'] },
+  'shift.approve_variance': { label: 'Setujui selisih kas', roles: ['manager', 'supervisor'] },
+  'drawer.pay_in_out': { label: 'Kas masuk / keluar', roles: ['manager', 'supervisor', 'cashier'] },
+  'drawer.no_sale': { label: 'Buka laci tanpa transaksi', roles: ['manager', 'supervisor'] },
+  'day.close': { label: 'Tutup hari', roles: ['manager'] },
 
-  'inventory.view': { label: 'Lihat stok', roles: ['manager', 'inventory_staff', 'auditor'] },
-  'inventory.stock_adjust_request': {
-    label: 'Ajukan penyesuaian stok',
-    roles: ['manager', 'inventory_staff'],
+  // The active outlet's menu. The floor and counter read it to take orders; managing it is the manager's.
+  'menu.view': {
+    label: 'Lihat menu',
+    roles: ['manager', 'supervisor', 'cashier', 'waiter', 'kitchen', 'accountant'],
   },
-  'inventory.stock_adjust_approve': { label: 'Setujui penyesuaian stok', roles: ['manager'] },
-  'inventory.receive_stock': { label: 'Terima barang masuk', roles: ['manager', 'inventory_staff'] },
-  'inventory.transfer_request': { label: 'Ajukan transfer stok', roles: ['manager', 'inventory_staff'] },
-  'inventory.transfer_approve': { label: 'Setujui transfer stok', roles: ['manager'] },
-  'inventory.purchase_order_create': { label: 'Buat purchase order', roles: ['manager', 'inventory_staff'] },
-  'inventory.purchase_order_approve': { label: 'Setujui purchase order', roles: ['manager'] },
-  'inventory.supplier_manage': { label: 'Kelola supplier', roles: ['manager'] },
-
-  'table.view': { label: 'Lihat meja', roles: ['manager', 'waiter', 'cashier'] },
-  'table.create': { label: 'Tambah meja', roles: ['manager'] },
-  'table.delete': { label: 'Hapus meja', roles: ['manager'] },
-  // Move, resize, rename, seats.
-  'table.layout_manage': { label: 'Atur denah meja', roles: ['manager'] },
-  'table.assign': { label: 'Tempatkan tamu di meja', roles: ['manager', 'waiter', 'cashier'] },
-  'table.transfer_request': { label: 'Ajukan pindah meja', roles: ['manager', 'waiter', 'cashier'] },
-  'table.transfer_approve': { label: 'Setujui pindah meja', roles: ['manager'] },
-  // Direct: join tables into a group for a big party and split them again. No approval step.
-  'table.merge': { label: 'Gabung & pisah meja', roles: ['manager', 'waiter', 'cashier'] },
-  'table.close': { label: 'Tutup meja', roles: ['manager', 'waiter', 'cashier'] },
-  'table.force_close_request': { label: 'Ajukan tutup paksa meja', roles: ['manager', 'waiter', 'cashier'] },
-  'table.force_close_approve': { label: 'Setujui tutup paksa meja', roles: ['manager'] },
-  'table.reopen_request': { label: 'Ajukan buka kembali meja', roles: ['manager', 'waiter', 'cashier'] },
-  'table.reopen_approve': { label: 'Setujui buka kembali meja', roles: ['manager'] },
-
-  'reservation.view': { label: 'Lihat reservasi', roles: ['manager', 'waiter', 'cashier'] },
-  'reservation.create': { label: 'Buat reservasi', roles: ['manager', 'waiter', 'cashier'] },
-  // Seat, no-show, cancel, edit while still booked.
-  'reservation.update': { label: 'Ubah status reservasi', roles: ['manager', 'waiter', 'cashier'] },
-
+  // Add, edit, tax, active.
+  'menu.manage': { label: 'Kelola menu', roles: ['manager'] },
+  'menu.sold_out': {
+    label: 'Tandai menu habis',
+    roles: ['manager', 'supervisor', 'cashier', 'waiter', 'kitchen'],
+  },
+  'menu.price': { label: 'Ubah harga menu', roles: ['manager'] },
   // Menu categories of the active outlet: their names and the order the cashier screen shows them in.
   'category.view': { label: 'Lihat kategori', roles: ['manager'] },
   // Add, update, delete, reorder.
   'category.edit': { label: 'Kelola kategori', roles: ['manager'] },
 
-  // The active outlet's menu. The floor and counter read it to take orders; managing it is the manager's.
-  'menu.view': { label: 'Lihat menu', roles: ['manager', 'cashier', 'waiter'] },
-  // Add, edit, price, tax, active.
-  'menu.manage': { label: 'Kelola menu', roles: ['manager'] },
+  'table.view': { label: 'Lihat meja', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  // Seat guests, close the table.
+  'table.use': {
+    label: 'Tempatkan tamu & tutup meja',
+    roles: ['manager', 'supervisor', 'cashier', 'waiter'],
+  },
+  // Join tables into a group for a big party and split them again.
+  'table.merge': { label: 'Gabung & pisah meja', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  'table.create': { label: 'Tambah meja', roles: ['manager'] },
+  'table.delete': { label: 'Hapus meja', roles: ['manager'] },
+  // Move, resize, rename, seats.
+  'table.layout_manage': { label: 'Atur denah meja', roles: ['manager'] },
 
-  'order.view': { label: 'Lihat pesanan', roles: ['manager', 'waiter', 'cashier', 'auditor'] },
-  'order.create': { label: 'Buat pesanan', roles: ['manager', 'waiter', 'cashier'] },
-  'order.item_add': { label: 'Tambah item pesanan', roles: ['manager', 'waiter', 'cashier'] },
-  'order.item_remove_request': {
-    label: 'Ajukan hapus item pesanan',
-    roles: ['manager', 'waiter', 'cashier'],
+  'kitchen.view': { label: 'Lihat layar dapur', roles: ['manager', 'supervisor', 'kitchen'] },
+  'kitchen.bump': { label: 'Selesaikan tiket dapur', roles: ['manager', 'kitchen'] },
+
+  'reservation.view': { label: 'Lihat reservasi', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  'reservation.create': { label: 'Buat reservasi', roles: ['manager', 'supervisor', 'cashier', 'waiter'] },
+  // Seat, no-show, cancel, edit while still booked.
+  'reservation.update': {
+    label: 'Ubah status reservasi',
+    roles: ['manager', 'supervisor', 'cashier', 'waiter'],
   },
-  'order.item_remove_approve': { label: 'Setujui hapus item pesanan', roles: ['manager'] },
-  'order.adjustment_request': {
-    label: 'Ajukan penyesuaian pesanan',
-    roles: ['manager', 'waiter', 'cashier'],
+
+  'inventory.view': { label: 'Lihat stok', roles: ['manager', 'accountant'] },
+  'inventory.adjust': { label: 'Sesuaikan stok', roles: ['manager'] },
+  'inventory.count': { label: 'Stok opname', roles: ['manager'] },
+  'inventory.receive': { label: 'Terima barang masuk', roles: ['manager'] },
+  'inventory.transfer': { label: 'Transfer stok', roles: ['manager'] },
+
+  'customer.view': {
+    label: 'Lihat pelanggan',
+    roles: ['manager', 'supervisor', 'cashier', 'waiter', 'accountant'],
   },
-  'order.adjustment_approve': { label: 'Setujui penyesuaian pesanan', roles: ['manager'] },
-  // Kitchen tickets are the floor's job; a cashier never sends one.
-  'order.send_to_kitchen': { label: 'Kirim pesanan ke dapur', roles: ['manager', 'waiter'] },
-  'order.hold': { label: 'Tahan pesanan', roles: ['manager', 'waiter', 'cashier'] },
-  'order.cancel_request': { label: 'Ajukan batal pesanan', roles: ['manager', 'waiter', 'cashier'] },
-  'order.cancel_approve': { label: 'Setujui batal pesanan', roles: ['manager'] },
+  'customer.manage': { label: 'Kelola pelanggan', roles: ['manager', 'supervisor', 'cashier'] },
+
+  'report.view_sales': { label: 'Lihat laporan penjualan', roles: ['manager', 'supervisor', 'accountant'] },
+  'report.view_shift': {
+    label: 'Lihat laporan shift',
+    roles: ['manager', 'supervisor', 'cashier', 'accountant'],
+  },
+  // Who changed what (US-011). The outlet's own log; global rows (app settings, roles) only for a global role.
+  'report.view_audit': { label: 'Lihat log audit', roles: ['manager', 'accountant'] },
+  'report.export': { label: 'Ekspor laporan', roles: ['manager', 'accountant'] },
+
+  // Staff accounts: create, reset password, clear PIN (US-057).
+  'staff.manage': { label: 'Kelola akun staf', roles: ['manager'] },
+  // The roles & permissions page.
+  'role.view': { label: 'Lihat peran & izin', roles: [] },
+  // Create, edit and delete custom roles. Base roles are locked whoever you are.
+  'role.manage': { label: 'Kelola peran', roles: [] },
+  // Grant or revoke one permission for one person at one outlet.
+  'permission.override': { label: 'Atur izin per staf', roles: [] },
+  // Deployment-wide app settings.
+  'settings.manage': { label: 'Kelola pengaturan aplikasi', roles: [] },
+  'device.manage': { label: 'Kelola perangkat', roles: ['manager'] },
+  'sync.manage': { label: 'Kelola sinkronisasi', roles: ['manager'] },
+  // Approve someone else's refused action with your PIN (US-010).
+  'approval.grant': { label: 'Beri persetujuan dengan PIN', roles: ['manager', 'supervisor'] },
 
   // The manager two are about one outlet, pinned to the session's own by `canActOn`; the
   // owner-only three are about the set of outlets. Reading your own outlet needs no permission.
   'outlet.manage': { label: 'Ubah detail outlet', roles: ['manager'] },
   'outlet.staff_assign': { label: 'Atur staf outlet', roles: ['manager'] },
-
   'outlet.view_all': { label: 'Lihat semua outlet', roles: [] },
   'outlet.create': { label: 'Tambah outlet', roles: [] },
   'outlet.delete': { label: 'Aktifkan / nonaktifkan outlet', roles: [] },
-
-  // global app settings
-  'settings.manage': { label: 'Kelola pengaturan aplikasi', roles: [] },
-
-  // The roles & permissions page. Read-only for now; owner alone.
-  'role.view': { label: 'Lihat peran & izin', roles: [] },
-
-  // Who changed what (US-011). The outlet's own log; global rows (app settings) only for a global role.
-  'report.view_audit': { label: 'Lihat log audit', roles: ['manager', 'auditor'] },
 };
 
 /** The full holder list for a permission. Owner is the only implicit holder; everyone else is listed. */
@@ -124,10 +144,25 @@ export const holdersOf = (permission: string): string[] => [
 
 /** Idempotent: re-running adds what is missing and touches nothing else. */
 export async function seedRbac(db: NodePgDatabase<typeof schema>): Promise<void> {
+  // Update, not DoNothing: an existing database has to pick up the flags and new descriptions.
   await db
     .insert(roles)
-    .values(ROLES.map(([name, description]) => ({ name, description })))
-    .onConflictDoNothing();
+    .values(
+      ROLES.map(([name, description]) => ({
+        name,
+        description,
+        isGlobal: name === 'owner',
+        editable: false,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: roles.name,
+      set: {
+        description: sql`excluded.description`,
+        isGlobal: sql`excluded.is_global`,
+        editable: sql`excluded.editable`,
+      },
+    });
 
   // Update, not DoNothing: a description added to an existing permission has to reach a database
   // that was seeded before it existed.

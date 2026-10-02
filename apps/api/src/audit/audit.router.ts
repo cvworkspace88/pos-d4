@@ -15,7 +15,7 @@ type Ctx = Actor & { user: PublicUser };
 const auditRowOutput = z.object({
   id: z.string(),
   createdAt: z.string(),
-  module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon']),
+  module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role']),
   action: z.string(),
   entityType: z.string(),
   entityId: z.string().nullable(),
@@ -42,7 +42,7 @@ export class AuditRouter {
       outletId: z.uuid(),
       fromDate: z.iso.date(),
       toDate: z.iso.date(),
-      module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon']).optional(),
+      module: z.enum(['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role']).optional(),
       userId: z.uuid().optional(),
       cursor: z.object({ createdAt: z.string().max(40), id: z.uuid() }).optional(),
     }),

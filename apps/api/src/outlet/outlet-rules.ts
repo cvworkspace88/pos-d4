@@ -11,14 +11,14 @@ export const OWNER_ROLE = 'owner';
 export const MANAGER_ROLE = 'manager';
 
 /**
- * May an `outlet.staff_assign` holder touch a roster line holding `roleName` — give it, take it, or
- * change it? Owner (global) manages everyone; anyone else manages every role below manager, their
- * own role included — a cashier granted staff_assign can place other cashiers. Manager is named, not
- * derived: roles have no rank of their own.
- * ponytail: one named tier. Custom roles that need their own ceiling want a rank or subset rule.
+ * May an `outlet.staff_assign` holder touch a roster line holding `role` — give it, take it, or
+ * change it? Owner (global) manages everyone; anyone else manages the locked base roles below
+ * manager, their own included — a cashier granted staff_assign can place other cashiers. Custom
+ * roles are the owner's to hand out: one may hold more than whoever assigns it (US-009).
+ * ponytail: a named tier plus the editable flag. A subset rule replaces both if non-owners ever assign custom roles.
  */
-export const canManageRole = (actorGlobal: boolean, roleName: string): boolean =>
-  actorGlobal || (roleName !== MANAGER_ROLE && roleName !== OWNER_ROLE);
+export const canManageRole = (actorGlobal: boolean, role: { name: string; editable: boolean }): boolean =>
+  actorGlobal || (!role.editable && role.name !== MANAGER_ROLE && role.name !== OWNER_ROLE);
 
 /**
  * What `setStaff` has to write to turn `current` into `desired`. Set semantics keyed on the user:

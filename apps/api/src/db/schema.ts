@@ -75,6 +75,11 @@ export const roles = pgTable('roles', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull().unique(),
   description: text('description'),
+  // The global role (owner): held through `users.role_id`, works at every outlet, never a membership.
+  isGlobal: boolean('is_global').notNull().default(false),
+  // False for the seeded base roles: the seed owns their grants and would undo an edit on its next
+  // run. A role created through the API is the owner's own, and editable.
+  editable: boolean('editable').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -108,9 +113,10 @@ export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
 
 /**
- * Per-user exceptions to what the role gives. One row per (user, permission): 'grant' adds what
- * the role lacks, 'revoke' takes back what it gives, and no row at all means inherit the role.
- * The primary key is what stops a grant and a revoke from ever fighting over the same permission.
+ * Per-user exceptions to what the role gives, at one outlet. One row per (user, outlet,
+ * permission): 'grant' adds what the role lacks there, 'revoke' takes back what it gives there,
+ * and no row means inherit the role. There are no global overrides (US-009): every row names its
+ * outlet. The primary key is what stops a grant and a revoke from fighting over the same permission.
  */
 export const userPermissions = pgTable(
   'user_permissions',
@@ -118,6 +124,9 @@ export const userPermissions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id, { onDelete: 'cascade' }),
     // Cascade matters here: `seedRbac` deletes permissions dropped from PERMISSIONS, and an
     // override pointing at a permission that no longer exists must go with it.
     permissionId: uuid('permission_id')
@@ -126,7 +135,7 @@ export const userPermissions = pgTable(
     effect: text('effect').$type<'grant' | 'revoke'>().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.userId, table.permissionId] }),
+    primaryKey({ columns: [table.userId, table.outletId, table.permissionId] }),
     // This table decides who may do what: a misspelled effect has to fail at write time rather
     // than read back as neither a grant nor a revoke.
     check('user_permissions_effect', sql`${table.effect} IN ('grant', 'revoke')`),
@@ -550,7 +559,7 @@ export const menuItemAddonGroups = pgTable(
  * Which part of the app an audit row is about. The router's zod enum repeats it inline: the
  * contract generator cannot hoist it. Later stories append (`role`, `approval`, `order`, `payment`…).
  */
-export const AUDIT_MODULES = ['settings', 'outlet', 'staff', 'category', 'menu', 'addon'] as const;
+export const AUDIT_MODULES = ['settings', 'outlet', 'staff', 'category', 'menu', 'addon', 'role'] as const;
 export type AuditModule = (typeof AUDIT_MODULES)[number];
 
 /**

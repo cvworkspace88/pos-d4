@@ -10,6 +10,7 @@ export const MODULE_LABEL: Record<AuditModule, string> = {
   category: 'Kategori',
   menu: 'Menu',
   addon: 'Add-on',
+  role: 'Peran',
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -33,6 +34,10 @@ const ACTION_LABEL: Record<string, string> = {
   'addon.create': 'Tambah grup add-on',
   'addon.update': 'Ubah grup add-on',
   'addon.delete': 'Hapus grup add-on',
+  'role.create': 'Tambah peran',
+  'role.update': 'Ubah peran',
+  'role.delete': 'Hapus peran',
+  'role.override': 'Ubah izin staf',
 };
 
 /** An action added on the server before this list learns it still shows, as its code. */

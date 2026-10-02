@@ -15,12 +15,12 @@ export class RbacService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
   /**
-   * What the user's role at `outletId` grants, plus their per-user grants, minus their per-user
-   * revokes. The role is `users.role_id` when set (global — owner), otherwise the `outlet_staff`
-   * row for that outlet. No outlet and no global role means no role permissions at all; only
-   * grants survive. One round trip: `require` runs on every gated call.
+   * Where each permission comes from: the user's role at `outletId` (`users.role_id` when set —
+   * global, owner — otherwise the `outlet_staff` row for that outlet), plus their overrides at that
+   * outlet. An override counts only while the user is a member of a live outlet, so a stale grant
+   * cannot outlive a removal. No outlet: no overrides, and role rows for a global role only.
    */
-  async permissionsOf(userId: string, outletId: string | null): Promise<string[]> {
+  async rowsOf(userId: string, outletId: string | null): Promise<PermissionRow[]> {
     // `sql\`false\`` keeps the join shape identical when there is no outlet to match: the left join
     // yields nulls, coalesce falls through to users.role_id, and a scoped user gets nothing.
     const membership = outletId
@@ -48,9 +48,24 @@ export class RbacService {
       })
       .from(userPermissions)
       .innerJoin(permissions, eq(permissions.id, userPermissions.permissionId))
-      .where(eq(userPermissions.userId, userId));
+      .where(
+        and(
+          eq(userPermissions.userId, userId),
+          outletId
+            ? and(
+                eq(userPermissions.outletId, outletId),
+                sql`exists (select 1 from ${outletStaff} join ${outlets} on ${outlets.id} = ${outletStaff.outletId} where ${outletStaff.userId} = ${userPermissions.userId} and ${outletStaff.outletId} = ${userPermissions.outletId} and ${outlets.deletedAt} is null)`,
+              )
+            : sql`false`,
+        ),
+      );
 
-    return effectivePermissions(await unionAll(fromRole, fromOverrides));
+    return unionAll(fromRole, fromOverrides);
+  }
+
+  /** What the user holds at `outletId`: role grants plus grants, minus revokes. One round trip: `require` runs on every gated call. */
+  async permissionsOf(userId: string, outletId: string | null): Promise<string[]> {
+    return effectivePermissions(await this.rowsOf(userId, outletId));
   }
 
   async require(actor: Actor, permission: string): Promise<void> {

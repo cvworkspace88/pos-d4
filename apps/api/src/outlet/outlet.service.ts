@@ -1,20 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TRPCError } from '@trpc/server';
 import * as argon2 from 'argon2';
-import { and, count, eq, inArray, isNotNull, isNull, like, ne, or, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, like, or, sql } from 'drizzle-orm';
 import { audit } from '../audit/audit';
 import type { Actor } from '../auth/rbac-rules';
 import { DRIZZLE, type Database, type Tx } from '../db/db.module';
 import { isUniqueViolation, violatedConstraint } from '../db/errors';
 import { outletStaff, outlets, roles, users, type OrderType, type Outlet } from '../db/schema';
-import {
-  OWNER_ROLE,
-  canManageRole,
-  conflictField,
-  normalizeCode,
-  staffDiff,
-  type StaffEntry,
-} from './outlet-rules';
+import { canManageRole, conflictField, normalizeCode, staffDiff, type StaffEntry } from './outlet-rules';
 
 export interface OutletInput {
   name: string;
@@ -324,22 +317,27 @@ export class OutletService {
       }
 
       const roleIds = [...new Set(staff.map((s) => s.roleId))];
-      const known = new Map<string, string>();
+      const known = new Map<string, { name: string; editable: boolean }>();
       if (roleIds.length) {
         const found = await tx
-          .select({ id: roles.id, name: roles.name })
+          .select({ id: roles.id, name: roles.name, editable: roles.editable, isGlobal: roles.isGlobal })
           .from(roles)
           .where(inArray(roles.id, roleIds));
-        for (const r of found) known.set(r.id, r.name);
+        for (const r of found) known.set(r.id, r);
         const missing = roleIds.find((id) => !known.has(id));
         if (missing) throw new TRPCError({ code: 'BAD_REQUEST', message: `Not a valid role: ${missing}.` });
-        // Owner is `users.role_id`, never a membership: handing it out here would be an escalation.
-        if ([...known.values()].includes(OWNER_ROLE))
+        // The global role is `users.role_id`, never a membership: handing it out here would be an escalation.
+        if (found.some((r) => r.isGlobal))
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Owner is global.' });
       }
 
       const current = await tx
-        .select({ userId: outletStaff.userId, roleId: outletStaff.roleId, roleName: roles.name })
+        .select({
+          userId: outletStaff.userId,
+          roleId: outletStaff.roleId,
+          roleName: roles.name,
+          roleEditable: roles.editable,
+        })
         .from(outletStaff)
         .innerJoin(roles, eq(roles.id, outletStaff.roleId))
         .where(eq(outletStaff.outletId, outletId));
@@ -347,10 +345,10 @@ export class OutletService {
 
       // Only lines that change are judged: a manager resending a roster that still lists another
       // manager, untouched, is fine. A role change is a remove plus an add, so both roles count.
-      const held = new Map(current.map((c) => [c.userId, c.roleName]));
+      const held = new Map(current.map((c) => [c.userId, { name: c.roleName, editable: c.roleEditable }]));
       const touched = [...add.map((a) => known.get(a.roleId)!), ...remove.map((id) => held.get(id)!)];
-      if (touched.some((name) => !canManageRole(actor.global, name)))
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur manajer.' });
+      if (touched.some((role) => !canManageRole(actor.global, role)))
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur peran ini.' });
 
       const before = await this.rosterOf(tx, outletId);
       if (remove.length)
@@ -392,11 +390,14 @@ export class OutletService {
         .where(and(eq(outlets.id, outletId), live));
       if (!outlet) throw notFound();
 
-      const [role] = await tx.select({ name: roles.name }).from(roles).where(eq(roles.id, input.roleId));
+      const [role] = await tx
+        .select({ name: roles.name, editable: roles.editable, isGlobal: roles.isGlobal })
+        .from(roles)
+        .where(eq(roles.id, input.roleId));
       if (!role) throw new TRPCError({ code: 'BAD_REQUEST', message: `Not a valid role: ${input.roleId}.` });
-      if (role.name === OWNER_ROLE) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Owner is global.' });
-      if (!canManageRole(actor.global, role.name))
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur manajer.' });
+      if (role.isGlobal) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Owner is global.' });
+      if (!canManageRole(actor.global, role))
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengatur peran ini.' });
 
       // The unique index is the check, not a lookup first: two admins adding the same username at
       // once must not both pass. A soft-deleted user still holds their username.
@@ -458,14 +459,14 @@ export class OutletService {
       .limit(10);
   }
 
-  /** The roles `setStaff` lets this actor hand out: never owner, and manager only for a global role. */
+  /** The roles `setStaff` lets this actor hand out: never the global one; manager and custom roles only for a global actor. */
   async assignableRoles(actor: { global: boolean }): Promise<{ id: string; name: string }[]> {
     const rows = await this.db
-      .select({ id: roles.id, name: roles.name })
+      .select({ id: roles.id, name: roles.name, editable: roles.editable })
       .from(roles)
-      .where(ne(roles.name, OWNER_ROLE))
+      .where(eq(roles.isGlobal, false))
       .orderBy(roles.name);
-    return rows.filter((r) => canManageRole(actor.global, r.name));
+    return rows.filter((r) => canManageRole(actor.global, r)).map(({ id, name }) => ({ id, name }));
   }
 
   /**

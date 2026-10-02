@@ -134,6 +134,13 @@
       "when": 1790847000494,
       "tag": "0018_sync_events_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790866404515,
+      "tag": "0019_roles_catalogue",
+      "breakpoints": true
     }
   ]
 }
