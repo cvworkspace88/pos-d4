@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { isInvalidPin } from '@repo/api-contract';
 import { Alert } from '@ui/alert';
 import { Button } from '@ui/button';
 import { Keypad } from '@ui/keypad';
@@ -44,7 +43,7 @@ export function ApprovalDialog({ approval }: { approval: ApprovalControl }) {
       close();
     } catch (caught) {
       setPin('');
-      setError(isInvalidPin(caught) ? 'PIN salah. Coba lagi.' : (caught as Error).message);
+      setError((caught as Error).message); // the server's text, "Sisa N percobaan" included
     } finally {
       setBusy(false);
     }

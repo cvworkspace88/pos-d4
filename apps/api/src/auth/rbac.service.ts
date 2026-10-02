@@ -194,9 +194,10 @@ export class RbacService {
       });
       throw new TRPCError({ code: 'FORBIDDEN', message: 'PIN salah 5 kali. Akses diblokir 10 menit.' });
     }
+    // ponytail: count from this reservation; a concurrent attempt can make it one high, never low.
     throw new TRPCError({
       code: 'UNAUTHORIZED',
-      message: 'PIN tidak cocok.',
+      message: `PIN salah. Sisa ${PIN_MAX_FAILURES - attempt.failures} percobaan.`,
       cause: new Reason('INVALID_PIN'),
     });
   }

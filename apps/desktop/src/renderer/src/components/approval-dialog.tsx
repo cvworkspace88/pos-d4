@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { isInvalidPin } from '@repo/api-contract';
 import { useTRPC } from '../trpc';
 import type { ApprovalControl } from '@repo/hooks/use-approval';
 
@@ -37,7 +36,7 @@ export function ApprovalDialog({ approval }: { approval: ApprovalControl }) {
       close();
     } catch (caught) {
       setPin('');
-      setError(isInvalidPin(caught) ? 'PIN salah. Coba lagi.' : (caught as Error).message);
+      setError((caught as Error).message); // the server's text, "Sisa N percobaan" included
     } finally {
       setBusy(false);
     }

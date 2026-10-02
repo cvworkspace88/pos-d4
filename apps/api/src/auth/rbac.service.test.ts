@@ -245,9 +245,11 @@ const wrong = (actor: Actor, approverUserId: string, permission = 'table.merge')
 
 test('wrong approval PINs count on the requester; the fifth blocks and is audited', async () => {
   const { actor, max } = await approvalSetup();
-  for (let i = 0; i < 4; i++)
+  // Each miss says how many tries are left, so an honest fumble stops before the block.
+  for (const left of [4, 3, 2, 1])
     await expect(wrong(actor, max.id)).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
+      message: `PIN salah. Sisa ${left} percobaan.`,
       cause: { reason: 'INVALID_PIN' },
     });
   await expect(wrong(actor, max.id)).rejects.toMatchObject({
