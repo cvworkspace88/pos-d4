@@ -10,11 +10,7 @@ interface AuthState {
   refreshToken: string | null;
   outlet: Session['outlet'];
   outlets: Session['outlets'];
-  // "Show the picker although an outlet is set." Not persisted, and not the same as clearing
-  // `outlet`: the token provider's auto-refresh calls setSession, which would put it straight back.
-  switching: boolean;
   setSession: (session: Session) => void;
-  startSwitch: () => void;
   clear: () => void;
 }
 
@@ -24,7 +20,6 @@ const signedOut = {
   refreshToken: null,
   outlet: null,
   outlets: [],
-  switching: false,
 };
 
 export const useAuthStore = create<AuthState>()(
@@ -32,8 +27,7 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       ...signedOut,
       setSession: ({ user, accessToken, refreshToken, outlet, outlets }) =>
-        set({ user, accessToken, refreshToken, outlet, outlets, switching: false }),
-      startSwitch: () => set({ switching: true }),
+        set({ user, accessToken, refreshToken, outlet, outlets }),
       clear: () => set(signedOut),
     }),
     {
