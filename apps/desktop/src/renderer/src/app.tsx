@@ -8,14 +8,18 @@ import { OutletPicker } from './components/outlet-picker';
 import { PageHeader } from './components/page-header';
 import { Shell, signOut } from './components/shell';
 import { SidebarNav, type MenuGroup } from './components/sidebar-nav';
+import { StaffPage } from './components/staff-page';
 import { useAuthStore } from './stores/auth';
 import { useTRPC } from './trpc';
 
 const MENU: MenuGroup[] = [
   { label: 'Operasional', items: [{ key: 'denah', label: 'Denah Meja', permission: 'table.view' }] },
+  // Same page as the backoffice's: on the hub so a manager on the floor can unblock a cashier (US-010).
+  { label: 'Pengaturan', items: [{ key: 'staf', label: 'Staf', permission: 'outlet.staff_assign' }] },
 ];
 
-function Page({ permissions }: { permissions: string[] }) {
+function Page({ page, permissions }: { page: string; permissions: string[] }) {
+  if (page === 'staf') return <StaffPage />;
   return (
     <>
       <PageHeader title="Denah Meja" />
@@ -51,7 +55,7 @@ function Home() {
           </StateMessageLayout>
         </div>
       ) : !me.data ? null : page ? (
-        <Page permissions={permissions} />
+        <Page page={page} permissions={permissions} />
       ) : (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">
           <StateMessageLayout

@@ -290,6 +290,9 @@ importers:
       eslint:
         specifier: 10.9.1
         version: 10.9.1(jiti@1.21.7)(supports-color@10.2.2)
+      lucide-react:
+        specifier: ^1.45.0
+        version: 1.45.0(react@19.3.0)
       postcss:
         specifier: 8.5.28
         version: 8.5.28
