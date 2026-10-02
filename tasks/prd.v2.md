@@ -205,9 +205,9 @@ Audit rows on settings writes come with US-011.
 - [x] Wrong approver PIN → `UNAUTHORIZED` + `data.reason: 'INVALID_PIN'`; approver without permission → `FORBIDDEN`
 - [x] Client: on `FORBIDDEN` from an overridable action, shows an "Minta akses" dialog (approver picker of users with `approval.grant` at this outlet + PIN pad + reason if the action needs one) and retries the same mutation with the same idempotency id
 - [x] Every overridden action appears in the audit log with actor, approver, action, reason, entity
-- [ ] Brute force blocks the **requester**, never the approver: 5 wrong approval PINs within 10 min block that user from requesting any override (every action — a block earned on a refund also refuses a void) at every outlet for 10 min; refused with `FORBIDDEN` before the PIN is checked. Each wrong approval PIN tells the requester how many tries are left ("PIN salah. Sisa N percobaan."). Other staff keep using the same manager's PIN; the blocked user keeps all features their own permissions allow; wrong approval PINs never lock the manager's own PIN (revised 2026-10-02)
-- [ ] The block writes an audit row (`approval.blocked`: requester, permission, approver tried, blocked until); it lifts by itself after 10 min (no row)
-- [ ] Staff page shows a blocked user ("Diblokir hingga HH:mm") and a "Buka blokir" button; `approval.unblock` (new permission, Manager by default) clears it early and writes `approval.unblocked` (who unblocked whom)
+- [x] Brute force blocks the **requester**, never the approver: 5 wrong approval PINs within 10 min block that user from requesting any override (every action — a block earned on a refund also refuses a void) at every outlet for 10 min; refused with `FORBIDDEN` before the PIN is checked. Each wrong approval PIN tells the requester how many tries are left ("PIN salah. Sisa N percobaan."). Other staff keep using the same manager's PIN; the blocked user keeps all features their own permissions allow; wrong approval PINs never lock the manager's own PIN (revised 2026-10-02)
+- [x] The block writes an audit row (`approval.blocked`: requester, permission, approver tried, blocked until); it lifts by itself after 10 min (no row)
+- [x] Staff page shows a blocked user ("Diblokir hingga HH:mm") and a "Buka blokir" button; `approval.unblock` (new permission, Manager by default) clears it early and writes `approval.unblocked` (who unblocked whom)
 - [ ] Verify in browser using dev-browser skill
 - [x] Typecheck/lint passes
 
@@ -227,10 +227,10 @@ Wired so far: table.merge/unmerge, reservation.create/update (2026-10-02); void,
 
 **Acceptance Criteria:**
 - [ ] All transactional entities (orders, lines, payments, refunds, shifts, drawer entries, kitchen tickets, table sessions, reservations, stock ledger) use client-generated UUID v7 primary keys
-- [ ] Table `sync_events(id uuid, outlet_id, device_id, seq bigserial, type, entity_id, payload jsonb, actor_user_id, created_at, synced_at nullable)`; every transactional mutation writes its entity change and an event in one DB transaction
+- [x] Table `sync_events(id uuid, outlet_id, device_id, seq bigserial, type, entity_id, payload jsonb, actor_user_id, created_at, synced_at nullable)`; every transactional mutation writes its entity change and an event in one DB transaction
 - [ ] Repeating a mutation with an already-stored id is a no-op that returns the stored result (idempotency), verified by a test that calls the same mutation twice
 - [x] `sync.pendingCount` returns the unsynced count for the active outlet
-- [ ] Typecheck/lint passes
+- [x] Typecheck/lint passes
 
 ### Phase 1 — Menu & catalogue
 

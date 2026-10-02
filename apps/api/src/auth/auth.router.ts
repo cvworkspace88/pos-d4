@@ -32,18 +32,6 @@ export class AuthRouter {
   ) {}
 
   @Mutation({
-    input: z.object({
-      name: z.string().min(2).max(80),
-      username: z.string().min(3).max(32),
-      password: z.string().min(8).max(128),
-    }),
-    output: sessionOutput,
-  })
-  register(@Input() input: { name: string; username: string; password: string }) {
-    return this.authService.register(input);
-  }
-
-  @Mutation({
     input: z.object({ username: z.string().min(3).max(32), password: z.string().min(8).max(128) }),
     output: sessionOutput,
   })

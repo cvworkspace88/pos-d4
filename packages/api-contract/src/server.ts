@@ -135,25 +135,6 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   auth: t.router({
-    register: publicProcedure
-      .input(z.object({
-      name: z.string().min(2).max(80),
-      username: z.string().min(3).max(32),
-      password: z.string().min(8).max(128),
-    }))
-      .output(z.object({
-  user: z.object({
-  id: z.string(),
-  name: z.string(),
-  username: z.string(),
-  hasPin: z.boolean(),
-}),
-  accessToken: z.string(),
-  refreshToken: z.string(),
-  outlet: z.object({ id: z.string(), name: z.string() }).nullable(),
-  outlets: z.array(z.object({ id: z.string(), name: z.string() })),
-}))
-      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     login: publicProcedure
       .input(z.object({ username: z.string().min(3).max(32), password: z.string().min(8).max(128) }))
       .output(z.object({

@@ -57,7 +57,7 @@ pnpm db:migrate                   # apply it
 
 ## Auth
 
-`auth.register` / `auth.login` return a 15-minute access JWT plus an opaque refresh token stored
+`auth.login` returns a 15-minute access JWT plus an opaque refresh token stored
 SHA-256-hashed in `refresh_tokens`. `auth.refresh` rotates it (the presented token is revoked).
 `auth.me` is guarded by `ProtectedMiddleware`, which reuses the same verification path as the
 Passport `JwtStrategy` (kept for plain REST controllers via `JwtAuthGuard`).

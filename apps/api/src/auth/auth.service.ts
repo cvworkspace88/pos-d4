@@ -56,21 +56,6 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  async register(input: { name: string; username: string; password: string }): Promise<Session> {
-    const username = input.username.toLowerCase();
-    // Deliberately unfiltered by `deleted_at`: a soft-deleted row still holds the unique index, so
-    // filtering here would turn a clean CONFLICT into a raw constraint violation.
-    const [existing] = await this.db.select({ id: users.id }).from(users).where(eq(users.username, username));
-    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Username already taken.' });
-
-    const [user] = await this.db
-      .insert(users)
-      .values({ name: input.name, username, passwordHash: await argon2.hash(input.password) })
-      .returning();
-
-    return this.issueSession(user!);
-  }
-
   async login(input: { username: string; password: string }): Promise<Session> {
     const [user] = await this.db
       .select()
