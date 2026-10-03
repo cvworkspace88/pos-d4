@@ -44,6 +44,9 @@
       "cache": false
     }
   },
+  "globalPassThroughEnv": [
+    "DEPLOYMENT"
+  ],
   "globalEnv": [
     "DEV",
     "MODE",

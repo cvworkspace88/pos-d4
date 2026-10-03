@@ -137,7 +137,7 @@ POS is judged on — apply these rules to every feature that touches them, inclu
 - TypeScript versions differ per workspace on purpose — Expo pins mobile's toolchain, and each app's
   bundler dictates its own (mobile TS 6, api/desktop TS 5.9, backoffice TS 6 on Vite 8). Do not try to
   unify them.
-- `DEPLOYMENT` (`cloud` / `local` / `all`) in `apps/api/.env` is designed but not yet read by any code — it will decide which router modules a process exposes (`all` is for `trpc:generate` only, never for a running server).
+- `DEPLOYMENT` (`cloud` / `local` / `all`) in `apps/api/.env` is required at boot and decides which domain modules mount (`MOUNTS` in `src/deployment-rules.ts`, applied by `AppModule.register`): `cloud` = backoffice set (no floor/sync), `local` = mobile/desktop hub set (no audit). `all` refuses to boot. Contract generation is static and ignores it. One API process cannot serve both backoffice and the POS apps — run `cloud` and `local` side by side on different ports when you need both.
 - **Long lists are virtualized.** Web (`packages/ui` select/combobox options, backoffice and desktop lists) uses `@tanstack/react-virtual`; mobile uses `@shopify/flash-list` instead of `FlatList`/`ScrollView` + `map`. Applies to any list that can grow unbounded (menu items, staff, add-on options, search results); short fixed lists (tax types, order types) stay plain. Neither package is installed yet — add it to the workspace that first needs it.
 
 ## Responses

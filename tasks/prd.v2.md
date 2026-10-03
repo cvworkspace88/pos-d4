@@ -80,12 +80,14 @@ Story ids are sequential across phases. Each story is one focused session. "Rule
 **Description:** As an operator, I want one API codebase that runs as the cloud server or as the outlet hub so that both share business rules.
 
 **Acceptance Criteria:**
-- [ ] `DEPLOYMENT=cloud|local|all` read at boot; `all` only for contract generation and refuses to listen
-- [ ] `cloud` mounts: auth, outlets, users/roles, catalogue mutations, settings mutations, sync receiver, backoffice reports. No printing, no hub endpoints
-- [ ] `local` mounts: auth (against local users), POS routers (orders, payments, shifts, tables, kitchen), catalogue, user and settings mutations (the desktop is local-first, see US-052), printing, hub info. The sync client runs in the background sync service (US-049), not in the API
-- [ ] Boot log prints the mode and the mounted router list
-- [ ] Unit test: mounting table per mode
-- [ ] Typecheck/lint passes
+- [x] `DEPLOYMENT=cloud|local|all` read at boot; `all` only for contract generation and refuses to listen
+- [x] `cloud` mounts: auth, outlets, users/roles, catalogue mutations, settings mutations, sync receiver, backoffice reports. No printing, no hub endpoints
+- [x] `local` mounts: auth (against local users), POS routers (orders, payments, shifts, tables, kitchen), catalogue, user and settings mutations (the desktop is local-first, see US-052), printing, hub info. The sync client runs in the background sync service (US-049), not in the API
+- [x] Boot log prints the mode and the mounted router list
+- [x] Unit test: mounting table per mode
+- [x] Typecheck/lint passes
+
+Mounted so far (2026-10-03, `MOUNTS` in `apps/api/src/deployment-rules.ts`): cloud = auth, settings, outlet, role, category, menu, addon, audit; local = the same minus audit, plus floor (tables, reservations) and sync (`pendingCount`, the outlet outbox). Sync receiver, printing, hub info and the POS routers join the table in the stories that build them.
 
 ### US-002: Desktop hosts the local API on a local Postgres
 **Description:** As a cashier, I want the desktop to run without any external server so that sales continue when the internet drops.
