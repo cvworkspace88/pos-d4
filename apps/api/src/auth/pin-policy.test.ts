@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { PIN_WINDOW_MS, nextPinFailure, pinLockedFor, rejectPinLogin } from './pin-policy.ts';
+import {
+  FIRST_PIN_WINDOW_MS,
+  PIN_WINDOW_MS,
+  firstPinNeedsPassword,
+  nextPinFailure,
+  pinLockedFor,
+  rejectPinLogin,
+} from './pin-policy.ts';
 import { REVOKE_GRACE_MS } from './refresh-window.ts';
 
 const NOW = Date.UTC(2026, 8, 4, 12, 0, 0);
@@ -81,4 +88,12 @@ test('an expired lock restarts the count on the next wrong PIN', () => {
   const expired = { pinFailures: 5, pinWindowStartedAt: ago(PIN_WINDOW_MS + 1) };
   assert.equal(pinLockedFor(expired, NOW), 0);
   assert.deepEqual(nextPinFailure(expired, NOW), { pinFailures: 1, pinWindowStartedAt: new Date(NOW) });
+});
+
+test('a first PIN is free only within five minutes of a password login', () => {
+  assert.equal(firstPinNeedsPassword(NOW - 60_000, NOW), false);
+  assert.equal(firstPinNeedsPassword(NOW - FIRST_PIN_WINDOW_MS, NOW), false);
+  assert.equal(firstPinNeedsPassword(NOW - FIRST_PIN_WINDOW_MS - 1, NOW), true);
+  // A session minted by a refresh or a PIN never counts as a fresh password login.
+  assert.equal(firstPinNeedsPassword(null, NOW), true);
 });

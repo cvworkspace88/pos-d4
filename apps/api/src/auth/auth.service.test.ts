@@ -170,7 +170,7 @@ test('pinLogin carries the parked row outlet', async () => {
   const o2 = await addOutlet('Two');
   await assign(ann.id, o1.id);
   await assign(ann.id, o2.id);
-  await auth.setPin(ann.id, { pin: '123456' });
+  await auth.setPin(ann.id, { pin: '123456' }, Date.now());
 
   const session = await auth.refresh((await login('ann')).refreshToken, o2.id);
   await auth.park(session.refreshToken);
@@ -191,7 +191,7 @@ test('the refresh row records the outlet', async () => {
 
 test('five wrong PINs lock the PIN, even against the right one', async () => {
   const ann = await addUser('ann');
-  await auth.setPin(ann.id, { pin: '123456' });
+  await auth.setPin(ann.id, { pin: '123456' }, Date.now());
   const session = await login('ann');
   await auth.park(session.refreshToken);
 
@@ -211,7 +211,7 @@ test('five wrong PINs lock the PIN, even against the right one', async () => {
 
 test('a right PIN resets the wrong-PIN count', async () => {
   const ann = await addUser('ann');
-  await auth.setPin(ann.id, { pin: '123456' });
+  await auth.setPin(ann.id, { pin: '123456' }, Date.now());
   const session = await login('ann');
   await auth.park(session.refreshToken);
 
@@ -259,15 +259,17 @@ test('the lock expires once the window has passed', async () => {
 
 test('setPin counts toward and obeys the password lock', async () => {
   const ann = await addUser('ann');
-  await auth.setPin(ann.id, { pin: '123456' });
+  await auth.setPin(ann.id, { pin: '123456' }, Date.now());
 
   for (let i = 0; i < 5; i++)
-    await expect(auth.setPin(ann.id, { pin: '654321', password: 'wrong-password' })).rejects.toMatchObject({
+    await expect(
+      auth.setPin(ann.id, { pin: '654321', password: 'wrong-password' }, null),
+    ).rejects.toMatchObject({
       code: 'FORBIDDEN',
       message: 'Password salah.',
     });
 
-  await expect(auth.setPin(ann.id, { pin: '654321', password: PASSWORD })).rejects.toMatchObject({
+  await expect(auth.setPin(ann.id, { pin: '654321', password: PASSWORD }, null)).rejects.toMatchObject({
     cause: { reason: 'LOCKED' },
   });
   await expect(login('ann')).rejects.toMatchObject({ cause: { reason: 'LOCKED' } });
@@ -275,11 +277,12 @@ test('setPin counts toward and obeys the password lock', async () => {
 
 test('changing a PIN without the password asks for it, and does not count toward the lock', async () => {
   const ann = await addUser('ann');
-  await auth.setPin(ann.id, { pin: '123456' });
+  await auth.setPin(ann.id, { pin: '123456' }, Date.now());
 
-  await expect(auth.setPin(ann.id, { pin: '654321' })).rejects.toMatchObject({
+  await expect(auth.setPin(ann.id, { pin: '654321' }, Date.now())).rejects.toMatchObject({
     code: 'FORBIDDEN',
     message: 'Masukkan password untuk mengganti PIN.',
+    cause: { reason: 'NEEDS_PASSWORD' },
   });
   const [row] = await db.select().from(users).where(eq(users.id, ann.id));
   expect(row!.passwordFailures).toBe(0);
@@ -287,7 +290,7 @@ test('changing a PIN without the password asks for it, and does not count toward
 
 test('the password and PIN locks are separate', async () => {
   const ann = await addUser('ann');
-  await auth.setPin(ann.id, { pin: '123456' });
+  await auth.setPin(ann.id, { pin: '123456' }, Date.now());
   const session = await login('ann');
   await auth.park(session.refreshToken);
 
@@ -301,10 +304,10 @@ test('the password and PIN locks are separate', async () => {
 
 test('a changed PIN clears the PIN lock', async () => {
   const ann = await addUser('ann');
-  await auth.setPin(ann.id, { pin: '123456' });
+  await auth.setPin(ann.id, { pin: '123456' }, Date.now());
   await db.update(users).set({ pinFailures: 5, pinWindowStartedAt: new Date() }).where(eq(users.id, ann.id));
 
-  await auth.setPin(ann.id, { pin: '654321', password: PASSWORD });
+  await auth.setPin(ann.id, { pin: '654321', password: PASSWORD }, null);
 
   const [row] = await db.select().from(users).where(eq(users.id, ann.id));
   expect(row).toMatchObject({ pinFailures: 0, pinWindowStartedAt: null });
@@ -346,4 +349,34 @@ test('unlock refuses a wrong password with FORBIDDEN and counts it toward the lo
       message: 'Password salah.',
     });
   await expect(auth.unlock(ann.id, PASSWORD)).rejects.toMatchObject({ cause: { reason: 'LOCKED' } });
+});
+
+test('a first PIN without the password needs a fresh password login', async () => {
+  const ann = await addUser('ann');
+  const stale = Date.now() - 6 * 60_000;
+
+  for (const passwordAt of [stale, null])
+    await expect(auth.setPin(ann.id, { pin: '123456' }, passwordAt)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'Masukkan password untuk membuat PIN.',
+      cause: { reason: 'NEEDS_PASSWORD' },
+    });
+  // A stale session may still make one by typing the password; a wrong one is refused.
+  await expect(
+    auth.setPin(ann.id, { pin: '123456', password: 'wrong-password' }, stale),
+  ).rejects.toMatchObject({
+    message: 'Password salah.',
+  });
+  await expect(auth.setPin(ann.id, { pin: '123456', password: PASSWORD }, stale)).resolves.toMatchObject({
+    hasPin: true,
+  });
+});
+
+test('only a password login marks the access token as fresh for a first PIN', async () => {
+  await addUser('ann');
+  const session = await login('ann');
+  expect((await auth.userFromAccessToken(session.accessToken)).passwordAt).toBeGreaterThan(Date.now() - 5000);
+
+  const refreshed = await auth.refresh(session.refreshToken);
+  expect((await auth.userFromAccessToken(refreshed.accessToken)).passwordAt).toBeNull();
 });

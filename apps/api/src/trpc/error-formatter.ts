@@ -8,7 +8,7 @@ const logger = new Logger('trpc');
  * `INVALID_PIN`: wrong digits, the session is fine. `NEEDS_APPROVAL`: a manager's PIN can lift this
  * refusal (US-010). `LOCKED`: too many wrong passwords or PINs at login; wait, or a staff manager resets it.
  */
-type ReasonCode = 'INVALID_PIN' | 'NEEDS_APPROVAL' | 'LOCKED';
+type ReasonCode = 'INVALID_PIN' | 'NEEDS_APPROVAL' | 'LOCKED' | 'NEEDS_PASSWORD';
 
 /**
  * A machine-readable discriminant for failures that deliberately share one tRPC code.

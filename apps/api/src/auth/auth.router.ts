@@ -81,8 +81,11 @@ export class AuthRouter {
     output: userOutput,
   })
   @UseMiddlewares(ProtectedMiddleware)
-  setPin(@Ctx() ctx: { user: PublicUser }, @Input() input: { pin: string; password?: string }) {
-    return this.authService.setPin(ctx.user.id, input);
+  setPin(
+    @Ctx() ctx: { user: PublicUser; passwordAt: number | null },
+    @Input() input: { pin: string; password?: string },
+  ) {
+    return this.authService.setPin(ctx.user.id, input, ctx.passwordAt);
   }
 
   @Mutation({

@@ -4,6 +4,8 @@ import { Button } from '@repo/ui/button';
 import { StateMessageLayout } from '@repo/ui/state-message-layout';
 import { FloorPlan } from './components/floor-plan';
 import { LoginForm } from './components/login-form';
+import { ChangePinDialog } from './components/change-pin-dialog';
+import { LockScreen } from './components/lock-screen';
 import { OutletPicker } from './components/outlet-picker';
 import { PageHeader } from './components/page-header';
 import { Shell, signOut } from './components/shell';
@@ -69,8 +71,13 @@ function Home() {
 }
 
 export function App() {
-  const { accessToken, outlet } = useAuthStore();
+  const { user, accessToken, refreshToken, outlet, locked } = useAuthStore();
+  // Before the token check: a parked desk has no access token but must not fall back to login.
+  if (locked && refreshToken) return <LockScreen onSignOut={signOut} />;
   if (!accessToken) return <LoginForm />;
+  // Right after the password login, as on the tablet: the server only takes a first PIN without the
+  // password while that login is fresh.
+  if (!user?.hasPin) return <ChangePinDialog open firstRun onClose={signOut} />;
   if (!outlet) return <OutletPicker onSignOut={signOut} />;
   return <Home />;
 }

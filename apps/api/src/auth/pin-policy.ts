@@ -64,3 +64,15 @@ export function nextPinFailure(state: PinFailures, now = Date.now()): PinFailure
     pinWindowStartedAt: pinFailures >= PIN_MAX_FAILURES ? new Date(now) : state.pinWindowStartedAt,
   };
 }
+
+/** How long after a password login a first PIN may be set without typing the password again. */
+export const FIRST_PIN_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * Whether setting a first PIN needs the password re-entered (US-006). A first PIN is free only right
+ * after a password login — mobile's and desktop's "Buat PIN" screen — never on a session someone
+ * left open: a PIN is also an approval credential (US-010). `passwordAt` is when this session's
+ * access token was minted by a password login; null when a refresh or a PIN minted it.
+ */
+export const firstPinNeedsPassword = (passwordAt: number | null, now = Date.now()): boolean =>
+  passwordAt === null || now - passwordAt > FIRST_PIN_WINDOW_MS;

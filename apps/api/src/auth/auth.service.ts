@@ -8,7 +8,8 @@ import { randomBytes, createHash } from 'node:crypto';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { outletStaff, outlets, refreshTokens, users, type User } from '../db/schema';
 import { verifyPassword, verifyPin } from './pin-check';
-import { rejectPinLogin } from './pin-policy';
+import { firstPinNeedsPassword, rejectPinLogin } from './pin-policy';
+import { Reason } from '../trpc/error-formatter';
 import { rejectRefresh } from './refresh-window';
 
 /** What clients see of a user. `hasPin` tells mobile whether to demand one before opening the app. */
@@ -34,7 +35,8 @@ export interface Session {
 }
 
 /** What the access JWT carries. `outletId` is what `RbacService` scopes the role by. */
-export type AccessPayload = { sub: string; username: string; outletId: string | null };
+/** `pwd`: minted by a password login (not a refresh or a PIN) — what lets a first PIN skip the password. */
+export type AccessPayload = { sub: string; username: string; outletId: string | null; pwd?: true };
 
 /** Opaque refresh tokens are stored hashed; SHA-256 is enough since the token is 32 random bytes. */
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -70,7 +72,7 @@ export class AuthService {
     if (!user || !valid)
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Username atau kata sandi salah.' });
 
-    return this.issueSession(user);
+    return this.issueSession(user, undefined, true);
   }
 
   async refresh(token: string, outletId?: string): Promise<Session> {
@@ -194,18 +196,31 @@ export class AuthService {
   }
 
   /**
-   * Changing an existing PIN needs the password. Setting the first one does not: the bearer token
-   * was minted by a password login moments ago and the client has no password left to re-enter.
+   * Changing an existing PIN needs the password. Setting the first one does not, but only within
+   * `FIRST_PIN_WINDOW_MS` of a password login (`passwordAt`): the "Buat PIN" screen that follows it
+   * has no password left to re-enter, while a session left open must not mint an approval PIN.
+   * A password, when sent, is always checked. A missing one is `FORBIDDEN` + `NEEDS_PASSWORD`, so the
+   * client shows its password field and resends.
    */
-  async setPin(userId: string, input: { pin: string; password?: string }): Promise<PublicUser> {
+  async setPin(
+    userId: string,
+    input: { pin: string; password?: string },
+    passwordAt: number | null,
+  ): Promise<PublicUser> {
     const user = await this.userFromPayload({ sub: userId });
 
-    if (user.pinHash) {
-      if (!input.password)
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Masukkan password untuk mengganti PIN.' });
+    if (input.password !== undefined) {
       // Counts toward the password lock: otherwise a stolen access token guesses passwords here freely.
       if (!(await verifyPassword(this.db, user, input.password)))
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Password salah.' });
+    } else if (user.pinHash || firstPinNeedsPassword(passwordAt)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: user.pinHash
+          ? 'Masukkan password untuk mengganti PIN.'
+          : 'Masukkan password untuk membuat PIN.',
+        cause: new Reason('NEEDS_PASSWORD'),
+      });
     }
 
     // A new PIN starts with a clean slate: the lock guarded the old one.
@@ -256,13 +271,22 @@ export class AuthService {
     return user;
   }
 
-  async userFromAccessToken(token: string): Promise<{ user: User; outletId: string | null }> {
+  /** `passwordAt`: when a password login minted this token (ms), null for a refresh or PIN one. */
+  async userFromAccessToken(
+    token: string,
+  ): Promise<{ user: User; outletId: string | null; passwordAt: number | null }> {
     const payload = await this.jwt
-      .verifyAsync<AccessPayload>(token, { secret: this.config.getOrThrow('JWT_ACCESS_SECRET') })
+      .verifyAsync<AccessPayload & { iat?: number }>(token, {
+        secret: this.config.getOrThrow('JWT_ACCESS_SECRET'),
+      })
       .catch(() => {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid access token.' });
       });
-    return { user: await this.userFromPayload(payload), outletId: payload.outletId ?? null };
+    return {
+      user: await this.userFromPayload(payload),
+      outletId: payload.outletId ?? null,
+      passwordAt: payload.pwd && payload.iat ? payload.iat * 1000 : null,
+    };
   }
 
   /** The outlets a user may work at, live only, sorted by name. A global role works everywhere. */
@@ -288,12 +312,17 @@ export class AuthService {
    * outlet is chosen for them — so a closed outlet or a lost membership silently falls back to
    * null (re-pick) or to the one outlet left.
    */
-  private async issueSession(user: User, wanted?: string | null): Promise<Session> {
+  private async issueSession(user: User, wanted?: string | null, password = false): Promise<Session> {
     const mine = await this.outletsOf(user);
     const outlet = mine.find((o) => o.id === wanted) ?? (mine.length === 1 ? mine[0]! : null);
     const outletId = outlet?.id ?? null;
 
-    const payload: AccessPayload = { sub: user.id, username: user.username, outletId };
+    const payload: AccessPayload = {
+      sub: user.id,
+      username: user.username,
+      outletId,
+      ...(password ? { pwd: true as const } : {}),
+    };
     const accessToken = await this.jwt.signAsync(payload, {
       secret: this.config.getOrThrow('JWT_ACCESS_SECRET'),
       expiresIn: this.config.get('JWT_ACCESS_TTL', '15m'),

@@ -154,7 +154,7 @@ Audit rows on settings writes come with US-011.
 - [x] "Sign out" parks the session (refresh token kept with reason `parked`); profile stays on the device
 - [x] Profile picker screen lists parked profiles; tapping one asks for the PIN; `auth.pinLogin(refreshToken, pin)` (the profile's parked token) redeems it and issues a new session
 - [x] Wrong PIN returns `UNAUTHORIZED` with `data.reason: 'INVALID_PIN'`; client shows "PIN salah" and does not end the session; 5 wrong PINs in 10 min lock PIN login for 10 min (`FORBIDDEN` + `data.reason: 'LOCKED'`, same dialog as the password lock) — per user, not per profile; separate from the approval block (US-010)
-- [x] Change PIN (self, mobile): needs the password (counts toward and obeys the password lock); a successful change clears the PIN lock. A forgotten PIN cannot be reset by its owner: a staff manager resets it (US-057)
+- [x] Change PIN (self; mobile, and the desktop account menu): changing needs the password. Creating a first PIN happens on the forced "Buat PIN" screen right after a password login (mobile and desktop) and needs no password only within 5 min of that login (a PIN is also an approval credential); after that, or when a PIN already exists, the server answers `NEEDS_PASSWORD` and the screen asks for it (counts toward and obeys the password lock); a successful change clears the PIN lock. A forgotten PIN cannot be reset by its owner: a staff manager resets it (US-057)
 - [x] Parked tokens cannot be used by `auth.refresh`; only `pinLogin` redeems them
 - [x] Idle lock after `idle_timeout_seconds` (setting, default 120) parks the session and returns to the profile picker
 - [x] "Remove profile" asks for confirmation only ("Hapus {nama}?"; no PIN or manager needed: the user just signs in with their password again), forgets the profile on the device and revokes its parked token
@@ -165,10 +165,10 @@ Audit rows on settings writes come with US-011.
 **Description:** As a cashier, I want to log in on the desktop with username and password, and lock the screen between users.
 
 **Acceptance Criteria:**
-- [x] Desktop login screen with username/password; no PIN profiles, no idle lock
-- [x] "Lock" button and `security.desktop_lock_seconds` (setting, default 0 = off) show a lock screen requiring the same user's password
+- [x] Desktop login screen with username/password; no PIN profile picker. A user without a PIN must create one right after logging in (same screen rule as mobile)
+- [x] "Lock" button and `security.desktop_lock_seconds` (setting, default 0 = off) show a lock screen for the same user only: a user with a PIN has the session parked (as mobile's sign-out) and reopens it with the PIN (`auth.pinLogin`, the PIN lock); the lock screen shows a keypad (and takes keyboard digits). A user without a PIN (only possible if one was cleared) keeps the session and reopens it with the password (`auth.unlock`, the password lock). The PIN and password are changed from the account menu
 - [x] Current user and role shown in the top bar; "Switch user" logs out and returns to login
-- [ ] Verify in browser using dev-browser skill
+- [x] Verify in browser using dev-browser skill (renderer, headless Chromium, 2026-10-02)
 - [x] Typecheck/lint passes
 
 ### US-008: Outlets and staff membership
@@ -1218,7 +1218,7 @@ Settled by the owner when the earlier spec was merged into this PRD. Do not reop
 - **Pricing defaults:** exclusive prices; cash rounding nearest Rp 100 (modes nearest, always down, always up), every rounding stored as proof in `cash_roundings`.
 - **Roles:** base roles include Supervisor and Accountant.
 - **Roles and permissions (2026-10-01):** a user has one role per outlet (`outlet_staff.role_id`); Owner is the only global role. Base roles are locked and owned by the seed; the owner adds custom roles (usually a copy of a base role) for a group, and per-outlet overrides for one person. Overrides always name an outlet — no global overrides. One permission per action: the old `*_request`/`*_approve` pairs are gone, and a refused action is approved through the manager PIN override (US-010, `approval.grant`). Permission names the code already checks keep their finer names (Appendix B).
-- **Desktop login:** username and password only, never a PIN.
+- **Desktop login:** username and password; no PIN profile picker. Revised 2026-10-02: every desktop user sets a PIN right after their first password login; locking parks the session and the same user reopens it with that PIN on a keypad; the account menu changes PIN and password.
 - **Stock:** deducted at send only.
 - **In scope:** reservation deposits, customer display, second desktop as a hub client, order search, park/recall takeaway, card fields on tenders, variance approval, X report, backoffice sync monitor, report freshness stamp, customer data export and phone masking, LAN/USB/Bluetooth/serial printers.
 - **Out of scope:** tips, self-pickup as its own type (takeaway covers it), hotel-restaurant rules, macOS.

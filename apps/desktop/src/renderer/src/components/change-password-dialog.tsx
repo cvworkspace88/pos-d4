@@ -1,10 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { KeyRound, TriangleAlertIcon } from 'lucide-react';
+import { TriangleAlertIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { LOCKED_DIALOG, isLocked } from '@repo/api-contract';
-import { useDialog } from '@repo/hooks/use-dialog';
 import { Button } from '@repo/ui/button';
 import { Dialog } from '@repo/ui/dialog';
 import { PasswordField } from '@repo/ui/text-field';
@@ -24,8 +23,7 @@ type FormValues = z.infer<typeof schema>;
 
 const EMPTY: FormValues = { currentPassword: '', newPassword: '', confirm: '' };
 
-/** The `Ubah password` button and its dialog. A wrong current password counts toward the login lock. */
-export function ChangePassword() {
+export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const trpc = useTRPC();
   const toast = useToast();
 
@@ -39,31 +37,27 @@ export function ChangePassword() {
   const change = useMutation(
     trpc.auth.changePassword.mutationOptions({
       onSuccess: () => {
-        dialog.close();
+        close();
         toast.add({ type: 'success', title: 'Password diubah.' });
       },
     }),
   );
 
   // Declared after the mutation on purpose: each only touches the other from an event.
-  const dialog = useDialog(() => {
+  const close = () => {
     reset(EMPTY);
     change.reset();
-  });
+    onClose();
+  };
 
   // A lock gets the shared dialog instead of the inline error; dismissing it clears the error.
   const locked = isLocked(change.error);
 
   return (
     <>
-      <Button variant="ghost" size="sm" className="flex-1 px-2" onClick={dialog.open}>
-        <KeyRound className="mr-1 size-4" aria-hidden />
-        Ubah password
-      </Button>
-
       <Dialog
-        open={dialog.isOpen && !locked}
-        onClose={dialog.close}
+        open={open && !locked}
+        onClose={close}
         blocking
         closeButton={false}
         title="Ubah password"
@@ -78,7 +72,7 @@ export function ChangePassword() {
               <Button type="submit" form="change-password-form" className="flex-1" loading={change.isPending}>
                 Simpan
               </Button>
-              <Button variant="outline" className="flex-1" onClick={dialog.close} disabled={change.isPending}>
+              <Button variant="outline" className="flex-1" onClick={close} disabled={change.isPending}>
                 Batal
               </Button>
             </div>
@@ -116,11 +110,11 @@ export function ChangePassword() {
 
       <Dialog
         open={locked}
-        onClose={dialog.close}
+        onClose={close}
         blocking
         title={LOCKED_DIALOG.title}
         footer={
-          <Button type="button" onClick={dialog.close}>
+          <Button type="button" onClick={close}>
             {LOCKED_DIALOG.button}
           </Button>
         }

@@ -1,11 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { ActivityIndicator, Button, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { z } from 'zod';
-import { isLocked } from '@repo/api-contract';
+import { isLocked, needsPassword } from '@repo/api-contract';
 import { PasswordField } from '@ui/text-field';
 import { LockedDialog } from '@/components/locked-dialog';
 import { useAuthStore } from '@/lib/stores/auth';
@@ -19,9 +20,12 @@ const base = z.object({
 });
 const samePin = (schema: typeof base) =>
   schema.refine((values) => values.pin === values.confirm, { message: 'PIN tidak sama.', path: ['confirm'] });
-const setSchema = samePin(base);
-// Changing an existing PIN (US-006) needs the password; the server enforces it too.
-const changeSchema = samePin(base.extend({ password: z.string().min(8, 'Minimal 8 karakter.') }));
+const pinOnly = zodResolver(samePin(base));
+// Changing an existing PIN (US-006) needs the password, and so does a first one once the password
+// login is no longer fresh; the server enforces both.
+const withPassword = zodResolver(
+  samePin(base.extend({ password: z.string().min(8, 'Minimal 8 karakter.') })),
+);
 
 type FormValues = z.infer<typeof base>;
 
@@ -35,8 +39,14 @@ export default function SetPinScreen() {
   // A restored or deep-linked screen has no history to go back to.
   const leave = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
+  // A first PIN asks for the password only when the server says so (`NEEDS_PASSWORD`): the login is
+  // no longer fresh, or a PIN was made elsewhere meanwhile.
+  const [askPassword, setAskPassword] = useState(changing);
+
+  // react-hook-form re-reads its options each render: the resolver follows `askPassword` and the
+  // typed digits survive the switch.
   const { control, handleSubmit, formState } = useForm<FormValues>({
-    resolver: zodResolver(changing ? changeSchema : setSchema),
+    resolver: askPassword ? withPassword : pinOnly,
     defaultValues: { pin: '', confirm: '', password: '' },
   });
 
@@ -45,6 +55,9 @@ export default function SetPinScreen() {
       onSuccess: (updated) => {
         setUser(updated);
         if (changing) leave();
+      },
+      onError: (error) => {
+        if (needsPassword(error)) setAskPassword(true);
       },
     }),
   );
@@ -59,7 +72,7 @@ export default function SetPinScreen() {
       <Text style={styles.title}>{changing ? 'Ubah PIN' : 'Buat PIN'}</Text>
       <Text style={styles.hint}>PIN dipakai untuk masuk di tablet ini, menggantikan password.</Text>
 
-      {changing && (
+      {askPassword && (
         <Controller
           control={control}
           name="password"
@@ -102,7 +115,7 @@ export default function SetPinScreen() {
         title={setPin.isPending ? 'Menyimpan…' : 'Simpan PIN'}
         disabled={setPin.isPending}
         onPress={handleSubmit(({ pin, password }) =>
-          setPin.mutateAsync({ pin, password: changing ? password : undefined }).catch(() => undefined),
+          setPin.mutateAsync({ pin, password: askPassword ? password : undefined }).catch(() => undefined),
         )}
       />
       {changing && <Button title="Batal" onPress={leave} />}

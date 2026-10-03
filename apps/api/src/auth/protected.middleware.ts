@@ -15,10 +15,11 @@ export class ProtectedMiddleware implements TRPCMiddleware {
     const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     if (!token) throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Missing bearer token.' });
 
-    const { user, outletId } = await this.authService.userFromAccessToken(token);
+    const { user, outletId, passwordAt } = await this.authService.userFromAccessToken(token);
 
     // `global` is server-side only: whether the role comes from `users.role_id` (owner) rather
     // than the active outlet's membership row. `canActOn` reads it; clients never see it.
-    return next({ ctx: { user: publicUser(user), outletId, global: user.roleId !== null } });
+    // `passwordAt` too: only `auth.setPin` reads it (a first PIN right after a password login).
+    return next({ ctx: { user: publicUser(user), outletId, global: user.roleId !== null, passwordAt } });
   }
 }

@@ -16,6 +16,9 @@ export const needsApproval = (error: unknown): boolean => errorReason(error) ===
 /** Wrong PIN digits: a failed attempt, never a dead session. */
 export const isInvalidPin = (error: unknown): boolean => errorReason(error) === 'INVALID_PIN';
 
+/** `auth.setPin` wants the password (a PIN exists, or the password login is no longer fresh): show its field. */
+export const needsPassword = (error: unknown): boolean => errorReason(error) === 'NEEDS_PASSWORD';
+
 /** Too many wrong passwords or PINs at login (US-005, US-006): show the locked dialog. */
 export const isLocked = (error: unknown): boolean => errorReason(error) === 'LOCKED';
 
