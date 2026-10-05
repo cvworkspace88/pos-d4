@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -19,6 +19,8 @@ export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
         const pool = new Pool({
           connectionString: config.getOrThrow<string>('DATABASE_URL'),
         });
+        // An idle client dying with the database must not kill the hub; queries still reject, so /health answers 503.
+        pool.on('error', (error) => new Logger('Db').warn(error.message));
         return drizzle(pool, { schema });
       },
     },

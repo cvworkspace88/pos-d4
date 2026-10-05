@@ -1,0 +1,25 @@
+# Postgres for the outlet hub (US-002). Not bundled with the app: start it once with
+#   docker compose up -d
+# after setting POSTGRES_PASSWORD (and optionally PG_PORT) in a .env next to this file, then fill the
+# desktop's external database screen with host 127.0.0.1, port PG_PORT, database pos_hub, user postgres.
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: pos_hub
+    ports:
+      - '127.0.0.1:${PG_PORT:-5432}:5432'
+    volumes:
+      # postgres:18+ stores data under /var/lib/postgresql (per-major subdirs).
+      - pos-hub-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d pos_hub']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pos-hub-data:

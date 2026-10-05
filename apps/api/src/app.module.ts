@@ -8,6 +8,7 @@ import { CategoryModule } from './category/category.module';
 import { DbModule } from './db/db.module';
 import { Deployment, Domain, MOUNTS } from './deployment-rules';
 import { FloorModule } from './floor/floor.module';
+import { HealthModule } from './health/health.module';
 import { MenuModule } from './menu/menu.module';
 import { OutletModule } from './outlet/outlet.module';
 import { RoleModule } from './role/role.module';
@@ -34,6 +35,7 @@ const DOMAIN_MODULES: Record<Domain, Type> = {
     ConfigModule.forRoot({ isGlobal: true }),
     DbModule,
     TRPCModule.forRoot({ basePath: '/trpc', context: AppContext, errorFormatter }),
+    HealthModule,
   ],
   providers: [AppContext],
 })

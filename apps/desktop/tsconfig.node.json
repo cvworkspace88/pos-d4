@@ -2,7 +2,8 @@
   "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
     "composite": true,
-    "types": ["electron-vite/node"]
+    "types": ["electron-vite/node"],
+    "allowImportingTsExtensions": true
   },
   "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*"]
 }

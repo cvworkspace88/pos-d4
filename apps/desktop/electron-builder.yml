@@ -5,9 +5,17 @@ directories:
 files:
   - out/**
   - package.json
+# Bundled PostgreSQL (US-002): this platform's EDB binaries, outside the asar so they can run.
+# `resources/pg` is gitignored; copy the binaries there before packaging.
 mac:
   target: dmg
+  extraResources:
+    - from: resources/pg/mac
+      to: pg
 win:
   target: nsis
+  extraResources:
+    - from: resources/pg/win-x64
+      to: pg
 linux:
   target: AppImage

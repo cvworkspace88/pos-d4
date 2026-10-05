@@ -45,7 +45,10 @@
     }
   },
   "globalPassThroughEnv": [
-    "DEPLOYMENT"
+    "DEPLOYMENT",
+    "DESKTOP_EXTERNAL_API",
+    "API_HOST",
+    "ProgramData"
   ],
   "globalEnv": [
     "DEV",

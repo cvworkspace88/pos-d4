@@ -2,13 +2,10 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
-    "build": {
-      "env": ["VITE_API_URL"]
-    },
     "dev": {
       "cache": false,
       "persistent": true,
-      "env": ["VITE_API_URL", "ELECTRON_RENDERER_URL"]
+      "env": ["ELECTRON_RENDERER_URL"]
     }
   }
 }

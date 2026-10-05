@@ -10,7 +10,7 @@ A point-of-sale system for Indonesian food & beverage outlets (cafés, restauran
 
 | App | Role | Connectivity |
 | --- | --- | --- |
-| **Desktop** (Electron, Windows first) | Outlet terminal. Hosts the outlet's local API ("hub") on a local Postgres (installed with Docker or manually). Cashier: orders, payments, shift, printing, KDS host, outlet admin screens. | Local-first. Sells and administers with no internet. A background sync service syncs with the cloud when it is running and online. |
+| **Desktop** (Electron, Windows first) | Outlet terminal. Hosts the outlet's local API ("hub") on a Postgres bundled with the app (an external Docker or manual install is optional). Cashier: orders, payments, shift, printing, KDS host, outlet admin screens. | Local-first. Sells and administers with no internet. A background sync service syncs with the cloud when it is running and online. |
 | **Mobile** (Expo, tablet/phone) | Waiter: table map, order taking, send to kitchen, bill request, reservations. Kitchen tablets open the KDS screen. | Talks to the desktop hub over LAN. Never needs the internet. |
 | **Backoffice** (web) | Owner/HQ: outlets, users, roles, menu, prices, promotions, inventory, reports across outlets. Never takes orders. | Always online, cloud only. |
 
@@ -56,7 +56,7 @@ Phases are ordered so that each phase yields something usable. Phases 0–5 make
 
 | Phase | Feature area | Why here |
 | --- | --- | --- |
-| 0 | Platform: deployments (cloud/local), desktop hub on a local Postgres (Docker or manual install), first-run local setup, mobile hub discovery, outlet settings, auth, PIN profiles, outlets, roles/permissions/overrides, manager override, audit log, event log skeleton | Everything else depends on it |
+| 0 | Platform: deployments (cloud/local), desktop hub on a bundled Postgres (external Docker or manual install optional), first-run local setup, mobile hub discovery, outlet settings, auth, PIN profiles, outlets, roles/permissions/overrides, manager override, audit log, event log skeleton | Everything else depends on it |
 | 1 | Menu & catalogue (one menu per outlet): categories, items, variants, modifier groups, combos, tax type, kitchen station, sold-out, menu schedules; desktop admin screens | Orders need a menu |
 | 2 | Floor & tables: floors, tables, capacities, editor, statuses, timers, merge | Dine-in orders need tables |
 | 3 | Orders: order lifecycle, pricing engine, order numbering, idempotency, send to kitchen, notes, seats, courses hold/fire, manual discounts, price override, void/comp with approval, transfer/merge/split, order types | The core of a POS |
@@ -93,13 +93,16 @@ Mounted so far (2026-10-03, `MOUNTS` in `apps/api/src/deployment-rules.ts`): clo
 **Description:** As a cashier, I want the desktop to run without any external server so that sales continue when the internet drops.
 
 **Acceptance Criteria:**
-- [ ] Postgres is not bundled: it runs on the outlet PC from Docker (a `docker compose` file shipped with the app) or a manual Windows install; setup docs cover both
-- [ ] The desktop reads the database URL from its config; on first run, or when the database cannot be reached, a setup screen asks for host, port, database, user and password, tests the connection and saves it
-- [ ] Electron main starts the API in `local` mode as a child process bound to `0.0.0.0` on a configurable port (default 3333), waits for health, then opens the renderer
-- [ ] Drizzle migrations run on every start before the API accepts requests
-- [ ] An API crash is restarted up to 3 times, then the renderer shows a blocking error with the log path; a lost database connection shows "Database tidak terhubung" with what to check (Docker running, service started)
-- [ ] App quit stops the API cleanly
-- [ ] Typecheck/lint passes
+- [x] Postgres 18 is bundled with the app (EDB binaries in `apps/desktop/resources/pg`, gitignored, shipped via `extraResources`) and run by Electron main as a private instance, not a Windows service: `pg_ctl` on 127.0.0.1 only, default port 5433, `scram-sha-256`. An external Postgres (Docker with the `docker compose` file, or a manual Windows install) stays optional; `docs/hub-setup.md` covers all three
+- [ ] On first run a setup screen offers "Database bawaan (disarankan)" (port, user, generated password) or "Database eksternal" (host, port, database, user, password, "Tes koneksi"). Bundled: a taken port is refused with what to do; the app runs `initdb` into `%ProgramData%\POS D4\pg18`, starts it and creates `pos_hub`. The choice and the secrets are saved in `userData/hub.json` (`safeStorage`); a saved database that cannot be reached reopens the screen prefilled and retries every 5 s
+- [ ] An existing data folder is reused, never re-initialised: reinstalling or updating the app keeps the data, and uninstall leaves it in place
+- [x] Electron main starts the database (bundled), then the API in `local` mode as a child process bound to `0.0.0.0` on a configurable port (default 3333), waits for health, then mounts the app
+- [x] Drizzle migrations run on every start before the API accepts requests
+- [x] An API crash is restarted up to 3 times in 10 minutes, then the renderer shows a blocking error with the log path; a lost database connection shows "Database tidak terhubung" with what to check (bundled: the app restarts the database and shows the `pg.log` path; external: Docker running or service started)
+- [x] App quit stops the API, then the bundled database (`pg_ctl stop -m fast`), so nothing is left listening on either port
+- [x] Typecheck/lint passes
+
+`DESKTOP_EXTERNAL_API=1` skips the spawn in dev. Bundled Postgres built 2026-10-05 (`apps/desktop/src/main/pg.ts`, binaries in `apps/desktop/resources/pg`), GUI check 2026-10-05 on macOS passed (bundled first run, database stop and self-restart, 4 API kills to the crash screen and "Mulai ulang", quit leaves 3333 and 5433 free, reopen keeps the data); external tab passed (`127.0.0.1:5433`, database `pos_d4`); still to check: taken port, reinstall/uninstall (packaging); 2026-10-05 headless check of `apps/api/dist/main.js` on the bundled PG 18.6: an empty `pos_hub` migrated on boot, a second boot applied nothing, `/health` 503 while Postgres was stopped and 200 after it restarted, bound to `*:<port>`; the VC++ runtime in the installer, major-version upgrades and backups are separate stories.
 
 ### US-088: First-run local setup (no cloud)
 **Description:** As an owner on the Terminal edition, I want to set up my business on the desktop with no cloud account so that the outlet can sell on day one.
@@ -1161,11 +1164,11 @@ Reservations, reports, inventory, promotions
 
 Stack (current monorepo, plus the pieces still missing)
 - Monorepo: Turborepo + pnpm. API: NestJS 11 + `nestjs-trpc` + Drizzle on node-postgres + Passport JWT + argon2 (all Zod in decorators inline). Mobile: Expo + expo-router + NativeWind. Desktop: electron-vite + React. Backoffice: Vite + React. Contract: generated `AppRouter` in `packages/api-contract` with shared runtime (token provider, refresh link, rules).
-- **Missing, to add:** Postgres on the outlet PC via Docker (shipped `docker compose` file) or a manual Windows install, never bundled; API packaged as a child process of Electron main; the background sync service as a separate process (Windows first; macOS is not a target for now); mDNS advertise (`bonjour-service`) on desktop and `react-native-zeroconf` on mobile via an Expo config plugin (dev build); tRPC WebSocket subscriptions for LAN realtime (`ws` adapter) with polling fallback; ESC/POS printing (`node-thermal-printer` or `escpos` over TCP 9100 and USB) in Electron main; a `packages/pos-rules` package holding pricing, rounding, business-date, split, recipe and promotion rules shared by API and all clients; the KDS page served by the hub from the desktop renderer build; `pg_dump` bundled for backups; cloud object storage for item images; e-mail sender for daily reports.
+- **Missing, to add:** Postgres 18 bundled with the desktop (EDB binaries, `initdb` + `pg_ctl` from Electron main; Docker or a manual install stays optional); API packaged as a child process of Electron main; the background sync service as a separate process (Windows first; macOS is not a target for now); mDNS advertise (`bonjour-service`) on desktop and `react-native-zeroconf` on mobile via an Expo config plugin (dev build); tRPC WebSocket subscriptions for LAN realtime (`ws` adapter) with polling fallback; ESC/POS printing (`node-thermal-printer` or `escpos` over TCP 9100 and USB) in Electron main; a `packages/pos-rules` package holding pricing, rounding, business-date, split, recipe and promotion rules shared by API and all clients; the KDS page served by the hub from the desktop renderer build; `pg_dump` bundled for backups; cloud object storage for item images; e-mail sender for daily reports.
 - Two Postgres clusters in dev (`cloud` on 5432, `local` on 5434) already exist; run the API twice to exercise sync over real HTTP.
 
 Architecture
-- Desktop = hub: local Postgres (Docker or manual) → Electron main starts API (`local`) on `0.0.0.0:3333` → renderer and LAN clients. The renderer talks only to the hub. A separate background sync service talks to the cloud.
+- Desktop = hub: bundled Postgres (or an external Docker/manual one) → Electron main starts API (`local`) on `0.0.0.0:3333` → renderer and LAN clients. The renderer talks only to the hub. A separate background sync service talks to the cloud.
 - Second desktop = hub client, same as mobile: no API, database or sync service of its own.
 - Cloud = API (`cloud`) + managed Postgres + backoffice static site. Sync receiver and change feed live here.
 - Mobile = thin client of the hub; local storage only for profiles/PINs, cached menu/floor, and unsent carts.
@@ -1215,7 +1218,7 @@ Settled by the owner when the earlier spec was merged into this PRD. Do not reop
 - **Menu per outlet (2026-10-01):** each outlet has its own menu, brand and settings — two outlets may be different brands selling different food. Categories, items, add-on groups and kitchen stations carry `outlet_id`; names are unique per outlet. Ingredients stay global (one list; stock is per outlet, US-074–US-080), so recipes of any outlet use the same ingredients. Who edits a menu is a permission (`menu.manage`, `category.edit`): the outlet Manager role by default, reassignable per user with overrides (US-009) — the client decides.
 - **Service charge per bill (2026-10-01):** service charge applies to the whole bill, decided by its order type's `service_charge` flag (US-095; default Dine In only; takeaway, delivery and platform types carry none). Order types are per-outlet data, not a fixed list: GoFood, GrabFood and ShopeeFood are `delivery`-kind rows the owner adds. Items have no service-charge flag. Something sold without service charge, such as merchandise, is rung up as its own bill (e.g. a takeaway order), not as an exempt line on a dine-in bill.
 - **Topology:** mobile always connects to the desktop over the LAN. The desktop is local-first for everything, admin included. A background sync service syncs with the cloud; without it there is no cloud sync. On reconnect the service pushes local changes first, then pulls; master data edited on both sides resolves last-write-wins with the loser logged.
-- **Database on the desktop:** Postgres via Docker or manual install; not embedded.
+- **Database on the desktop (2026-10-05):** Postgres 18 bundled with the app and run by Electron main; Docker or a manual install remains an optional external database.
 - **Reservations:** written on the desktop and mobile only, last-write-wins; backoffice read-only.
 - **Pricing defaults:** exclusive prices; cash rounding nearest Rp 100 (modes nearest, always down, always up), every rounding stored as proof in `cash_roundings`.
 - **Roles:** base roles include Supervisor and Accountant.

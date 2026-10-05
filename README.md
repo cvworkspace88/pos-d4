@@ -41,6 +41,16 @@ pnpm --filter @repo/backoffice dev   # Vite on :5173
 `apps/api dev` regenerates `packages/api-contract/src/server.ts` on every router change, so both
 clients pick up new procedures without a manual step. One-off: `pnpm trpc:generate`.
 
+Local development with 1 database (no sync)
+`api/.env` `DEPLOYMENT=cloud` and run `pnpm desktop:dev:standalone` 
+
+Local development client request (sync, 2 database required)
+`api/.env` `DEPLOYMENT=cloud` and run `pnpm desktop:dev:bundle`
+
+`desktop:dev:bundle` -> API build inside electron, no watcher
+
+`desktop:dev:standalone` -> no API inside electron, require api dev server
+
 ## Contract flow
 
 `@Router`/`@Query`/`@Mutation` + Zod schemas in `apps/api/src` → `nestjs-trpc generate` →

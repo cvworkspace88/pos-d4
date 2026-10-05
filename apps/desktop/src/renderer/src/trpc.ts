@@ -6,7 +6,8 @@ import { useAuthStore } from './stores/auth';
 
 export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3333';
+// 127.0.0.1, never localhost: localhost may resolve to ::1 and miss the hub (US-002).
+const API_URL = window.hub.apiUrl;
 
 /** Unauthenticated client used only by the refresh call, so a refresh can never recurse into itself. */
 export const refreshClient = createTRPCClient<AppRouter>({ links: [httpLink({ url: `${API_URL}/trpc` })] });
