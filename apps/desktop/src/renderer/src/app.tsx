@@ -10,6 +10,7 @@ import { OutletPicker } from './components/outlet-picker';
 import { PageHeader } from './components/page-header';
 import { Shell, signOut } from './components/shell';
 import { SidebarNav, type MenuGroup } from './components/sidebar-nav';
+import { SetupWizard } from './components/setup-wizard';
 import { StaffPage } from './components/staff-page';
 import { useAuthStore } from './stores/auth';
 import { useTRPC } from './trpc';
@@ -70,11 +71,29 @@ function Home() {
   );
 }
 
+/** Signed out: a hub with no outlet yet gets the first-run setup (US-088), anything else the login. */
+function SignedOut() {
+  const trpc = useTRPC();
+  const status = useQuery(trpc.setup.status.queryOptions());
+  if (status.error && !status.data)
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-canvas p-6">
+        <StateMessageLayout tone="danger" title="Gagal menghubungi server" description={status.error.message}>
+          <Button size="sm" onClick={() => void status.refetch()}>
+            Coba lagi
+          </Button>
+        </StateMessageLayout>
+      </div>
+    );
+  if (!status.data) return null;
+  return status.data.needed ? <SetupWizard /> : <LoginForm />;
+}
+
 export function App() {
   const { user, accessToken, refreshToken, outlet, locked } = useAuthStore();
   // Before the token check: a parked desk has no access token but must not fall back to login.
   if (locked && refreshToken) return <LockScreen onSignOut={signOut} />;
-  if (!accessToken) return <LoginForm />;
+  if (!accessToken) return <SignedOut />;
   // Right after the password login, as on the tablet: the server only takes a first PIN without the
   // password while that login is fresh.
   if (!user?.hasPin) return <ChangePinDialog open firstRun onClose={signOut} />;

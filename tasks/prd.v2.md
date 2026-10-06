@@ -108,11 +108,13 @@ Mounted so far (2026-10-03, `MOUNTS` in `apps/api/src/deployment-rules.ts`): clo
 **Description:** As an owner on the Terminal edition, I want to set up my business on the desktop with no cloud account so that the outlet can sell on day one.
 
 **Acceptance Criteria:**
-- [ ] When the local database has no outlet, the desktop shows a setup wizard: first outlet (name, address, timezone, cutoff), owner username, password and PIN
-- [ ] The wizard seeds roles, permissions and default settings locally; no activation key or licence check (honour system)
-- [ ] Enabling cloud sync later is done in the sync service (US-053), never by re-running the wizard
-- [ ] Verify in browser using dev-browser skill
-- [ ] Typecheck/lint passes
+- [x] When the local database has no outlet, the desktop shows a setup wizard: first outlet (name, address, timezone, cutoff), owner username, password and PIN
+- [x] The wizard seeds roles, permissions and default settings locally; no activation key or licence check (honour system)
+- [x] Enabling cloud sync later is done in the sync service (US-053), never by re-running the wizard
+- [x] Verify in browser using dev-browser skill
+- [x] Typecheck/lint passes
+
+Built 2026-10-05: `setup.status` / `setup.run` (local only, loopback only, refused once any outlet row exists), `SetupWizard` on the desktop; roles and permissions are seeded on every hub boot (`migrateDatabase`), settings need no rows (code and column defaults). Adds outlet code and owner name to the form (both NOT NULL). Known ceilings: a forgotten owner password has no recovery on a cloudless install; a tablet cannot run setup (desktop only). GUI check 2026-10-06 passed (manual).
 
 ### US-003: Hub info and LAN pairing
 **Description:** As a waiter, I want my tablet to find the desktop on the outlet Wi-Fi so that I never type an IP.

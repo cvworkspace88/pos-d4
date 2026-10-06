@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
-import { seedRbac } from '../../drizzle/seed/seed-rbac';
+import { seedRbac } from '../role/seed-rbac';
 import { outletStaff, outlets, refreshTokens, roles, users } from '../db/schema';
 import { connectTestDatabase, truncateAll, type TestDatabase } from '../test/test-db';
 import { AuthService } from './auth.service';

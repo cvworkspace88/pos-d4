@@ -1080,6 +1080,34 @@ const appRouter = t.router({
       .output(z.object({ idleTimeoutSeconds: z.number(), desktopLockSeconds: z.number().int() }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
+  setup: t.router({
+    status: publicProcedure
+      .output(z.object({ needed: z.boolean() }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    run: publicProcedure
+      .input(z.object({
+      outlet: z.object({
+        name: z.string().trim().min(1).max(60),
+        code: z
+          .string()
+          .trim()
+          .min(1)
+          .max(12)
+          .regex(/^[a-zA-Z0-9-]+$/),
+        address: z.string().trim().max(200).optional(),
+        timezone: z.enum(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']),
+        businessDayCutoff: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      }),
+      owner: z.object({
+        name: z.string().trim().min(2).max(80),
+        username: z.string().trim().min(3).max(32),
+        password: z.string().min(8).max(128),
+        pin: z.string().regex(/^\d{6}$/),
+      }),
+    }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
   sync: t.router({
     pendingCount: publicProcedure
       .output(z.number().int())

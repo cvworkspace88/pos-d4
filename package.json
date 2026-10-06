@@ -28,6 +28,8 @@
     "db:generate": "pnpm --filter @repo/api db:generate",
     "db:migrate": "pnpm --filter @repo/api db:migrate",
     "db:seed": "pnpm --filter @repo/api db:seed",
+    "db:seed:dev": "pnpm --filter @repo/api db:seed:dev",
+    "prod:init": "pnpm --filter @repo/api prod:init",
     "db:studio": "pnpm --filter @repo/api db:studio",
     "trpc:generate": "pnpm --filter @repo/api trpc:generate"
   },

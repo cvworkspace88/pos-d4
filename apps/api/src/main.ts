@@ -14,7 +14,8 @@ async function bootstrap() {
   if (deployment === 'all') {
     throw new Error('DEPLOYMENT=all is for contract generation only; run the server as cloud or local.');
   }
-  // The hub migrates itself on every start (US-002); a failure exits non-zero and the desktop counts a crash.
+  // The hub migrates and seeds roles on every start (US-002, US-088); a failure exits non-zero and the
+  // desktop counts a crash.
   if (deployment === 'local') await migrateDatabase(process.env.DATABASE_URL ?? '');
 
   const app = await NestFactory.create(AppModule.register(deployment));

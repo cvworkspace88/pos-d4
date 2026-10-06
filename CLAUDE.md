@@ -10,7 +10,7 @@ All commands run from the repo root. pnpm 11, Node >= 22.
 pnpm install
 docker compose up -d              # Postgres: `cloud` on :5432, `local` on :5434
 cp apps/api/.env.example apps/api/.env
-pnpm db:migrate && pnpm db:seed   # seeds roles, permissions, owner/owner123
+pnpm db:migrate && pnpm db:seed:dev   # roles, permissions, owner/owner123, "Cafe Melati"
 ```
 
 | Task | Command |
@@ -27,6 +27,8 @@ pnpm db:migrate && pnpm db:seed   # seeds roles, permissions, owner/owner123
 | Regenerate the tRPC contract | `pnpm trpc:generate` |
 | Migration after a schema edit | `pnpm db:generate` then `pnpm db:migrate` |
 
+`seedRbac` lives in `src/role/seed-rbac.ts` and runs on every `local` boot after the migrations (`migrateDatabase`). Seeds: `pnpm db:seed` = roles and permissions only (every cloud deploy, after `db:migrate`); `pnpm db:seed:dev` = that plus owner/owner123 and "Cafe Melati" (dev only; the setup wizard then never shows); `pnpm prod:init` = the first owner of a fresh cloud database, prompted, no outlet (the owner adds outlets in the backoffice), refused once an owner exists and unless `DEPLOYMENT=cloud`.
+
 Formatting is Prettier at the root (`pnpm format`, single quotes, 110 cols) — no per-app formatter.
 
 ## Architecture
@@ -35,7 +37,7 @@ Turborepo + pnpm monorepo, end-to-end typesafe from Postgres to both clients.
 
 - `apps/api` — NestJS 11 (pinned; `nestjs-trpc@2.13` rejects Nest 12), nestjs-trpc, Drizzle ORM on node-postgres, Passport JWT, argon2.
 - `apps/mobile` — Expo SDK 57 + expo-router, NativeWind. Shared tablet: password login once, then 6-digit PIN.
-- `apps/desktop` — electron-vite + React 19. Signs in with username + password; no PIN profile picker. A user without a PIN gets the forced "Buat PIN" screen right after that login, as on the tablet (no skip; "Keluar" signs out). The account menu (the profile block) has "Ubah PIN" and "Ubah password" — no "Buat PIN". Locking ("Kunci" or `desktop_lock_seconds` idle) **parks** the session like mobile's sign-out: `park()` drops the access token, the parked token stays in the store's `refreshToken` (`setSession` ignores sessions landing while parked), and the lock screen's keypad reopens it with the PIN via `auth.pinLogin`. A user who somehow has no PIN keeps the session and unlocks with the password via `auth.unlock` (a wrong one is `FORBIDDEN`, never 401). The app unmounts behind the lock screen; "Ganti pengguna" logs out. Main supervises the hub (US-002): `src/main/hub.ts` probes the Postgres in `userData/hub.json` (secrets via `safeStorage`), forks `apps/api/dist/main.js` with `utilityProcess` in `DEPLOYMENT=local` (the API migrates itself on boot and serves `GET /health`), and pushes `starting | setup | ready | db-down | crashed` to the renderer's `HubGate`; the app mounts only at `ready`. The renderer's API URL comes from main (`window.hub.apiUrl`, `127.0.0.1`). `DESKTOP_EXTERNAL_API=1` skips the spawn (use with `pnpm api:dev` on `DEPLOYMENT=local`).
+- `apps/desktop` — electron-vite + React 19. Signs in with username + password; no PIN profile picker. A user without a PIN gets the forced "Buat PIN" screen right after that login, as on the tablet (no skip; "Keluar" signs out). The account menu (the profile block) has "Ubah PIN" and "Ubah password" — no "Buat PIN". Locking ("Kunci" or `desktop_lock_seconds` idle) **parks** the session like mobile's sign-out: `park()` drops the access token, the parked token stays in the store's `refreshToken` (`setSession` ignores sessions landing while parked), and the lock screen's keypad reopens it with the PIN via `auth.pinLogin`. A user who somehow has no PIN keeps the session and unlocks with the password via `auth.unlock` (a wrong one is `FORBIDDEN`, never 401). The app unmounts behind the lock screen; "Ganti pengguna" logs out. Main supervises the hub (US-002): `src/main/hub.ts` probes the Postgres in `userData/hub.json` (secrets via `safeStorage`), forks `apps/api/dist/main.js` with `utilityProcess` in `DEPLOYMENT=local` (the API migrates itself on boot and serves `GET /health`), and pushes `starting | setup | ready | db-down | crashed` to the renderer's `HubGate`; the app mounts only at `ready`. Signed out on a hub with no outlet (`setup.status`), the app shows `SetupWizard` (US-088): first outlet plus global owner with password and PIN via the public, loopback-only `setup.run`, then `auth.login`. It is refused once any outlet row exists. The renderer's API URL comes from main (`window.hub.apiUrl`, `127.0.0.1`). `DESKTOP_EXTERNAL_API=1` skips the spawn (use with `pnpm api:dev` on `DEPLOYMENT=local`).
 - `apps/backoffice` — React Router 7 + React 19 admin web app (`app/routes/*`): login, outlet switcher, outlets, staff, roles, settings, categories, menu, add-ons. Always online, cloud only.
 - `packages/ui` — web components (`Button`, `Card`, `Alert`, `TextField`) shared by desktop and backoffice. Source `.tsx` exported directly, no build step; consumers must add `../../packages/ui/src/**/*.{js,ts,jsx,tsx}` to their Tailwind `content` globs. Mobile has its own RN mirrors.
 - `packages/api-contract` — the `AppRouter` type both clients import, plus the *shared runtime* pieces: `refresh.ts` (token provider), `refresh-link.ts` (401 recovery link), `floor.ts` (floor-plan geometry/rules), `id.ts` (`uuidv7()` for client-generated ids; mobile passes expo-crypto bytes, React Native has no `crypto.getRandomValues`). Also `eslint-config`, `typescript-config`, `tailwind-config`.
@@ -48,11 +50,11 @@ Turborepo + pnpm monorepo, end-to-end typesafe from Postgres to both clients.
 
 ### Module shape
 
-Each domain (`auth/`, `floor/`, `outlet/`, `settings/`, `category/`, `menu/`, `addon/`, `audit/`, `sync/`) is three layers:
+Each domain (`auth/`, `floor/`, `outlet/`, `settings/`, `category/`, `menu/`, `addon/`, `audit/`, `sync/`, `setup/`) is three layers:
 
-1. `*.router.ts` — decorators, Zod validation, `@UseMiddlewares(ProtectedMiddleware)`, and `rbac.require(ctx.user.id, 'domain.action')`. Thin.
+1. `*.router.ts` — decorators, Zod validation, `@UseMiddlewares(ProtectedMiddleware)`, and `rbac.require(ctx.user.id, 'domain.action')`. Thin. (`setup` is the exception: public, loopback-only, `local` hub only.)
 2. `*.service.ts` — the Drizzle work, constructor-injected `DRIZZLE` handle.
-3. `*-rules.ts` — pure, decorator-free functions holding the logic worth testing (`floor-rules.ts`, `pin-policy.ts`, `refresh-window.ts`, `rbac-rules.ts`, `outlet-rules.ts`, `category-rules.ts`, `menu-rules.ts`, `addon-rules.ts`, `audit-rules.ts`). They exist so tests can import them without Nest's DI or reflect-metadata.
+3. `*-rules.ts` — pure, decorator-free functions holding the logic worth testing (`floor-rules.ts`, `pin-policy.ts`, `refresh-window.ts`, `rbac-rules.ts`, `outlet-rules.ts`, `category-rules.ts`, `menu-rules.ts`, `addon-rules.ts`, `audit-rules.ts`, `setup-rules.ts`). They exist so tests can import them without Nest's DI or reflect-metadata.
 
 **Audit log** (US-011): every config/catalogue mutation calls `audit(tx, actor, {...})` from `src/audit/audit.ts` inside the same transaction as its write, so the row commits or rolls back with the change. One `audit_log` table for all modules (`module` + `action` = `module.verb`); `before`/`after` keep only changed fields with secrets masked, and an unchanged save writes nothing. The table is append-only by DB trigger. New money/correction features add their module to `AUDIT_MODULES` (schema) and to the inline enum in `audit.router.ts`.
 
@@ -135,11 +137,11 @@ POS is judged on — apply these rules to every feature that touches them, inclu
 
 - Commits: conventional, lowercase (`feat:`, `fix:`, `refactor:`, `chore:`). **Do not commit or create branches/worktrees** — the user works on `main` and commits themselves; leave changes in the working tree.
 - Specs and implementation plans live in `docs/superpowers/specs/` and `docs/superpowers/plans/`, dated. Read the matching spec before touching a feature it covers; it records the deliberate omissions ("Known ceilings") so they don't get "fixed" by accident.
-- Migrations were squashed to `0000_*.sql` pre-production. A database older than the squash cannot migrate forward: `docker compose down -v && docker compose up -d && pnpm db:migrate && pnpm db:seed`.
+- Migrations were squashed to `0000_*.sql` pre-production. A database older than the squash cannot migrate forward: `docker compose down -v && docker compose up -d && pnpm db:migrate && pnpm db:seed:dev`.
 - TypeScript versions differ per workspace on purpose — Expo pins mobile's toolchain, and each app's
   bundler dictates its own (mobile TS 6, api/desktop TS 5.9, backoffice TS 6 on Vite 8). Do not try to
   unify them.
-- `DEPLOYMENT` (`cloud` / `local` / `all`) in `apps/api/.env` is required at boot and decides which domain modules mount (`MOUNTS` in `src/deployment-rules.ts`, applied by `AppModule.register`): `cloud` = backoffice set (no floor/sync), `local` = mobile/desktop hub set (no audit). `all` refuses to boot. Contract generation is static and ignores it. One API process cannot serve both backoffice and the POS apps — run `cloud` and `local` side by side on different ports when you need both.
+- `DEPLOYMENT` (`cloud` / `local` / `all`) in `apps/api/.env` is required at boot and decides which domain modules mount (`MOUNTS` in `src/deployment-rules.ts`, applied by `AppModule.register`): `cloud` = backoffice set (no floor/sync), `local` = mobile/desktop hub set (no audit; also mounts `setup`). `all` refuses to boot. Contract generation is static and ignores it. One API process cannot serve both backoffice and the POS apps — run `cloud` and `local` side by side on different ports when you need both.
 - **Long lists are virtualized.** Web (`packages/ui` select/combobox options, backoffice and desktop lists) uses `@tanstack/react-virtual`; mobile uses `@shopify/flash-list` instead of `FlatList`/`ScrollView` + `map`. Applies to any list that can grow unbounded (menu items, staff, add-on options, search results); short fixed lists (tax types, order types) stay plain. Neither package is installed yet — add it to the workspace that first needs it.
 
 ## Responses

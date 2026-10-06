@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
-import { seedRbac } from '../../drizzle/seed/seed-rbac';
+import { seedRbac } from '../role/seed-rbac';
 import type { Actor } from '../auth/rbac-rules';
 import { CategoryService } from '../category/category.service';
 import { auditLog, roles, settings } from '../db/schema';

@@ -20,14 +20,17 @@ pnpm install
 docker compose up -d              # Postgres on :5432
 cp apps/api/.env.example apps/api/.env
 pnpm db:migrate                   # apply drizzle/0000_*.sql
-pnpm db:seed                      # roles, permissions, and the first owner (owner/owner123)
+pnpm db:seed:dev                  # roles, permissions, owner/owner123 and a demo outlet (dev only)
 ```
 
 > The migrations were squashed into a single `0000_*.sql` while the project is pre-production. A
 > database created before the squash cannot migrate forward — drop it and start again:
-> `docker compose down -v && docker compose up -d && pnpm db:migrate && pnpm db:seed`.
+> `docker compose down -v && docker compose up -d && pnpm db:migrate && pnpm db:seed:dev`.
 
 Set real values for `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` in `apps/api/.env` before deploying anywhere.
+
+Cloud deploy: `pnpm db:migrate && pnpm db:seed` on every release (roles and permissions only). Once, on a fresh
+cloud database: `pnpm prod:init` prompts for the first owner; the owner then adds outlets in the backoffice.
 
 ## Develop
 

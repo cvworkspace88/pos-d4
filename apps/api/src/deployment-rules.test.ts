@@ -8,9 +8,9 @@ describe('MOUNTS', () => {
     );
   });
 
-  it('local serves the hub: floor and sync, no backoffice audit viewer', () => {
+  it('local serves the hub: floor, sync and first-run setup, no backoffice audit viewer', () => {
     expect([...MOUNTS.local].sort()).toEqual(
-      ['addon', 'auth', 'category', 'floor', 'menu', 'outlet', 'role', 'settings', 'sync'].sort(),
+      ['addon', 'auth', 'category', 'floor', 'menu', 'outlet', 'role', 'settings', 'setup', 'sync'].sort(),
     );
   });
 

@@ -8,7 +8,7 @@
     "noEmit": true
   },
   "include": ["drizzle/**/*.ts", "src/**/*"],
-  // `__seed.ts` is the one exemption, and deliberately so: it is a top-level-await script, which
-  // NodeNext resolves as CommonJS here and rejects. It is 12 lines of wiring with no logic.
-  "exclude": ["node_modules", "dist", "drizzle/seed/__seed.ts"]
+  // `__*.ts` are exempt, deliberately: they are top-level-await scripts, which NodeNext resolves as
+  // CommonJS here and rejects. They hold wiring and prompts only; the logic they call is checked.
+  "exclude": ["node_modules", "dist", "drizzle/seed/__*.ts"]
 }

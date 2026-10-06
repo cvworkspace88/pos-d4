@@ -28,7 +28,7 @@ const withPassword = zodResolver(
 type FormValues = z.infer<typeof base>;
 
 /** Drops anything but digits as it is typed, instead of only on submit. */
-const digitsOnly = (field: UseFormRegisterReturn) => ({
+export const digitsOnly = (field: UseFormRegisterReturn) => ({
   ...field,
   onChange: (e: ChangeEvent<HTMLInputElement>) => {
     e.target.value = e.target.value.replace(/\D/g, '');

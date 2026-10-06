@@ -1,6 +1,6 @@
 import { and, inArray, notInArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as schema from '../../src/db/schema.ts';
+import * as schema from '../db/schema.ts';
 
 const { roles, permissions, rolePermissions } = schema;
 
@@ -144,7 +144,12 @@ export const holdersOf = (permission: string): string[] => [
   ...new Set(['owner', ...(PERMISSIONS[permission]?.roles ?? [])]),
 ];
 
-/** Idempotent: re-running adds what is missing and touches nothing else. */
+/**
+ * Idempotent: re-running adds what is missing and touches nothing else. Runs on every hub boot and
+ * prunes permissions it no longer knows (the FK cascade takes role grants and user overrides), so
+ * renaming/removing a permission needs a migration (`UPDATE permissions SET name = …`), and running
+ * an older build against a newer database is unsupported.
+ */
 export async function seedRbac(db: NodePgDatabase<typeof schema>): Promise<void> {
   // Update, not DoNothing: an existing database has to pick up the flags and new descriptions.
   await db

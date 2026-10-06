@@ -13,6 +13,7 @@ import { MenuModule } from './menu/menu.module';
 import { OutletModule } from './outlet/outlet.module';
 import { RoleModule } from './role/role.module';
 import { SettingsModule } from './settings/settings.module';
+import { SetupModule } from './setup/setup.module';
 import { SyncModule } from './sync/sync.module';
 import { AppContext } from './trpc/app.context';
 import { errorFormatter } from './trpc/error-formatter';
@@ -20,6 +21,7 @@ import { errorFormatter } from './trpc/error-formatter';
 const DOMAIN_MODULES: Record<Domain, Type> = {
   auth: AuthModule,
   settings: SettingsModule,
+  setup: SetupModule,
   outlet: OutletModule,
   role: RoleModule,
   category: CategoryModule,
