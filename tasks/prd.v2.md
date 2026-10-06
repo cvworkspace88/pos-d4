@@ -167,8 +167,10 @@ Audit rows on settings writes come with US-011.
 - [x] Parked tokens cannot be used by `auth.refresh`; only `pinLogin` redeems them
 - [x] Idle lock after `idle_timeout_seconds` (setting, default 120) parks the session and returns to the profile picker
 - [x] "Remove profile" asks for confirmation only ("Hapus {nama}?"; no PIN or manager needed: the user just signs in with their password again), forgets the profile on the device and revokes its parked token
-- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
+- [x] Verify in browser using dev-browser skill (Expo web) or simulator
 - [x] Typecheck/lint passes
+
+Verified 2026-10-06 by the owner on the Android dev build against the dev hub (kasir1: forced "Buat PIN", park and PIN back in, wrong PIN, idle park, remove profile, change PIN).
 
 ### US-007: Desktop login
 **Description:** As a cashier, I want to log in on the desktop with username and password, and lock the screen between users.
@@ -219,10 +221,12 @@ Built 2026-10-06: the binding is the hub. On `DEPLOYMENT=local` `auth.login` and
 - [x] Brute force blocks the **requester**, never the approver: 5 wrong approval PINs within 10 min block that user from requesting any override (every action — a block earned on a refund also refuses a void) at every outlet for 10 min; refused with `FORBIDDEN` before the PIN is checked. Each wrong approval PIN tells the requester how many tries are left ("PIN salah. Sisa N percobaan."). Other staff keep using the same manager's PIN; the blocked user keeps all features their own permissions allow; wrong approval PINs never lock the manager's own PIN (revised 2026-10-02)
 - [x] The block writes an audit row (`approval.blocked`: requester, permission, approver tried, blocked until); it lifts by itself after 10 min (no row)
 - [x] Staff page shows a blocked user ("Diblokir hingga HH:mm") and a "Buka blokir" button; `approval.unblock` (new permission, Manager by default) clears it early and writes `approval.unblocked` (who unblocked whom)
-- [ ] Verify in browser using dev-browser skill
+- [x] Verify in browser using dev-browser skill
 - [x] Typecheck/lint passes
 
 Wired so far: table.merge/unmerge, reservation.create/update (2026-10-02); void, comp, refund, discount, price override, reopen and shift variance opt in with requireOrApprove when they land. Reason is never required yet.
+
+Verified 2026-10-06 by the owner on the dev hub: kasir1 (cashier, `table.merge` revoked by a per-user override) merging tables got "Minta akses", the owner's PIN approved it; the override was cleared afterwards.
 
 ### US-011: Audit log
 **Description:** As an owner, I want every sensitive action recorded so that disputes can be settled.
