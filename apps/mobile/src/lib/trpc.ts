@@ -3,12 +3,14 @@ import { Platform } from 'react-native';
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { createTRPCClient, httpBatchLink, httpLink } from '@trpc/client';
 import { createTRPCContext } from '@trpc/tanstack-react-query';
-import { createRefreshLink, createTokenProvider, type AppRouter } from '@repo/api-contract';
+import { createRefreshLink, createTokenProvider, hubUrl, type AppRouter } from '@repo/api-contract';
 import { useAuthStore } from './stores/auth';
+import { currentHub, useHubStore } from './stores/hub';
 
 export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 
-function apiUrl(): string {
+/** Dev fallback before any hub is chosen: `EXPO_PUBLIC_API_URL`, else Metro's host. */
+export function devApiUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL;
   if (fromEnv) return fromEnv;
 
@@ -18,8 +20,24 @@ function apiUrl(): string {
   return 'http://localhost:3333';
 }
 
+// Every link points at this placeholder and `hubFetch` swaps in the hub chosen at send time, so pairing
+// another hub (US-003) needs no new client and no reload.
+const HUB = 'http://hub.invalid';
+
+const hubFetch: typeof fetch = (input, init) => {
+  const hub = currentHub(useHubStore.getState());
+  return fetch(String(input).replace(HUB, hub ? hubUrl(hub) : devApiUrl()), init);
+};
+
+/** Unauthenticated, link-less: the hub ping (US-003). Never refreshes a token or signs anyone out. */
+export const pingClient = createTRPCClient<AppRouter>({
+  links: [httpLink({ url: `${HUB}/trpc`, fetch: hubFetch })],
+});
+
 /** Unauthenticated client used only by the refresh call, so a refresh can never recurse into itself. */
-export const refreshClient = createTRPCClient<AppRouter>({ links: [httpLink({ url: `${apiUrl()}/trpc` })] });
+export const refreshClient = createTRPCClient<AppRouter>({
+  links: [httpLink({ url: `${HUB}/trpc`, fetch: hubFetch })],
+});
 
 // Which user the in-flight refresh belongs to. The provider shares one refresh across concurrent
 // callers, so one slot is enough. A refresh that fails because its owner parked must not sign out
@@ -84,7 +102,8 @@ export const trpcClient = createTRPCClient<AppRouter>({
     // cannot predict (secret rotated, user deleted, clock behind) and retries them once.
     createRefreshLink({ accessToken }),
     httpBatchLink({
-      url: `${apiUrl()}/trpc`,
+      url: `${HUB}/trpc`,
+      fetch: hubFetch,
       async headers() {
         const token = await accessToken();
         return token ? { authorization: `Bearer ${token}` } : {};

@@ -11,4 +11,10 @@ export default [
     languageOptions: { sourceType: "commonjs", globals: { __dirname: "readonly" } },
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
+  // Same, for electron-builder (it reads the env for `appId`).
+  {
+    files: ["electron-builder.cjs"],
+    languageOptions: { sourceType: "commonjs", globals: { __dirname: "readonly", process: "readonly" } },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
 ];

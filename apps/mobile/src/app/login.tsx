@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { Controller, useForm } from 'react-hook-form';
 import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +24,7 @@ export default function LoginScreen() {
   const trpc = useTRPC();
   const router = useRouter();
   const setSession = useAuthStore((s) => s.setSession);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   const { control, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -33,6 +34,8 @@ export default function LoginScreen() {
   const login = useMutation(trpc.auth.login.mutationOptions({ onSuccess: setSession }));
   // A lock gets the dialog instead of the alert; dismissing it clears the error.
   const locked = isLocked(login.error);
+
+  if (accessToken) return <Redirect href="/" />;
 
   return (
     <SafeAreaView className="flex-1 bg-surface-canvas">

@@ -28,6 +28,7 @@
     "@repo/api-contract": "workspace:*",
     "@trpc/server": "11.18.0",
     "argon2": "0.45.1",
+    "bonjour-service": "1.4.4",
     "drizzle-orm": "0.45.2",
     "nestjs-trpc": "2.13.0",
     "passport": "0.7.0",

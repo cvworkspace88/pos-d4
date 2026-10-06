@@ -19,6 +19,9 @@ async function bootstrap() {
   if (deployment === 'local') await migrateDatabase(process.env.DATABASE_URL ?? '');
 
   const app = await NestFactory.create(AppModule.register(deployment));
+  // On SIGINT/SIGTERM the hub sends mDNS goodbyes so tablets drop it at once. Where the stop is not a signal
+  // (Windows utilityProcess.kill) tablets drop it when the record's TTL runs out.
+  if (deployment === 'local') app.enableShutdownHooks();
   // Expo (exp://, http://localhost:8081) and Electron (file://) have no stable origin — allow all in dev.
   app.enableCors({ origin: true, credentials: true });
   // The hub binds 0.0.0.0 so tablets on the LAN reach it (the desktop renderer uses 127.0.0.1). Cloud keeps

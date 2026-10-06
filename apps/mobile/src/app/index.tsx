@@ -7,6 +7,7 @@ import { Button as UIButton, type ButtonSize, type ButtonVariant } from '@ui/but
 import { PasswordField, TextField } from '@ui/text-field';
 import { park } from '@/lib/session';
 import { useAuthStore } from '@/lib/stores/auth';
+import { currentHub, useHubStore } from '@/lib/stores/hub';
 import { useTRPC } from '@/lib/trpc';
 
 const VARIANTS: ButtonVariant[] = ['default', 'ghost', 'outline', 'soft', 'danger'];
@@ -65,9 +66,16 @@ export default function HomeScreen() {
   const trpc = useTRPC();
   const router = useRouter();
   const { user, accessToken, hydrated, outlet, switching, startSwitch } = useAuthStore();
-  const me = useQuery({ ...trpc.auth.me.queryOptions(), enabled: Boolean(accessToken) });
+  const hubHydrated = useHubStore((s) => s.hydrated);
+  const hub = useHubStore(currentHub);
+  const me = useQuery({
+    ...trpc.auth.me.queryOptions(),
+    enabled: Boolean(accessToken) && hubHydrated && hub !== null,
+  });
 
-  if (!hydrated) return <ActivityIndicator style={styles.center} />;
+  if (!hydrated || !hubHydrated) return <ActivityIndicator style={styles.center} />;
+  // Nothing works without a hub to talk to (US-003): pair one before anyone signs in.
+  if (!hub) return <Redirect href="/hub" />;
   if (!accessToken) return <Redirect href="/profiles" />;
   // A profile without a PIN cannot be re-entered; make them set one before doing anything else.
   if (user && !user.hasPin) return <Redirect href="/set-pin" />;

@@ -9,6 +9,7 @@ import { DbModule } from './db/db.module';
 import { Deployment, Domain, MOUNTS } from './deployment-rules';
 import { FloorModule } from './floor/floor.module';
 import { HealthModule } from './health/health.module';
+import { HubModule } from './hub/hub.module';
 import { MenuModule } from './menu/menu.module';
 import { OutletModule } from './outlet/outlet.module';
 import { RoleModule } from './role/role.module';
@@ -30,6 +31,7 @@ const DOMAIN_MODULES: Record<Domain, Type> = {
   audit: AuditModule,
   floor: FloorModule,
   sync: SyncModule,
+  hub: HubModule,
 };
 
 @Module({

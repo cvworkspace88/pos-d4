@@ -33,6 +33,8 @@ interface AuthState {
   park: () => void;
   removeProfile: (userId: string) => void;
   clear: () => void;
+  // Another hub is another database: no session or profile from here is valid there.
+  forgetAll: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -101,6 +103,16 @@ export const useAuthStore = create<AuthState>()(
           outlet: null,
           outlets: [],
           switching: false,
+        }),
+      forgetAll: () =>
+        set({
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+          outlet: null,
+          outlets: [],
+          switching: false,
+          profiles: {},
         }),
     }),
     {

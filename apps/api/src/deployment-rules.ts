@@ -14,6 +14,7 @@ export const DOMAINS = [
   'floor',
   'sync',
   'setup',
+  'hub',
 ] as const;
 export type Domain = (typeof DOMAINS)[number];
 
@@ -27,7 +28,7 @@ const SHARED: Domain[] = ['auth', 'settings', 'outlet', 'role', 'category', 'men
 export const MOUNTS: Record<Deployment, readonly Domain[]> = {
   cloud: [...SHARED, 'audit'],
   // `setup` is public and creates the owner: the hub only, never the internet-facing cloud.
-  local: [...SHARED, 'floor', 'sync', 'setup'],
+  local: [...SHARED, 'floor', 'sync', 'setup', 'hub'],
   all: DOMAINS,
 };
 

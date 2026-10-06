@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Button } from '@repo/ui/button';
 import { StateMessageLayout } from '@repo/ui/state-message-layout';
+import { HubPage } from './components/hub-page';
 import { FloorPlan } from './components/floor-plan';
 import { LoginForm } from './components/login-form';
 import { ChangePinDialog } from './components/change-pin-dialog';
@@ -18,10 +19,18 @@ import { useTRPC } from './trpc';
 const MENU: MenuGroup[] = [
   { label: 'Operasional', items: [{ key: 'denah', label: 'Denah Meja', permission: 'table.view' }] },
   // Same page as the backoffice's: on the hub so a manager on the floor can unblock a cashier (US-010).
-  { label: 'Pengaturan', items: [{ key: 'staf', label: 'Staf', permission: 'outlet.staff_assign' }] },
+  {
+    label: 'Pengaturan',
+    items: [
+      { key: 'staf', label: 'Staf', permission: 'outlet.staff_assign' },
+      // Pairing tablets (US-003): what they scan or type to reach this desktop.
+      { key: 'hub', label: 'Perangkat', permission: 'device.manage' },
+    ],
+  },
 ];
 
 function Page({ page, permissions }: { page: string; permissions: string[] }) {
+  if (page === 'hub') return <HubPage />;
   if (page === 'staf') return <StaffPage />;
   return (
     <>

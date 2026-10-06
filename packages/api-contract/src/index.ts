@@ -27,3 +27,14 @@ export {
   type Approval,
 } from './approval';
 export { uuidv7 } from './id';
+export {
+  HUB_PING_MS,
+  HUB_UNREACHABLE,
+  checkHub,
+  encodeHubQr,
+  hubLink,
+  hubUrl,
+  parseHubQr,
+  type HubAddress,
+  type HubLink,
+} from './hub';

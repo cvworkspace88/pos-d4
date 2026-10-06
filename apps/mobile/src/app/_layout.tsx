@@ -12,6 +12,7 @@ import { StatusBar } from 'expo-status-bar';
 import { cssInterop } from 'nativewind';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { HubBanner } from '@/components/hub-banner';
 import { useIdleTimer } from '@/hooks/use-idle-timer';
 import { TRPCProvider, queryClient, trpcClient } from '@/lib/trpc';
 
@@ -38,6 +39,7 @@ function Shell() {
       {/* Screens are transparent so the root background shows through; react-navigation
           otherwise paints every card with its own theme background. */}
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }} />
+      <HubBanner />
     </GestureHandlerRootView>
   );
 }

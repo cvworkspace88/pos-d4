@@ -479,6 +479,15 @@ const appRouter = t.router({
 })))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
+  hub: t.router({
+    info: publicProcedure
+      .output(z.object({
+      outlet: z.object({ id: z.string(), name: z.string() }).nullable(),
+      port: z.number().int(),
+      addresses: z.array(z.string()),
+    }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
   menu: t.router({
     list: publicProcedure
       .output(z.object({

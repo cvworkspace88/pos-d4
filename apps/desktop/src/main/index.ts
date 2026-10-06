@@ -47,7 +47,9 @@ function createWindow(apiUrl: string): void {
 
 void app.whenReady().then(() => {
   if (!primary) return;
-  electronApp.setAppUserModelId('com.metasoft.posd4');
+  // Baked in at build time from apps/desktop/.env (electron-vite exposes MAIN_VITE_* to main); electron-builder.cjs
+  // reads the same variable for `appId`, so the two stay equal.
+  electronApp.setAppUserModelId(import.meta.env.MAIN_VITE_APP_ID ?? 'com.inovtech.pos');
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window));
 
   // Created after `ready`: safeStorage cannot decrypt hub.json before it.
@@ -77,7 +79,10 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   void hub.stop().finally(() => {
     stopped = true;
-    app.quit();
+    // Out of this dispatch: with nothing to stop (external API) the promise settles before Electron's own
+    // `before-quit` call returns, and a nested quit would then be reset as cancelled, leaving a windowless
+    // process on macOS that holds the single-instance lock.
+    setImmediate(() => app.quit());
   });
 });
 

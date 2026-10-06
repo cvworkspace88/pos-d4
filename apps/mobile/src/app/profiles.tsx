@@ -6,10 +6,12 @@ import { Button } from '@ui/button';
 import { Card } from '@ui/card';
 import { removeProfile } from '@/lib/session';
 import { useAuthStore } from '@/lib/stores/auth';
+import { currentHub, useHubStore } from '@/lib/stores/hub';
 
 export default function ProfilesScreen() {
   const router = useRouter();
   const { accessToken, hydrated, profiles } = useAuthStore();
+  const hub = useHubStore(currentHub);
 
   if (!hydrated) return <ActivityIndicator className="flex-1" />;
   if (accessToken) return <Redirect href="/" />;
@@ -72,6 +74,12 @@ export default function ProfilesScreen() {
             Tekan lama sebuah nama untuk menghapusnya dari tablet ini.
           </Text>
         </View>
+
+        {hub && (
+          <Button variant="ghost" size="md" onPress={() => router.push('/hub')}>
+            {`Hub: ${hub.outletName} · Ganti`}
+          </Button>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

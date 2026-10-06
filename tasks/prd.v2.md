@@ -120,12 +120,14 @@ Built 2026-10-05: `setup.status` / `setup.run` (local only, loopback only, refus
 **Description:** As a waiter, I want my tablet to find the desktop on the outlet Wi-Fi so that I never type an IP.
 
 **Acceptance Criteria:**
-- [ ] Hub advertises `_pos-hub._tcp` via mDNS with outlet name and port; desktop shows a "Hub" panel with LAN IP, port, outlet name and a QR code encoding `{host, port, outletId}`
-- [ ] Mobile "Connect to hub" screen: lists discovered hubs, scans the QR, or accepts manual IP:port; stores the chosen hub per outlet
-- [ ] Mobile pings `hub.info` every 10s when the app is in the foreground; shows a red "Hub offline" banner after 2 failures and grey "Reconnecting" until 1 success
-- [ ] Renderer of the desktop talks to `127.0.0.1` on the same API
-- [ ] Verify in browser using dev-browser skill (Expo web) or simulator
-- [ ] Typecheck/lint passes
+- [x] Hub advertises `_pos-hub._tcp` via mDNS with outlet name and port; desktop shows a "Hub" panel with LAN IP, port, outlet name and a QR code encoding `{host, port, outletId}`
+- [x] Mobile "Connect to hub" screen: lists discovered hubs, scans the QR, or accepts manual IP:port; stores the chosen hub per outlet
+- [x] Mobile pings `hub.info` every 10s when the app is in the foreground; shows a red "Hub offline" banner after 2 failures and grey "Reconnecting" until 1 success
+- [x] Renderer of the desktop talks to `127.0.0.1` on the same API
+- [x] Verify in browser using dev-browser skill (Expo web) or simulator
+- [x] Typecheck/lint passes
+
+Built 2026-10-06 (code only, no device yet): `hub.info` (public, `local` only; the first live outlet is the hub's); the API advertises `_pos-hub._tcp` with `bonjour-service`, TXT `outletId` and `v=1` (`apps/api/src/hub/hub-advertiser.ts`, checked on the Mac with `dns-sd -B/-L`); the desktop Hub page shows LAN IP, port and the pairing QR; the mobile app becomes a development build (`react-native-zeroconf`, `expo-camera`) with a Connect to hub screen (discovered list, QR scan, manual IP:port); the hub is stored per outlet and pairing another outlet's hub clears this tablet's sessions and PIN profiles; the ping banner goes grey after 1 miss and red after 2. Deviations from the plan: the advert publishes its own host name `pos-hub-<outletId[:8]>.local` (publishing `os.hostname()` made macOS rename the computer); a multicast socket `'error'` (5353 busy or denied) is only logged, so mDNS never crashes the hub; shutdown awaits the goodbye packets (1 s cap), so tablets drop the hub at once on SIGINT/SIGTERM, but on a Windows `utilityProcess.kill` only at the record's TTL; the QR scanner ignores a text that already failed until a different code is scanned; the mobile `me` query waits for the hub store to hydrate and a hub to exist. Checks 2026-10-06: `pnpm test` (api 312), `check-types` and `lint` pass. Verified 2026-10-06 by the owner on the Android dev build (JDK 17; `react-native-zeroconf@0.17.3` builds on RN 0.86), the emulator, a real tablet and the desktop Perangkat page (the "Hub" panel, renamed): discovery list, QR pairing, manual IP:port and the grey/red banner. Since then: the desktop menu item is "Perangkat"; the mDNS type comes from `HUB_MDNS_TYPE` (api) / `EXPO_PUBLIC_HUB_MDNS_TYPE` (mobile, also iOS `NSBonjourServices` via `app.config.ts`), default `pos-hub`; iOS build not yet run. Known ceilings: one hub per outlet (the first live outlet); the advert name refreshes only on restart (`hub.info` is always current); the QR carries the first LAN IPv4 (the page lists all of them); switching hubs does not revoke the old hub's tokens, they expire there; no auto-heal when the hub's IP changes (re-pair); the advert's addresses are taken at publish (retried until the hub has a LAN address), so an IP change needs a hub restart; packaging: `bonjour-service` must ship with the bundled API, check when the installer story lands.
 
 ### US-004: Outlet settings
 **Description:** As an owner, I want every outlet-level rule editable at runtime so that nothing about tax, rounding or receipts is hard-coded.
