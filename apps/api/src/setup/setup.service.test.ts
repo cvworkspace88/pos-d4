@@ -76,7 +76,7 @@ test('the owner can sign in straight away, with the new outlet active', async ()
   const auth = new AuthService(
     db,
     new JwtService({}),
-    new ConfigService({ JWT_ACCESS_SECRET: 'test-secret', JWT_ACCESS_TTL: '15m' }),
+    new ConfigService({ DEPLOYMENT: 'local', JWT_ACCESS_SECRET: 'test-secret', JWT_ACCESS_TTL: '15m' }),
   );
   const session = await auth.login({ username: 'budi', password: 'password123' });
   expect(session.outlet?.name).toBe('Kopi Senja');

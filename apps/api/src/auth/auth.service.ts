@@ -7,6 +7,7 @@ import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { randomBytes, createHash } from 'node:crypto';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { outletStaff, outlets, refreshTokens, users, type User } from '../db/schema';
+import { hubOutlet } from '../hub/hub-outlet';
 import { verifyPassword, verifyPin } from './pin-check';
 import { firstPinNeedsPassword, rejectPinLogin } from './pin-policy';
 import { Reason } from '../trpc/error-formatter';
@@ -50,6 +51,9 @@ const alive = or(isNull(refreshTokens.revokedAt), eq(refreshTokens.revokedReason
 /** FORBIDDEN: we know who this is; they just do not work there. A 401 would sign them out. */
 const notAssigned = () => new TRPCError({ code: 'FORBIDDEN', message: 'Outlet tidak ditemukan.' });
 
+/** US-008: a hub-bound device (every `local` client) refuses whoever does not work at the hub's outlet. */
+const notHere = () => new TRPCError({ code: 'FORBIDDEN', message: 'Anda tidak terdaftar di outlet ini.' });
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -72,7 +76,7 @@ export class AuthService {
     if (!user || !valid)
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Username atau kata sandi salah.' });
 
-    return this.issueSession(user, undefined, true);
+    return this.issueSession(user, await this.boundOutlet(user), true);
   }
 
   async refresh(token: string, outletId?: string): Promise<Session> {
@@ -164,6 +168,9 @@ export class AuthService {
 
     await this.checkPin(user, pin);
 
+    // Before rotation, as `refresh` checks a pick: a refused PIN login leaves the parked token as it was.
+    const bound = await this.boundOutlet(user);
+
     // Rotation, as in `refresh` — but stamped `pin_rotated`, not `rotated`. Only `rejectPinLogin`
     // grants that reason a grace window, so redeeming a profile cannot re-open the PIN-free
     // `refresh` path for the token it just consumed. A row already stamped (a retry inside the
@@ -179,7 +186,7 @@ export class AuthService {
     // Only a `pin_rotated` retry inside the grace window legitimately matches nothing.
     const wasClaimable = row.revokedAt === null || row.revokedReason === 'parked';
     if (!rotated.length && wasClaimable) throw dead;
-    return this.issueSession(user, row.outletId);
+    return this.issueSession(user, bound ?? row.outletId);
   }
 
   /**
@@ -287,6 +294,20 @@ export class AuthService {
       outletId: payload.outletId ?? null,
       passwordAt: payload.pwd && payload.iat ? payload.iat * 1000 : null,
     };
+  }
+
+  /**
+   * On a `local` hub every device is bound to the hub's outlet (US-008): only its staff, or a global role,
+   * sign in there, and they land on it. Undefined off the hub (cloud: pick freely) and before first-run
+   * setup (no outlet to bind to yet). Called after the credential check, so it never answers a wrong
+   * password with a membership fact.
+   */
+  private async boundOutlet(user: User): Promise<string | undefined> {
+    if (this.config.get('DEPLOYMENT') !== 'local') return undefined;
+    const outlet = await hubOutlet(this.db);
+    if (!outlet) return undefined;
+    if (!(await this.outletsOf(user)).some((o) => o.id === outlet.id)) throw notHere();
+    return outlet.id;
   }
 
   /** The outlets a user may work at, live only, sorted by name. A global role works everywhere. */

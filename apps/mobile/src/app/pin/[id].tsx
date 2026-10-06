@@ -3,7 +3,7 @@ import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { isLocked } from '@repo/api-contract';
+import { isInvalidPin, isLocked } from '@repo/api-contract';
 import { Alert } from '@ui/alert';
 import { Avatar } from '@ui/avatar';
 import { Keypad } from '@ui/keypad';
@@ -59,6 +59,9 @@ export default function PinScreen() {
   // Deep link to a profile this tablet does not have, or one just evicted mid-attempt.
   if (!profile) return <Redirect href="/profiles" />;
 
+  // FORBIDDEN (not enrolled at this hub) keeps the heading and dots neutral: the digits were right.
+  const wrongPin = Boolean(error) && isInvalidPin(pinLogin.error);
+
   const press = (digit: string) => {
     if (pinLogin.isPending) return;
     // A rejected attempt is cleared by typing over it, so the red dots survive long enough to read.
@@ -92,10 +95,10 @@ export default function PinScreen() {
 
         <View className="w-full max-w-sm gap-5 self-center md:flex-1">
           <Text className="text-center font-poppins-semibold text-lg text-ink-primary">
-            {error ? 'PIN tidak cocok' : 'Masukkan PIN'}
+            {wrongPin ? 'PIN tidak cocok' : 'Masukkan PIN'}
           </Text>
 
-          <PinInput length={PIN_LENGTH} value={pin} invalid={Boolean(error)} />
+          <PinInput length={PIN_LENGTH} value={pin} invalid={wrongPin} />
 
           {error && (
             <Alert testID="pin-error" variant="danger">

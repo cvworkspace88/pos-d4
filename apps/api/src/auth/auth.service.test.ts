@@ -11,6 +11,7 @@ import { AuthService } from './auth.service';
 let db: TestDatabase;
 let close: () => Promise<void>;
 let auth: AuthService;
+let hubAuth: AuthService;
 let roleId: Record<string, string>;
 
 const PASSWORD = 'password123';
@@ -24,7 +25,13 @@ beforeAll(async () => {
   auth = new AuthService(
     db,
     new JwtService({}),
-    new ConfigService({ JWT_ACCESS_SECRET: 'test-secret', JWT_ACCESS_TTL: '15m' }),
+    new ConfigService({ JWT_ACCESS_SECRET: 'test-secret', JWT_ACCESS_TTL: '15m', DEPLOYMENT: 'cloud' }),
+  );
+  // The same service on a `local` hub (US-008): sign-in is bound to the hub's outlet.
+  hubAuth = new AuthService(
+    db,
+    new JwtService({}),
+    new ConfigService({ JWT_ACCESS_SECRET: 'test-secret', JWT_ACCESS_TTL: '15m', DEPLOYMENT: 'local' }),
   );
 });
 
@@ -379,4 +386,118 @@ test('only a password login marks the access token as fresh for a first PIN', as
 
   const refreshed = await auth.refresh(session.refreshToken);
   expect((await auth.userFromAccessToken(refreshed.accessToken)).passwordAt).toBeNull();
+});
+
+const NOT_HERE = 'Anda tidak terdaftar di outlet ini.';
+const hubLogin = (username: string, password = PASSWORD) => hubAuth.login({ username, password });
+
+test('on a hub, a user who works only at another outlet is refused, and gets no token', async () => {
+  // The hub is the first live outlet, so 'Hub' (created first) is the one that binds.
+  await addOutlet('Hub');
+  const other = await addOutlet('Other');
+  const ann = await addUser('ann');
+  await assign(ann.id, other.id);
+
+  await expect(hubLogin('ann')).rejects.toMatchObject({ code: 'FORBIDDEN', message: NOT_HERE });
+  expect(await db.select().from(refreshTokens).where(eq(refreshTokens.userId, ann.id))).toEqual([]);
+});
+
+test('on a hub, a wrong password is still the plain credential error, not the membership refusal', async () => {
+  await addOutlet('Hub');
+  const other = await addOutlet('Other');
+  const ann = await addUser('ann');
+  await assign(ann.id, other.id);
+
+  await expect(hubLogin('ann', 'wrong-password')).rejects.toMatchObject({
+    code: 'UNAUTHORIZED',
+    message: 'Username atau kata sandi salah.',
+  });
+});
+
+test("on a hub, a member of several outlets lands on the hub's outlet instead of the picker", async () => {
+  const hub = await addOutlet('Hub');
+  const other = await addOutlet('Other');
+  const ann = await addUser('ann');
+  await assign(ann.id, hub.id);
+  await assign(ann.id, other.id);
+
+  const session = await hubLogin('ann');
+  expect(session.outlet).toEqual({ id: hub.id, name: 'Hub' });
+  expect((await hubAuth.userFromAccessToken(session.accessToken)).outletId).toBe(hub.id);
+});
+
+test("on a hub, the owner needs no membership and lands on the hub's outlet", async () => {
+  const hub = await addOutlet('Hub');
+  await addOutlet('Other');
+  await addUser('boss', 'owner');
+
+  const session = await hubLogin('boss');
+  expect(session.outlet?.id).toBe(hub.id);
+});
+
+test('on a hub before first-run setup (no outlet yet), nobody is refused', async () => {
+  await addUser('boss', 'owner');
+  const session = await hubLogin('boss');
+  expect(session.outlet).toBeNull();
+});
+
+test('on a hub, a closed outlet does not bind; the first live one does', async () => {
+  const closed = await addOutlet('Closed');
+  await db.update(outlets).set({ deletedAt: new Date() }).where(eq(outlets.id, closed.id));
+  const hub = await addOutlet('Hub');
+  const ann = await addUser('ann');
+  await assign(ann.id, hub.id);
+
+  expect((await hubLogin('ann')).outlet?.id).toBe(hub.id);
+});
+
+test('on a hub, a PIN login after the membership was removed is refused and the profile stays parked', async () => {
+  const hub = await addOutlet('Hub');
+  const ann = await addUser('ann');
+  await assign(ann.id, hub.id);
+  await hubAuth.setPin(ann.id, { pin: '123456' }, Date.now());
+  const session = await hubLogin('ann');
+  await hubAuth.park(session.refreshToken);
+
+  await db.delete(outletStaff).where(eq(outletStaff.userId, ann.id));
+
+  await expect(hubAuth.pinLogin(session.refreshToken, '123456')).rejects.toMatchObject({
+    code: 'FORBIDDEN',
+    message: NOT_HERE,
+  });
+  const [row] = await db.select().from(refreshTokens).where(eq(refreshTokens.userId, ann.id));
+  expect(row?.revokedReason).toBe('parked');
+});
+
+test('on a hub, a PIN login by a member works as before', async () => {
+  const hub = await addOutlet('Hub');
+  const ann = await addUser('ann');
+  await assign(ann.id, hub.id);
+  await hubAuth.setPin(ann.id, { pin: '123456' }, Date.now());
+  const session = await hubLogin('ann');
+  await hubAuth.park(session.refreshToken);
+
+  expect((await hubAuth.pinLogin(session.refreshToken, '123456')).outlet?.id).toBe(hub.id);
+});
+
+test("on a hub, a PIN login lands on the hub's outlet even when the parked row carries another one", async () => {
+  const hub = await addOutlet('Hub');
+  const other = await addOutlet('Other');
+  const ann = await addUser('ann');
+  await assign(ann.id, hub.id);
+  await assign(ann.id, other.id);
+  await hubAuth.setPin(ann.id, { pin: '123456' }, Date.now());
+  const switched = await hubAuth.refresh((await hubLogin('ann')).refreshToken, other.id);
+  await hubAuth.park(switched.refreshToken);
+
+  expect((await hubAuth.pinLogin(switched.refreshToken, '123456')).outlet?.id).toBe(hub.id);
+});
+
+test('on the cloud, a user who works only at another outlet still signs in (no device binding)', async () => {
+  await addOutlet('First');
+  const other = await addOutlet('Other');
+  const ann = await addUser('ann');
+  await assign(ann.id, other.id);
+
+  expect((await login('ann')).outlet?.id).toBe(other.id);
 });

@@ -186,11 +186,13 @@ Audit rows on settings writes come with US-011.
 **Acceptance Criteria:**
 - [x] Tables `outlets(id, name, code, address, phone, npwp, timezone, deleted_at)` (closing an outlet is `outlet.setActive(false)`, a soft delete; name and code unique among live outlets), `outlet_staff(outlet_id, user_id, role_id)` (a membership is a row; removing it deletes the row)
 - [x] `users.role_id` holds the global role (owner) that needs no membership; everyone else acts only in outlets where they have a membership, at a live outlet
-- [ ] Login on a device bound to outlet X refuses users without membership there: `FORBIDDEN` "Anda tidak terdaftar di outlet ini." (needs device binding, lands with US-003)
+- [x] Login on a device bound to outlet X refuses users without membership there: `FORBIDDEN` "Anda tidak terdaftar di outlet ini." (needs device binding, lands with US-003)
 - [x] `auth.refresh({outletId})` switches active outlet for multi-outlet users (backoffice and owners)
 - [x] `canActOn(ctx, outletId)` guard used by every query and mutation that takes an outlet id; refusal is `FORBIDDEN` "Outlet tidak ditemukan."
 - [x] Tests: membership check, global role bypass, guard
 - [x] Typecheck/lint passes
+
+Built 2026-10-06: the binding is the hub. On `DEPLOYMENT=local` `auth.login` and `auth.pinLogin` check the user against the hub's outlet (`hubOutlet`, the first live outlet, the one `hub.info` reports) after the credential check: a non-member who is not global gets `FORBIDDEN` "Anda tidak terdaftar di outlet ini." (a PIN login is refused before rotation, so the profile stays parked), everyone else lands on the hub's outlet (no picker on a hub). Before first-run setup nothing is refused; the cloud does not bind. Clients: both already show the `FORBIDDEN` message; the mobile PIN screen now keeps its heading and dots neutral for it (only a wrong PIN reads "PIN tidak cocok"). Verified 2026-10-06 on the tablet against the dev hub: `outlet2manager` (manager at a second outlet only) is refused with the message, the owner and Cafe Melati staff sign in. Known ceilings: a live session is not ended when its hub membership is removed; its next refresh falls back like any lost membership; `auth.refresh({outletId})` still lets a multi-outlet member switch to another of their outlets on a hub (the switcher stays visible there); one hub per outlet (US-053).
 
 ### US-009: Roles, permissions catalogue and per-user overrides
 **Description:** As an owner, I want fixed base roles, my own custom roles, and the ability to grant or revoke single permissions for one person at one outlet.
