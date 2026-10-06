@@ -39,7 +39,12 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-surface-canvas">
-      <ScrollView contentContainerClassName="flex-grow justify-center p-6">
+      {/* "handled": with the keyboard open, the first tap on a button presses it, not just closes the
+          keyboard. */}
+      <ScrollView
+        contentContainerClassName="flex-grow justify-center p-6"
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Capped so the card stays a card on a tablet instead of stretching edge to edge. */}
         <View className="w-full max-w-md self-center gap-6 rounded-3xl bg-surface p-6">
           <View className="items-center gap-2">

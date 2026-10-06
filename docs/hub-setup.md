@@ -66,10 +66,16 @@ after a reboot once Docker Desktop has started. If the desktop opens first it sh
    ```
 4. Fill the app's external database screen as in Option B.
 
+## Tablets on the outlet network
+
+Tablets reach the hub over the Wi-Fi: Windows Firewall must allow it and the network must be Private.
+See [hub-network-windows.md](hub-network-windows.md).
+
 ## Changing the API port
 
 The local server listens on port 3333. To change it, quit the app, edit `apiPort` in
-`%APPDATA%\POS D4\hub.json`, and start the app again. Tablets must then use the new port.
+`%APPDATA%\POS D4\hub.json`, and start the app again. Tablets must then use the new port, and the
+firewall rule must follow it (see [hub-network-windows.md](hub-network-windows.md)).
 
 ## Logs
 

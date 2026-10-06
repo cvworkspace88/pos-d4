@@ -60,7 +60,12 @@ export default function ChangePasswordScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-surface-canvas">
-      <ScrollView contentContainerClassName="flex-grow justify-center p-6">
+      {/* "handled": with the keyboard open, the first tap on a button presses it, not just closes the
+          keyboard. */}
+      <ScrollView
+        contentContainerClassName="flex-grow justify-center p-6"
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="w-full max-w-md self-center gap-6 rounded-3xl bg-surface p-6">
           <Text className="font-poppins-bold text-2xl text-ink-primary">Ubah password</Text>
 

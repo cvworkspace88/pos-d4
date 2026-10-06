@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { park } from '@/lib/session';
 import { useAuthStore } from '@/lib/stores/auth';
+import { currentHub, useHubStore } from '@/lib/stores/hub';
 import { useTRPC } from '@/lib/trpc';
 
 /** Until the server value arrives. Matches the server's own default. */
@@ -14,7 +15,10 @@ const FALLBACK_IDLE_SECONDS = 120;
  */
 export function useIdleTimer(): () => void {
   const trpc = useTRPC();
-  const active = useAuthStore((state) => state.accessToken !== null);
+  // A session and a loaded hub: before the hub store hydrates, `settings.get` would go to the dev fallback URL.
+  const signedIn = useAuthStore((state) => state.accessToken !== null);
+  const hubReady = useHubStore((state) => state.hydrated && currentHub(state) !== null);
+  const active = signedIn && hubReady;
   const settings = useQuery({
     ...trpc.settings.get.queryOptions(),
     enabled: active,
